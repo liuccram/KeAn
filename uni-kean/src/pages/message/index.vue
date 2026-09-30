@@ -318,7 +318,7 @@ onReachBottom(() => {
       </view>
 
       <template v-if="tab !== 'chat'">
-        <scroll-view v-if="tab === 'task'" class="kind-bar" scroll-x :show-scrollbar="false">
+        <view v-if="tab === 'task'" class="kind-bar">
           <view class="kind" :class="{ on: taskFilter === 'all' }" @click="switchTaskFilter('all')">
             全部
             <view v-if="dots.task > 0" class="kind-dot" />
@@ -333,7 +333,7 @@ onReachBottom(() => {
             {{ kind.label }}
             <view v-if="kind.unread > 0" class="kind-dot" />
           </view>
-        </scroll-view>
+        </view>
         <view v-if="(tab === 'system' ? list.length : visibleNotices.length) || (tab === 'task' && taskFilter === 'all' && groupedTaskNotices.length)" class="toolbar">
           <text class="hint">{{
             tab === "system"
@@ -447,6 +447,8 @@ onReachBottom(() => {
   position: relative;
   min-height: 100vh;
   background: #f5f6f8;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 .page.skinned {
   background: transparent;
@@ -510,23 +512,25 @@ onReachBottom(() => {
   background: #f53f3f;
 }
 .kind-bar {
-  white-space: nowrap;
+  display: flex;
+  gap: 8px;
   padding: 10px 12px 0;
-  position: relative;
-  z-index: 10;
+  width: 100%;
+  box-sizing: border-box;
 }
 .kind {
-  display: inline-flex;
+  flex: 1;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   height: 30px;
-  padding: 0 12px;
-  margin-right: 8px;
+  padding: 0 4px;
   border-radius: 15px;
   background: #fff;
   color: #4e5969;
   font-size: 13px;
-  vertical-align: middle;
+  min-width: 0;
 }
 .kind.on {
   background: #3d6fe8;
@@ -562,15 +566,19 @@ onReachBottom(() => {
   padding: 12px 16px 8px;
   background: #f8fafc;
   border-bottom: 1px solid #f2f3f5;
+  min-width: 0;
 }
 .section-label {
   color: #1d2129;
   font-size: 13px;
   font-weight: 700;
+  flex-shrink: 0;
 }
 .section-hint {
   color: #86909c;
   font-size: 11px;
+  min-width: 0;
+  text-align: right;
 }
 .page.skinned .section,
 .page.skinned .section-head {
@@ -665,6 +673,7 @@ onReachBottom(() => {
   font-size: 13px;
   line-height: 1.45;
   overflow: hidden;
+  overflow-wrap: anywhere;
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;

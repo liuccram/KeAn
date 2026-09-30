@@ -70,5 +70,6 @@ onHide(() => {
 page {
   background-color: var(--kean-page-bg, #f5f6f8);
   font-size: var(--kean-fs, 16px);
+  overflow-x: hidden;
 }
 </style>
