@@ -1,0 +1,20 @@
+.env
+.env.dev
+.env.test
+.env.prod
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+*.log
+*.iml
+.classpath
+.project
+.settings/
+
+# IDEA：保留可共享配置，忽略本地缓存
+.idea/*
+!.idea/compiler.xml
+!.idea/encodings.xml
+!.idea/misc.xml
+!.idea/runConfigurations/
+!.idea/runConfigurations/**

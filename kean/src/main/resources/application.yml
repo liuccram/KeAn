@@ -1,29 +1,34 @@
 server:
   address: 0.0.0.0
-  port: ${SERVER_PORT:8080}
+  forward-headers-strategy: none
 
 spring:
   application:
     name: kean-server
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
   jackson:
     time-zone: Asia/Shanghai
     default-property-inclusion: non_null
     serialization:
       write-dates-as-timestamps: false
-  datasource:
-    url: jdbc:mysql://${MYSQL_HOST:192.168.198.139}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:KeBang}?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false
-    username: ${MYSQL_USERNAME:root}
-    password: ${MYSQL_PASSWORD:}
-    driver-class-name: com.mysql.cj.jdbc.Driver
-  data:
-    redis:
-      host: ${REDIS_HOST:192.168.198.139}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
   flyway:
     enabled: true
     locations: classpath:db/migration
     encoding: UTF-8
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  mail:
+    protocol: smtp
+    default-encoding: UTF-8
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.ssl.enable: true
+      mail.smtp.connectiontimeout: 10000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
 
 mybatis-plus:
   configuration:
@@ -34,14 +39,3 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
-
-kean:
-  jwt:
-    secret: ${JWT_SECRET:please-change-this-dev-secret-key-32b}
-    expire-seconds: ${JWT_EXPIRE_SECONDS:86400}
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
-  admin:
-    username: ${ADMIN_USERNAME:admin}
-    password: ${ADMIN_PASSWORD:ChangeMe_Admin_123}
-    nickname: ${ADMIN_NICKNAME:系统管理员}
