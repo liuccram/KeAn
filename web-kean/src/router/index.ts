@@ -15,12 +15,14 @@ const router = createRouter({
       component: () => import("@/layouts/AdminLayout.vue"),
       redirect: "/dashboard",
       children: [
-        {
-          path: "dashboard",
-          name: "dashboard",
-          component: () => import("@/views/dashboard/index.vue"),
-          meta: { title: "Dashboard" }
-        }
+        { path: "dashboard", name: "dashboard", component: () => import("@/views/dashboard/index.vue"), meta: { title: "首页概览", en: "Dashboard" } },
+        { path: "users", name: "users", component: () => import("@/views/users/index.vue"), meta: { title: "用户管理", en: "User Management" } },
+        { path: "tasks", name: "tasks", component: () => import("@/views/tasks/index.vue"), meta: { title: "代课管理", en: "Task Management" } },
+        { path: "reports", name: "reports", component: () => import("@/views/reports/index.vue"), meta: { title: "举报审核及反馈", en: "Reports" } },
+        { path: "catalog", name: "catalog", component: () => import("@/views/catalog/index.vue"), meta: { title: "学校与校区", en: "School & Campus" } },
+        { path: "announcements", name: "announcements", component: () => import("@/views/announcements/index.vue"), meta: { title: "公告与消息", en: "Announcements" } },
+        { path: "analytics", name: "analytics", component: () => import("@/views/analytics/index.vue"), meta: { title: "数据统计", en: "Analytics" } },
+        { path: "system", name: "system", component: () => import("@/views/system/index.vue"), meta: { title: "系统管理", en: "System Settings" } }
       ]
     }
   ]

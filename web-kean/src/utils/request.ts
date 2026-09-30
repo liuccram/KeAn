@@ -33,22 +33,27 @@ http.interceptors.response.use(
   (error) => {
     const status = error.response?.status;
     const message = error.response?.data?.message || error.message || "网络异常";
+    const code = error.response?.data?.code;
     if (status === 401) {
       clearAuth();
       if (!location.hash.includes("/login") && !location.pathname.includes("/login")) {
         location.href = "/login";
       }
     }
-    ElMessage.error(message);
+    if (code !== 40307) {
+      ElMessage.error(message);
+    }
     return Promise.reject(error);
   }
 );
 
 export async function request<T>(url: string, options: { method?: string; data?: unknown } = {}) {
+  const method = (options.method || "GET").toUpperCase();
   const response = await http.request<ApiResult<T>>({
     url,
-    method: options.method || "GET",
-    data: options.data
+    method,
+    params: method === "GET" ? options.data : undefined,
+    data: method === "GET" ? undefined : options.data
   });
   return response.data.data;
 }

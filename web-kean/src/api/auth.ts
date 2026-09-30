@@ -6,10 +6,19 @@ export interface LoginResult {
   user: AdminUser;
 }
 
-export function login(username: string, password: string) {
+export interface TurnstileConfig {
+  enabled: boolean;
+  siteKey?: string | null;
+}
+
+export function fetchTurnstileConfig() {
+  return request<TurnstileConfig>("/api/auth/turnstile");
+}
+
+export function login(username: string, password: string, turnstileToken?: string) {
   return request<LoginResult>("/api/auth/login", {
     method: "POST",
-    data: { username, password }
+    data: { username, password, turnstileToken }
   });
 }
 

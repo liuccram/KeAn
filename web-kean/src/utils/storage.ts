@@ -6,6 +6,7 @@ export interface AdminUser {
   role: string;
   username: string;
   nickname: string;
+  mustChangePassword?: boolean;
 }
 
 export function getToken(): string {

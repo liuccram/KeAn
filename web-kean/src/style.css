@@ -1,10 +1,261 @@
+:root {
+  --ka-navy: #0d1b36;
+  --ka-navy-2: #122445;
+  --ka-navy-hover: #1a3260;
+  --ka-navy-active: #23407a;
+  --ka-sidebar-text: #9eb0d4;
+  --ka-sidebar-active: #ffffff;
+  --ka-bg: #f3f5fb;
+  --ka-card: #ffffff;
+  --ka-primary: #3b82f6;
+  --ka-primary-soft: #e8f1ff;
+  --ka-success: #22c55e;
+  --ka-warning: #f59e0b;
+  --ka-danger: #ef4444;
+  --ka-purple: #8b5cf6;
+  --ka-teal: #14b8a6;
+  --ka-cyan: #06b6d4;
+  --ka-text: #1e293b;
+  --ka-muted: #64748b;
+  --ka-border: #e8edf5;
+  --ka-radius: 12px;
+  --el-color-primary: #3b82f6;
+  --el-color-success: #22c55e;
+  --el-color-warning: #f59e0b;
+  --el-color-danger: #ef4444;
+  --el-border-radius-base: 8px;
+  --el-font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
 html,
 body,
 #app {
   margin: 0;
   height: 100%;
+  color: var(--ka-text);
+  background: var(--ka-bg);
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.ka-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 100%;
+}
+
+.ka-card {
+  background: var(--ka-card);
+  border: 1px solid var(--ka-border);
+  border-radius: var(--ka-radius);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  padding: 16px 18px;
+}
+
+.ka-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.ka-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ka-text);
+}
+
+.ka-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ka-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.ka-split {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+}
+
+.ka-split.user {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.ka-split.task {
+  grid-template-columns: minmax(0, 1fr) 380px;
+}
+
+.ka-split.report {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.ka-split.catalog {
+  grid-template-columns: minmax(0, 1fr) 320px;
+  align-items: start;
+}
+
+.ka-split.catalog .side {
+  position: sticky;
+  top: 16px;
+  align-self: start;
+}
+
+.ka-split.task-detail {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+}
+
+.ka-kv {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 8px 12px;
+  font-size: 13px;
+}
+
+.ka-kv dt {
+  color: var(--ka-muted);
+  margin: 0;
+}
+
+.ka-kv dd {
+  margin: 0;
+  color: var(--ka-text);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 22px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.status-pill.success {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.status-pill.warning {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.status-pill.danger {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.status-pill.info {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.status-pill.teal {
+  color: #0f766e;
+  background: #ccfbf1;
+}
+
+.status-pill.purple {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.status-pill.muted {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.link-btn {
+  color: var(--ka-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.link-btn.danger {
+  color: var(--ka-danger);
+}
+
+.link-btn + .link-btn {
+  margin-left: 10px;
+}
+
+.empty-panel {
+  color: var(--ka-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 48px 16px;
 }
 
 .el-aside .el-menu {
   border-right: none;
+}
+
+.el-table {
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-header-text-color: #64748b;
+  --el-table-tr-bg-color: #fff;
+  --el-table-row-hover-bg-color: #f5f8ff;
+  --el-table-border-color: #f1f5f9;
+  font-size: 13px;
+}
+
+.el-table th.el-table__cell {
+  font-weight: 500;
+}
+
+.el-pagination {
+  --el-pagination-button-bg-color: #fff;
+  --el-color-primary: #3b82f6;
+}
+
+.el-button--primary {
+  --el-button-bg-color: #3b82f6;
+  --el-button-border-color: #3b82f6;
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-date-editor.el-input__wrapper {
+  border-radius: 8px;
+}
+
+.el-dialog {
+  border-radius: 12px;
+}
+
+.el-tabs__item.is-active {
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.el-tabs__active-bar {
+  background: #3b82f6;
+}
+
+@media (max-width: 1280px) {
+  .ka-split.user,
+  .ka-split.task,
+  .ka-split.report,
+  .ka-split.catalog,
+  .ka-split.task-detail {
+    grid-template-columns: 1fr;
+  }
 }
