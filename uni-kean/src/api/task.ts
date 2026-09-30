@@ -4,7 +4,18 @@ export interface PublisherBrief {
   id: number;
   nickname: string;
   avatarUrl?: string | null;
+  gender?: string | null;
+  schoolName?: string | null;
+  campusName?: string | null;
   completedCount: number;
+  ratingAvg?: number | null;
+  ratingCount?: number | null;
+  cancelledCount?: number | null;
+  reportedCount?: number | null;
+  status?: string | null;
+  forbidPublish?: number | null;
+  forbidApply?: number | null;
+  muted?: number | null;
 }
 
 export interface TaskItem {
@@ -23,6 +34,7 @@ export interface TaskItem {
   building: string;
   classroom: string;
   computerLab?: number | null;
+  requirePhoto?: number | null;
   genderRequirement?: string | null;
   reward: number;
   reason?: string | null;
@@ -32,6 +44,7 @@ export interface TaskItem {
   applyCount: number;
   createdAt: string;
   publisher?: PublisherBrief | null;
+  applicant?: PublisherBrief | null;
   mine?: boolean;
   publisherConfirmed?: number;
   applicantConfirmed?: number;
@@ -41,6 +54,12 @@ export interface TaskItem {
   myApplicationStatus?: string | null;
   myApplicationId?: number | null;
   matchedApplicant?: boolean;
+  matchedApplicantNickname?: string | null;
+  matchedApplicantId?: number | null;
+  canReview?: boolean;
+  myReviewRating?: number | null;
+  favorited?: boolean;
+  fulfillPhotoUrl?: string | null;
 }
 
 export interface PageResult<T> {
@@ -55,6 +74,8 @@ export interface TaskQuery {
   taskDate?: string;
   courseId?: number;
   campusId?: number;
+  timeSlot?: string;
+  schoolId?: number;
   status?: string;
   page?: number;
   size?: number;
@@ -69,6 +90,7 @@ export interface TaskPayload {
   building: string;
   classroom: string;
   computerLab: boolean;
+  requirePhoto?: boolean;
   genderRequirement: string;
   reward: number;
   reason?: string;
@@ -125,10 +147,11 @@ export function deleteTask(id: number) {
   });
 }
 
-export function confirmTask(id: number) {
+export function confirmTask(id: number, objectKey: string) {
   return request<TaskItem>({
     url: `/api/tasks/${id}/confirm`,
-    method: "POST"
+    method: "POST",
+    data: { objectKey }
   });
 }
 
@@ -147,28 +170,28 @@ export function cancelTask(id: number, reason?: string) {
   });
 }
 
-export function listMyPublished(page = 1, size = 20) {
+export function listMyPublished(page = 1, size = 20, excludeCancelled = false) {
   return request<PageResult<TaskItem>>({
     url: "/api/me/published",
     method: "GET",
-    data: { page, size }
+    data: { page, size, ...(excludeCancelled ? { excludeCancelled: true } : {}) }
   });
 }
 
-export function listMyApplied(page = 1, size = 20) {
+export function listMyApplied(page = 1, size = 20, excludeCancelled = false) {
   return request<PageResult<TaskItem>>({
     url: "/api/me/applied",
     method: "GET",
-    data: { page, size }
+    data: { page, size, ...(excludeCancelled ? { excludeCancelled: true } : {}) }
   });
 }
 
 export const TASK_STATUS_TEXT: Record<string, string> = {
   WAITING: "待申请",
   APPLYING: "申请中",
-  MATCHED: "已匹配",
-  CONFIRMED: "已确认",
-  IN_PROGRESS: "进行中",
+  MATCHED: "待上课",
+  CONFIRMED: "待上课",
+  IN_PROGRESS: "上课中",
   COMPLETED: "已完成",
   CANCELLED: "已取消",
   EXPIRED: "已过期"

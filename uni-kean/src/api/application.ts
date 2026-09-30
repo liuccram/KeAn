@@ -9,6 +9,15 @@ export interface ApplicationItem {
   message?: string | null;
   status: string;
   createdAt: string;
+  completedCount?: number | null;
+  ratingAvg?: number | null;
+  ratingCount?: number | null;
+  cancelledCount?: number | null;
+  reportedCount?: number | null;
+  userStatus?: string | null;
+  forbidPublish?: number | null;
+  forbidApply?: number | null;
+  muted?: number | null;
 }
 
 export function applyTask(taskId: number, message?: string) {

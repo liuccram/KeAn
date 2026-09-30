@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { listCampuses } from "@/api/catalog";
-import { createTask, getTask, updateTask, type TaskPayload } from "@/api/task";
+import { createTask, getTask, listMyPublished, updateTask, type TaskItem, type TaskPayload } from "@/api/task";
 import { useUserStore } from "@/store/user";
-import { formatDate, tomorrowAt } from "@/utils/format";
+import { formatDate, locationLockReason, tomorrowAt } from "@/utils/format";
 import { useToast } from "wot-design-uni";
 import { onMounted, reactive, ref } from "vue";
 
@@ -13,6 +13,8 @@ const toast = useToast();
 const userStore = useUserStore();
 const formRef = ref();
 const loading = ref(false);
+const lockCore = ref(false);
+const lockLocation = ref(false);
 
 const model = reactive({
   courseName: "",
@@ -23,6 +25,7 @@ const model = reactive({
   building: "",
   classroom: "",
   computerLab: "0",
+  requirePhoto: "0",
   genderRequirement: "ANY",
   reward: "0",
   reason: "",
@@ -51,11 +54,7 @@ async function loadCatalog() {
   }
 }
 
-async function loadDetail() {
-  if (!props.taskId) {
-    return;
-  }
-  const task = await getTask(props.taskId);
+function fillFromTask(task: TaskItem) {
   model.courseName = task.courseName;
   model.campusId = task.campusId;
   model.taskDate = new Date(`${task.taskDate}T00:00:00`).getTime();
@@ -64,11 +63,33 @@ async function loadDetail() {
   model.building = task.building;
   model.classroom = task.classroom;
   model.computerLab = task.computerLab === 1 ? "1" : "0";
+  model.requirePhoto = task.requirePhoto === 1 ? "1" : "0";
   model.genderRequirement = task.genderRequirement || "ANY";
   model.reward = String(task.reward ?? 0);
   model.reason = task.reason || "";
   model.requirement = task.requirement || "";
   model.remark = task.remark || "";
+}
+
+async function loadDetail() {
+  if (!props.taskId) {
+    return;
+  }
+  const task = await getTask(props.taskId);
+  lockCore.value = !(task.status === "WAITING" && (task.applyCount || 0) === 0);
+  lockLocation.value = Boolean(locationLockReason(task));
+  fillFromTask(task);
+}
+
+async function copyLast() {
+  const data = await listMyPublished(1, 1);
+  const last = data.list[0];
+  if (!last) {
+    toast.info("还没有发布过代课");
+    return;
+  }
+  fillFromTask(last);
+  toast.success("已填入上次发布内容");
 }
 
 function buildPayload(): TaskPayload {
@@ -81,12 +102,36 @@ function buildPayload(): TaskPayload {
     building: model.building.trim(),
     classroom: model.classroom.trim(),
     computerLab: String(model.computerLab) === "1",
+    requirePhoto: String(model.requirePhoto) === "1",
     genderRequirement: String(model.genderRequirement),
     reward: Number(model.reward || 0),
     reason: model.reason.trim() || undefined,
     requirement: model.requirement.trim() || undefined,
     remark: model.remark.trim() || undefined
   };
+}
+
+function toMinutes(value: string | number) {
+  const text = String(value || "").slice(0, 5);
+  const [hour, minute] = text.split(":").map((part) => Number(part));
+  if (Number.isNaN(hour) || Number.isNaN(minute)) {
+    return 0;
+  }
+  return hour * 60 + minute;
+}
+
+function addMinutes(value: string, extra: number) {
+  const total = Math.min(23 * 60 + 59, toMinutes(value) + extra);
+  const hour = String(Math.floor(total / 60)).padStart(2, "0");
+  const minute = String(total % 60).padStart(2, "0");
+  return `${hour}:${minute}`;
+}
+
+function onStartConfirm() {
+  if (toMinutes(model.endTime) <= toMinutes(model.startTime)) {
+    model.endTime = addMinutes(String(model.startTime).slice(0, 5), 40);
+    toast.info("下课时间不得早于上课时间，已自动后移");
+  }
 }
 
 function handleSubmit() {
@@ -96,12 +141,23 @@ function handleSubmit() {
       if (!valid) {
         return;
       }
+      if (toMinutes(model.endTime) <= toMinutes(model.startTime)) {
+        toast.error("下课时间不得早于上课时间");
+        return;
+      }
       loading.value = true;
       try {
         const payload = buildPayload();
         const saved = props.taskId ? await updateTask(props.taskId, payload) : await createTask(payload);
-        toast.success(props.taskId ? "已保存" : "发布成功");
-        emit("success", saved.id);
+        if (props.taskId) {
+          toast.success("已保存");
+          emit("success", saved.id);
+        } else {
+          uni.showToast({ title: "发布成功", icon: "success", duration: 1500 });
+          setTimeout(() => {
+            emit("success", saved.id);
+          }, 800);
+        }
       } catch (error) {
         toast.error((error as Error).message || "提交失败");
       } finally {
@@ -131,6 +187,7 @@ onMounted(async () => {
         prop="courseName"
         clearable
         placeholder="请输入课程名称"
+        :disabled="lockCore"
         :rules="[{ required: true, message: '请填写课程名' }]"
       />
       <wd-datetime-picker
@@ -140,6 +197,7 @@ onMounted(async () => {
         label-width="80px"
         prop="taskDate"
         :min-date="minDate"
+        :disabled="lockCore"
         :rules="[{ required: true, message: '请选择上课日期' }]"
       />
       <wd-datetime-picker
@@ -148,7 +206,9 @@ onMounted(async () => {
         label="开始时间"
         label-width="80px"
         prop="startTime"
+        :disabled="lockCore"
         :rules="[{ required: true, message: '请选择开始时间' }]"
+        @confirm="onStartConfirm"
       />
       <wd-datetime-picker
         v-model="model.endTime"
@@ -156,7 +216,14 @@ onMounted(async () => {
         label="结束时间"
         label-width="80px"
         prop="endTime"
-        :rules="[{ required: true, message: '请选择结束时间' }]"
+        :disabled="lockCore"
+        :rules="[
+          { required: true, message: '请选择结束时间' },
+          {
+            validator: (value: string) => toMinutes(value) > toMinutes(model.startTime),
+            message: '下课时间不得早于上课时间'
+          }
+        ]"
       />
       <wd-picker
         v-model="model.campusId"
@@ -164,6 +231,7 @@ onMounted(async () => {
         label-width="80px"
         prop="campusId"
         :columns="campusColumns"
+        :disabled="lockLocation"
         :rules="[{ required: true, message: '请选择校区' }]"
       />
       <wd-input
@@ -173,6 +241,7 @@ onMounted(async () => {
         prop="building"
         clearable
         placeholder="例如 教学楼A"
+        :disabled="lockLocation"
         :rules="[{ required: true, message: '请填写教学楼' }]"
       />
       <wd-input
@@ -182,6 +251,7 @@ onMounted(async () => {
         prop="classroom"
         clearable
         placeholder="例如 101"
+        :disabled="lockLocation"
         :rules="[{ required: true, message: '请填写教室' }]"
       />
       <wd-picker
@@ -190,14 +260,26 @@ onMounted(async () => {
         label-width="80px"
         prop="computerLab"
         :columns="computerLabColumns"
+        :disabled="lockLocation"
         :rules="[{ required: true, message: '请选择是否上机' }]"
       />
+      <wd-picker
+        v-model="model.requirePhoto"
+        label="是否拍照"
+        label-width="80px"
+        prop="requirePhoto"
+        :columns="computerLabColumns"
+        :disabled="lockCore"
+        :rules="[{ required: true, message: '请选择是否拍照' }]"
+      />
+      <view class="hint">选择“是” 则代课者须在开课前 5 分钟至下课前上传现场照片；选择“否” 则下课后可直接确认完成。</view>
       <wd-picker
         v-model="model.genderRequirement"
         label="性别要求"
         label-width="80px"
         prop="genderRequirement"
         :columns="genderRequirementColumns"
+        :disabled="lockCore"
         :rules="[{ required: true, message: '请选择性别要求' }]"
       />
       <wd-input
@@ -209,11 +291,13 @@ onMounted(async () => {
         placeholder="仅展示，允许 0"
         :rules="[{ required: true, message: '请填写酬谢金额' }]"
       />
+      <view class="hint">酬谢仅展示，可私信自行结算{{ lockLocation ? "已有人接代课，开课前 1 小时内不能修改地点。" : lockCore ? "已有申请后只能改地点、备注和酬谢，是否拍照不可再改。" : "" }}</view>
       <wd-textarea v-model="model.reason" label="代课原因" label-width="80px" placeholder="选填" :maxlength="500" />
       <wd-textarea v-model="model.requirement" label="代课要求" label-width="80px" placeholder="选填" :maxlength="500" />
       <wd-textarea v-model="model.remark" label="备注" label-width="80px" placeholder="选填" :maxlength="500" />
     </wd-cell-group>
     <view class="footer">
+      <wd-button v-if="!taskId" plain size="large" block :disabled="loading" @click="copyLast">填入上次发布</wd-button>
       <wd-button type="primary" size="large" block :loading="loading" @click="handleSubmit">
         {{ taskId ? "保存修改" : "发布代课" }}
       </wd-button>
@@ -224,5 +308,14 @@ onMounted(async () => {
 <style scoped>
 .footer {
   padding: 24px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hint {
+  padding: 8px 16px 0;
+  color: #86909c;
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>

@@ -4,6 +4,12 @@ import type { AuthUser } from "@/utils/storage";
 export interface LoginPayload {
   username: string;
   password: string;
+  turnstileToken?: string;
+}
+
+export interface TurnstileConfig {
+  enabled: boolean;
+  siteKey?: string | null;
 }
 
 export interface RegisterPayload {
@@ -13,7 +19,9 @@ export interface RegisterPayload {
   gender: string;
   schoolId: number;
   campusId: number;
-  phone?: string;
+  email: string;
+  smsCode: string;
+  turnstileToken?: string;
 }
 
 export interface LoginResult {
@@ -26,6 +34,13 @@ export function login(payload: LoginPayload) {
     url: "/api/auth/login",
     method: "POST",
     data: payload
+  });
+}
+
+export function fetchTurnstileConfig() {
+  return request<TurnstileConfig>({
+    url: "/api/auth/turnstile",
+    method: "GET"
   });
 }
 
@@ -44,9 +59,55 @@ export function fetchMe() {
   });
 }
 
+export interface UpdateProfilePayload {
+  nickname: string;
+  gender: string;
+  schoolId: number;
+  campusId: number;
+}
+
+export function updateProfile(payload: UpdateProfilePayload) {
+  return request<AuthUser>({
+    url: "/api/me/profile",
+    method: "PUT",
+    data: payload
+  });
+}
+
+export function updateAvatar(objectKey: string) {
+  return request<AuthUser>({
+    url: "/api/me/avatar",
+    method: "PUT",
+    data: { objectKey }
+  });
+}
+
+export function updateCover(objectKey?: string | null) {
+  return request<AuthUser>({
+    url: "/api/me/cover",
+    method: "PUT",
+    data: { objectKey: objectKey || "" }
+  });
+}
+
+export function changeEmail(payload: { email: string; smsCode: string }) {
+  return request<AuthUser>({
+    url: "/api/me/email",
+    method: "PUT",
+    data: payload
+  });
+}
+
 export function logout() {
   return request<null>({
     url: "/api/auth/logout",
+    method: "POST"
+  });
+}
+
+export function heartbeat() {
+  return request<null>({
+    url: "/api/me/heartbeat",
     method: "POST"
   });
 }

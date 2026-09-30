@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { listMyPublished, TASK_STATUS_TEXT, type TaskItem } from "@/api/task";
 import { formatReward } from "@/utils/format";
+import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { onShow } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
 import { ref } from "vue";
@@ -10,14 +11,19 @@ const list = ref<TaskItem[]>([]);
 const loading = ref(false);
 
 async function load() {
-  loading.value = true;
+  const first = list.value.length === 0;
+  if (first) {
+    loading.value = true;
+  }
   try {
     const data = await listMyPublished();
     list.value = data.list;
   } catch (error) {
     toast.error((error as Error).message || "加载失败");
   } finally {
-    loading.value = false;
+    if (first) {
+      loading.value = false;
+    }
   }
 }
 
@@ -27,6 +33,12 @@ function goDetail(id: number) {
 
 onShow(() => {
   load();
+});
+
+useLiveUpdates((event) => {
+  if (!event || event.type === "NOTICE") {
+    load();
+  }
 });
 </script>
 

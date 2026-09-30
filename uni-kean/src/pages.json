@@ -22,7 +22,22 @@
     {
       "path": "pages/message/index",
       "style": {
-        "navigationBarTitleText": "消息"
+        "navigationBarTitleText": "消息",
+        "enablePullDownRefresh": true,
+        "backgroundColor": "#F5F6F8",
+        "backgroundColorTop": "#FFFFFF"
+      }
+    },
+    {
+      "path": "pages/message/chat",
+      "style": {
+        "navigationBarTitleText": "私聊"
+      }
+    },
+    {
+      "path": "pages/message/peers",
+      "style": {
+        "navigationBarTitleText": "选择同学"
       }
     },
     {
@@ -47,9 +62,29 @@
       }
     },
     {
+      "path": "pages/auth/forgot",
+      "style": {
+        "navigationBarTitleText": "忘记密码",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/auth/turnstile",
+      "style": {
+        "navigationBarTitleText": "真人验证",
+        "navigationStyle": "custom"
+      }
+    },
+    {
       "path": "pages/task/detail",
       "style": {
         "navigationBarTitleText": "代课详情"
+      }
+    },
+    {
+      "path": "pages/task/rate",
+      "style": {
+        "navigationBarTitleText": "打星评价"
       }
     },
     {
@@ -71,6 +106,12 @@
       }
     },
     {
+      "path": "pages/mine/ongoing",
+      "style": {
+        "navigationBarTitleText": "进行中的代课"
+      }
+    },
+    {
       "path": "pages/mine/profile",
       "style": {
         "navigationBarTitleText": "个人资料"
@@ -89,6 +130,86 @@
       }
     },
     {
+      "path": "pages/mine/security",
+      "style": {
+        "navigationBarTitleText": "账号与安全"
+      }
+    },
+    {
+      "path": "pages/mine/devices",
+      "style": {
+        "navigationBarTitleText": "管理登录设备"
+      }
+    },
+    {
+      "path": "pages/mine/more",
+      "style": {
+        "navigationBarTitleText": "更多"
+      }
+    },
+    {
+      "path": "pages/mine/privacy",
+      "style": {
+        "navigationBarTitleText": "隐私"
+      }
+    },
+    {
+      "path": "pages/mine/user",
+      "style": {
+        "navigationBarTitleText": "同学主页"
+      }
+    },
+    {
+      "path": "pages/mine/display/index",
+      "style": {
+        "navigationBarTitleText": "界面与显示"
+      }
+    },
+    {
+      "path": "pages/mine/display/theme",
+      "style": {
+        "navigationBarTitleText": "深浅色模式"
+      }
+    },
+    {
+      "path": "pages/mine/display/font",
+      "style": {
+        "navigationBarTitleText": "字体大小"
+      }
+    },
+    {
+      "path": "pages/mine/display/lang",
+      "style": {
+        "navigationBarTitleText": "语言"
+      }
+    },
+    {
+      "path": "pages/mine/display/cover",
+      "style": {
+        "navigationBarTitleText": "我的页背景"
+      }
+    },
+    {
+      "path": "pages/mine/display/wallpaper",
+      "style": {
+        "navigationBarTitleText": "页面壁纸"
+      }
+    },
+    {
+      "path": "pages/mine/crop",
+      "style": {
+        "navigationBarTitleText": "选择展示区域",
+        "navigationBarBackgroundColor": "#111111",
+        "navigationBarTextStyle": "white"
+      }
+    },
+    {
+      "path": "pages/mine/password",
+      "style": {
+        "navigationBarTitleText": "修改密码"
+      }
+    },
+    {
       "path": "pages/mine/favorites",
       "style": {
         "navigationBarTitleText": "我的收藏"
@@ -101,9 +222,28 @@
       }
     },
     {
+      "path": "pages/mine/report-hub",
+      "style": {
+        "navigationBarTitleText": "举报与反馈",
+        "backgroundColor": "#F5F6F8"
+      }
+    },
+    {
       "path": "pages/mine/feedback",
       "style": {
-        "navigationBarTitleText": "举报与反馈"
+        "navigationBarTitleText": "举报"
+      }
+    },
+    {
+      "path": "pages/mine/advice",
+      "style": {
+        "navigationBarTitleText": "反馈"
+      }
+    },
+    {
+      "path": "pages/mine/report",
+      "style": {
+        "navigationBarTitleText": "举报"
       }
     }
   ],

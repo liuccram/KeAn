@@ -1,8 +1,15 @@
 import { request } from "@/utils/request";
 
+export interface ProvinceItem {
+  id: number;
+  name: string;
+  sort?: number;
+}
+
 export interface SchoolItem {
   id: number;
   name: string;
+  provinceId?: number;
 }
 
 export interface CampusItem {
@@ -18,8 +25,16 @@ export interface CourseItem {
   courseName: string;
 }
 
-export function listSchools() {
-  return request<SchoolItem[]>({ url: "/api/schools", method: "GET" });
+export function listProvinces() {
+  return request<ProvinceItem[]>({ url: "/api/provinces", method: "GET" });
+}
+
+export function listSchools(provinceId?: number) {
+  return request<SchoolItem[]>({
+    url: "/api/schools",
+    method: "GET",
+    data: provinceId ? { provinceId } : undefined
+  });
 }
 
 export function listCampuses(schoolId?: number) {

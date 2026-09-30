@@ -1,0 +1,75 @@
+html,
+body {
+  background-color: #f5f6f8 !important;
+}
+
+html.kean-meteor,
+html.kean-meteor body {
+  background-color: #f5f6f8 !important;
+}
+
+html.kean-dark {
+  --kean-page-bg: #111113;
+  --kean-text: #f2f3f5;
+  --wot-color-white: #1c1c1e;
+  --wot-cell-title-color: #f2f3f5;
+  --wot-cell-value-color: rgba(242, 243, 245, 0.78);
+  --wot-cell-label-color: rgba(242, 243, 245, 0.58);
+  --wot-color-title: #f2f3f5;
+  --wot-color-content: rgba(242, 243, 245, 0.86);
+  --wot-color-secondary: rgba(242, 243, 245, 0.64);
+  --wot-color-aid: rgba(242, 243, 245, 0.48);
+  --wot-color-tip: #8e8e93;
+  color-scheme: dark;
+}
+
+html.kean-dark uni-page-body,
+html.kean-dark .page:not(.skinned) {
+  background-color: #111113 !important;
+  color: #f2f3f5;
+}
+
+html.kean-dark .page:not(.skinned) .card,
+html.kean-dark .page:not(.skinned) .search,
+html.kean-dark .page:not(.skinned) .wd-cell-group,
+html.kean-dark .page:not(.skinned) .wd-cell-group__body,
+html.kean-dark .page:not(.skinned) .wd-cell,
+html.kean-dark .page:not(.skinned) .announce-window {
+  background-color: #1c1c1e !important;
+}
+
+html.kean-dark .page:not(.skinned) .title,
+html.kean-dark .page:not(.skinned) .course,
+html.kean-dark .page:not(.skinned) .nickname,
+html.kean-dark .page:not(.skinned) .wd-cell__title {
+  color: #f2f3f5 !important;
+}
+
+html.kean-dark .page:not(.skinned) .meta,
+html.kean-dark .page:not(.skinned) .hint,
+html.kean-dark .page:not(.skinned) .wd-cell__value,
+html.kean-dark .page:not(.skinned) .wd-cell__label {
+  color: rgba(242, 243, 245, 0.68) !important;
+}
+
+html.kean-font-s {
+  --kean-fs: 14px;
+  --wot-cell-title-fs: 14px;
+  --wot-cell-value-fs: 13px;
+}
+
+html.kean-font-l {
+  --kean-fs: 18px;
+  --wot-cell-title-fs: 17px;
+  --wot-cell-value-fs: 16px;
+}
+
+html.kean-font-s .course,
+html.kean-font-s .title {
+  font-size: 15px !important;
+}
+
+html.kean-font-l .course,
+html.kean-font-l .title {
+  font-size: 18px !important;
+}

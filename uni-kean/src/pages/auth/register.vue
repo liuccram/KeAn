@@ -1,44 +1,87 @@
 <script setup lang="ts">
-import { register } from "@/api/auth";
-import { listCampuses, listSchools } from "@/api/catalog";
+import { register, fetchTurnstileConfig } from "@/api/auth";
+import { listCampuses, listProvinces, listSchools } from "@/api/catalog";
+import { sendSms } from "@/api/sms";
+import CodeBoxes from "@/components/CodeBoxes.vue";
+import TurnstileChallenge from "@/components/TurnstileChallenge.vue";
+import { normalizeQqEmail } from "@/utils/qqEmail";
 import { useToast } from "wot-design-uni";
-import { onMounted, reactive, ref, watch } from "vue";
+import { onMounted, onUnmounted, reactive, ref, watch } from "vue";
 
 const toast = useToast();
 const loading = ref(false);
+const sending = ref(false);
+const countdown = ref(0);
 const formRef = ref();
+const turnstileRef = ref<{ reset: () => void } | null>(null);
+let timer: ReturnType<typeof setInterval> | null = null;
 const model = reactive({
   username: "",
   password: "",
   nickname: "",
-  phone: "",
+  email: "",
+  smsCode: "",
+  turnstileToken: "",
   gender: "" as string,
-  schoolId: 1 as number | string,
-  campusId: 1 as number | string
+  provinceId: "" as number | string,
+  schoolId: "" as number | string,
+  campusId: "" as number | string
+});
+const captcha = reactive({
+  enabled: true,
+  siteKey: "",
+  loaded: false
 });
 
-const schoolColumns = ref([{ label: "演示大学", value: 1 }]);
-const campusColumns = ref([{ label: "主校区", value: 1 }]);
+const provinceColumns = ref<{ label: string; value: number }[]>([]);
+const schoolColumns = ref<{ label: string; value: number }[]>([]);
+const campusColumns = ref<{ label: string; value: number }[]>([]);
 const genderColumns = [
   { label: "男", value: "MALE" },
   { label: "女", value: "FEMALE" }
 ];
 
+async function loadProvinces() {
+  const provinces = await listProvinces();
+  provinceColumns.value = provinces.map((item) => ({ label: item.name, value: item.id }));
+}
+
 async function loadSchools() {
-  const schools = await listSchools();
+  const provinceId = Number(model.provinceId);
+  if (!provinceId) {
+    schoolColumns.value = [];
+    model.schoolId = "";
+    campusColumns.value = [];
+    model.campusId = "";
+    return;
+  }
+  const schools = await listSchools(provinceId);
   schoolColumns.value = schools.map((item) => ({ label: item.name, value: item.id }));
-  if (!schools.some((item) => item.id === Number(model.schoolId)) && schools.length) {
-    model.schoolId = schools[0].id;
+  if (!schools.some((item) => item.id === Number(model.schoolId))) {
+    model.schoolId = schools[0]?.id || "";
   }
 }
 
 async function loadCampuses() {
-  const campuses = await listCampuses(Number(model.schoolId) || 1);
+  const schoolId = Number(model.schoolId);
+  if (!schoolId) {
+    campusColumns.value = [];
+    model.campusId = "";
+    return;
+  }
+  const campuses = await listCampuses(schoolId);
   campusColumns.value = campuses.map((item) => ({ label: item.name, value: item.id }));
-  if (!campuses.some((item) => item.id === Number(model.campusId)) && campuses.length) {
-    model.campusId = campuses[0].id;
+  if (!campuses.some((item) => item.id === Number(model.campusId))) {
+    model.campusId = campuses[0]?.id || "";
   }
 }
+
+watch(
+  () => model.provinceId,
+  () => {
+    loadSchools().catch(() => undefined);
+  }
+);
 
 watch(
   () => model.schoolId,
@@ -48,16 +91,92 @@ watch(
 );
 
 onMounted(() => {
-  loadSchools()
-    .then(() => loadCampuses())
-    .catch(() => undefined);
+  loadProvinces().catch(() => undefined);
+  fetchTurnstileConfig()
+    .then((data) => {
+      captcha.enabled = data.enabled;
+      captcha.siteKey = data.siteKey || "";
+    })
+    .catch(() => {
+      captcha.enabled = true;
+      captcha.siteKey = "";
+    })
+    .finally(() => {
+      captcha.loaded = true;
+    });
 });
+
+onUnmounted(() => {
+  if (timer) {
+    clearInterval(timer);
+  }
+});
+
+function startCountdown() {
+  countdown.value = 60;
+  if (timer) {
+    clearInterval(timer);
+  }
+  timer = setInterval(() => {
+    countdown.value -= 1;
+    if (countdown.value <= 0 && timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }, 1000);
+}
+
+function requireCaptcha(): boolean {
+  if (captcha.enabled && !model.turnstileToken) {
+    toast.error(captcha.siteKey ? "请完成真人验证" : "人机验证未配置");
+    return false;
+  }
+  return true;
+}
+
+async function handleSendSms() {
+  const email = normalizeQqEmail(model.email);
+  if (!email) {
+    toast.error("请填写 5-11 位 QQ 号");
+    return;
+  }
+  if (sending.value || countdown.value > 0) {
+    return;
+  }
+  if (!requireCaptcha()) {
+    return;
+  }
+  sending.value = true;
+  try {
+    await sendSms({ email, scene: "REGISTER", turnstileToken: model.turnstileToken || undefined });
+    turnstileRef.value?.reset();
+    startCountdown();
+    toast.success(`验证码已发送到 ${email}`);
+  } catch (error) {
+    turnstileRef.value?.reset();
+    toast.error((error as Error).message || "发送失败");
+  } finally {
+    sending.value = false;
+  }
+}
 
 function handleRegister() {
   formRef.value
     .validate()
     .then(async ({ valid }: { valid: boolean }) => {
       if (!valid) {
+        return;
+      }
+      const email = normalizeQqEmail(model.email);
+      if (!email) {
+        toast.error("请填写 5-11 位 QQ 号");
+        return;
+      }
+      if (!/^\d{6}$/.test(model.smsCode)) {
+        toast.error("请填写 6 位验证码");
+        return;
+      }
+      if (!requireCaptcha()) {
         return;
       }
       loading.value = true;
@@ -69,13 +188,16 @@ function handleRegister() {
           gender: String(model.gender),
           schoolId: Number(model.schoolId),
           campusId: Number(model.campusId),
-          phone: model.phone || undefined
+          email,
+          smsCode: model.smsCode,
+          turnstileToken: model.turnstileToken || undefined
         });
         toast.success("注册成功，请登录");
         setTimeout(() => {
           uni.redirectTo({ url: "/pages/auth/login" });
         }, 400);
       } catch (error) {
+        turnstileRef.value?.reset();
         toast.error((error as Error).message || "注册失败");
       } finally {
         loading.value = false;
@@ -90,7 +212,7 @@ function handleRegister() {
     <wd-navbar title="注册" left-arrow safe-area-inset-top @click-left="uni.navigateBack()" />
     <view class="hero">
       <view class="title">创建账号</view>
-      <view class="sub">仅支持同校学生注册</view>
+      <view class="sub">仅支持同校学生注册，需 QQ 邮箱验证码</view>
     </view>
     <wd-form ref="formRef" :model="model" error-type="toast">
       <wd-cell-group border>
@@ -131,18 +253,47 @@ function handleRegister() {
           :rules="[{ required: true, message: '请选择性别' }]"
         />
         <wd-input
-          v-model="model.phone"
-          label="手机号"
+          v-model="model.email"
+          label="QQ邮箱"
           label-width="80px"
-          prop="phone"
+          prop="email"
           clearable
-          placeholder="选填"
+          placeholder="请填写正确的qq邮箱"
+          :rules="[{ required: true, message: '请填写 QQ 号' }]"
+        />
+      </wd-cell-group>
+      <view class="code-block">
+        <view class="code-head">
+          <text>邮箱验证码</text>
+          <wd-button size="small" :loading="sending" :disabled="countdown > 0" @click="handleSendSms">
+            {{ countdown > 0 ? `${countdown}s` : "获取验证码" }}
+          </wd-button>
+        </view>
+        <CodeBoxes v-model="model.smsCode" />
+      </view>
+      <TurnstileChallenge
+        v-if="captcha.enabled && captcha.siteKey"
+        ref="turnstileRef"
+        box-id="kean-ts-register"
+        :site-key="captcha.siteKey"
+        v-model="model.turnstileToken"
+      />
+      <view v-else-if="captcha.loaded && captcha.enabled" class="captcha-hint">人机验证未配置，暂无法注册</view>
+      <wd-cell-group border>
+        <wd-picker
+          v-model="model.provinceId"
+          label="省份"
+          label-width="80px"
+          prop="provinceId"
+          :columns="provinceColumns"
+          :rules="[{ required: true, message: '请先选择省份' }]"
         />
         <wd-picker
           v-model="model.schoolId"
           label="学校"
           label-width="80px"
           prop="schoolId"
+          :disabled="!model.provinceId"
           :columns="schoolColumns"
           :rules="[{ required: true, message: '请选择学校' }]"
         />
@@ -185,5 +336,24 @@ function handleRegister() {
 }
 .footer {
   padding: 24px 16px;
+}
+.code-block {
+  margin: 12px 16px 0;
+  padding: 14px 16px 16px;
+  background: #fff;
+  border-radius: 8px;
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: #1d2129;
+  font-size: 14px;
+}
+.captcha-hint {
+  padding: 12px 16px 0;
+  color: #ef4444;
+  font-size: 13px;
 }
 </style>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { logout } from "@/api/auth";
 import { useUserStore } from "@/store/user";
+import { markGestureLocked } from "@/utils/gesture";
+import { refreshMessageBadge } from "@/utils/messageBadge";
 import { useToast } from "wot-design-uni";
 
 const toast = useToast();
@@ -17,6 +19,8 @@ async function handleLogout() {
     // 本地也退出
   }
   userStore.logoutLocal();
+  markGestureLocked();
+  refreshMessageBadge();
   toast.success("已退出");
   setTimeout(() => {
     uni.switchTab({ url: "/pages/mine/index" });
@@ -27,7 +31,8 @@ async function handleLogout() {
 <template>
   <view class="page">
     <wd-cell-group border>
-      <wd-cell title="账号与安全" is-link @click="comingSoon" />
+      <wd-cell title="账号与安全" is-link @click="uni.navigateTo({ url: '/pages/mine/security' })" />
+      <wd-cell title="更多" is-link @click="uni.navigateTo({ url: '/pages/mine/more' })" />
       <wd-cell title="通知设置" is-link @click="comingSoon" />
       <wd-cell title="关于课安" is-link @click="comingSoon" />
       <wd-cell title="隐私政策" is-link @click="comingSoon" />

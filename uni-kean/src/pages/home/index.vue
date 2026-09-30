@@ -1,39 +1,126 @@
 <script setup lang="ts">
+import { addFavorite, removeFavorite } from "@/api/favorite";
+import { listActiveAnnouncements, type ActiveAnnouncement } from "@/api/announcement";
 import { listCampuses } from "@/api/catalog";
 import { listTasks, TASK_STATUS_TEXT, type TaskItem } from "@/api/task";
+import OngoingTasks from "@/components/OngoingTasks.vue";
+import PageBackdrop from "@/components/PageBackdrop.vue";
+import { useLiveUpdates } from "@/composables/useLiveUpdates";
+import { useNowTick } from "@/composables/useNowTick";
+import { useOngoingTasks } from "@/composables/useOngoingTasks";
+import { usePageWallpaper } from "@/composables/usePageWallpaper";
+import { useUserStore } from "@/store/user";
+import { t } from "@/utils/i18n";
 import { formatDate, formatReward } from "@/utils/format";
+import { refreshMessageBadge } from "@/utils/messageBadge";
+import { classCountdown, todayText } from "@/utils/taskAction";
 import { onPullDownRefresh, onReachBottom, onShow } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
-import { onMounted, reactive, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 
 const toast = useToast();
+const userStore = useUserStore();
+const { wallpaperOn, wallpaperImage, prefs } = usePageWallpaper();
+const { items: ongoing, load: loadOngoing } = useOngoingTasks();
+const nowTick = useNowTick();
 const loading = ref(false);
 const finished = ref(false);
 const list = ref<TaskItem[]>([]);
 const keyword = ref("");
 const filter = reactive({
   campusId: 0 as number,
-  status: "ALL"
+  status: "OPEN",
+  timeSlot: "ALL"
 });
-const selectedDate = ref("");
-const datePickerValue = ref<number | string>("");
+const selectedDate = ref(todayText());
+const datePickerValue = ref<number | string>(Date.now());
 const page = ref(1);
 const total = ref(0);
+const announcement = ref<ActiveAnnouncement | null>(null);
+const DISMISS_KEY = "kean_dismissed_announcements";
 
-const campusOptions = ref([{ label: "全部校区", value: 0 }]);
-const statusOptions = [
-  { label: "可申请", value: "ALL" },
-  { label: "待申请", value: "WAITING" },
-  { label: "申请中", value: "APPLYING" }
-];
+const campusOptions = ref([{ label: t("allCampuses"), value: 0 }]);
+const statusOptions = computed(() => [
+  { label: t("allStatus", prefs.lang), value: "ALL" },
+  { label: t("openStatus", prefs.lang), value: "OPEN" },
+  { label: t("mineStatus", prefs.lang), value: "MINE" }
+]);
+const dateLabel = computed(() => t("classDate", prefs.lang));
+const datePlaceholder = computed(() => t("datePlaceholder", prefs.lang));
+const todayLabel = computed(() => t("todayOnly", prefs.lang));
+const allDatesLabel = computed(() => t("allDates", prefs.lang));
+const isToday = computed(() => selectedDate.value === todayText(nowTick.value));
+const timeOptions = computed(() => [
+  { label: t("allTimes", prefs.lang), value: "ALL" },
+  { label: "6-8点", value: "6-8" },
+  { label: "8-10点", value: "8-10" },
+  { label: "10-12点", value: "10-12" },
+  { label: "13-15点", value: "13-15" },
+  { label: "15-17点", value: "15-17" },
+  { label: "17-20点", value: "17-20" },
+  { label: "20-22点", value: "20-22" }
+]);
+
+function dismissedIds(): number[] {
+  try {
+    const raw = uni.getStorageSync(DISMISS_KEY);
+    return Array.isArray(raw) ? raw.map(Number).filter((id) => !Number.isNaN(id)) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function loadAnnouncement() {
+  try {
+    const items = await listActiveAnnouncements();
+    const seen = new Set(dismissedIds());
+    announcement.value = (items || []).find((item) => !seen.has(item.id)) || null;
+  } catch {
+    announcement.value = null;
+  }
+}
+
+function dismissAnnouncement() {
+  if (!announcement.value) {
+    return;
+  }
+  uni.setStorageSync(DISMISS_KEY, [...new Set([...dismissedIds(), announcement.value.id])]);
+  announcement.value = null;
+}
 
 function goDetail(id: number) {
   uni.navigateTo({ url: `/pages/task/detail?id=${id}` });
 }
 
+async function toggleFavorite(item: TaskItem) {
+  if (!userStore.isLoggedIn.value) {
+    uni.navigateTo({ url: "/pages/auth/login" });
+    return;
+  }
+  if (item.mine) {
+    toast.error("不能收藏自己发布的代课");
+    return;
+  }
+  try {
+    if (item.favorited) {
+      await removeFavorite(item.id);
+      item.favorited = false;
+    } else {
+      await addFavorite(item.id);
+      item.favorited = true;
+    }
+  } catch (error) {
+    toast.error((error as Error).message || "收藏失败");
+  }
+}
+
 async function loadCatalog() {
-  const campuses = await listCampuses();
-  campusOptions.value = [{ label: "全部校区", value: 0 }, ...campuses.map((item) => ({ label: item.name, value: item.id }))];
+  const schoolId = userStore.state.user?.schoolId;
+  const campuses = await listCampuses(schoolId || undefined);
+  campusOptions.value = [{ label: t("allCampuses", prefs.lang), value: 0 }, ...campuses.map((item) => ({ label: item.name, value: item.id }))];
+  if (filter.campusId && !campuses.some((item) => item.id === Number(filter.campusId))) {
+    filter.campusId = 0;
+  }
 }
 
 async function loadList(reset = false) {
@@ -49,8 +136,10 @@ async function loadList(reset = false) {
     const data = await listTasks({
       keyword: keyword.value.trim() || undefined,
       campusId: Number(filter.campusId) || undefined,
-      status: filter.status === "ALL" ? undefined : filter.status,
+      schoolId: Number(userStore.state.user?.schoolId) || undefined,
+      status: filter.status,
       taskDate: selectedDate.value || undefined,
+      timeSlot: filter.timeSlot && filter.timeSlot !== "ALL" ? filter.timeSlot : undefined,
       page: page.value,
       size: 10
     });
@@ -70,6 +159,10 @@ function onSearch() {
 }
 
 function onFilterChange() {
+  if (filter.status === "MINE" && !userStore.isLoggedIn.value) {
+    uni.navigateTo({ url: "/pages/auth/login" });
+    return;
+  }
   loadList(true);
 }
 
@@ -89,16 +182,46 @@ function onDateClear() {
   loadList(true);
 }
 
-onShow(() => {
+function useToday() {
+  const now = Date.now();
+  datePickerValue.value = now;
+  selectedDate.value = formatDate(now);
   loadList(true);
+}
+
+function countdownOf(item: TaskItem) {
+  return classCountdown(item, nowTick.value);
+}
+
+onShow(() => {
+  loadCatalog()
+    .catch(() => undefined)
+    .finally(() => {
+      loadList(true);
+    });
+  loadOngoing();
+  refreshMessageBadge();
+  loadAnnouncement();
 });
 
-onMounted(() => {
-  loadCatalog().catch(() => undefined);
-});
+useLiveUpdates((event) => {
+  if (!event) {
+    loadOngoing();
+    return;
+  }
+  if (event.type === "NOTICE" && (event.bizType === "TASK" || event.noticeType === "APPLICATION" || event.noticeType === "TASK")) {
+    loadList(true);
+    loadOngoing();
+  }
+}, 0);
 
 onPullDownRefresh(() => {
-  loadList(true);
+  loadCatalog()
+    .catch(() => undefined)
+    .finally(() => {
+      loadList(true);
+    });
+  loadOngoing();
 });
 
 onReachBottom(() => {
@@ -111,50 +234,184 @@ onReachBottom(() => {
 </script>
 
 <template>
-  <view class="page">
+  <view class="page" :class="{ skinned: wallpaperOn }">
+    <PageBackdrop :src="wallpaperImage" />
+    <view v-if="announcement" class="announce-mask">
+      <view class="announce-window">
+        <view class="announce-kicker">平台公告</view>
+        <view class="announce-title">{{ announcement.title }}</view>
+        <scroll-view class="announce-body" scroll-y>
+          <text class="announce-text">{{ announcement.content }}</text>
+        </scroll-view>
+        <view class="announce-ok" @click="dismissAnnouncement">知道了</view>
+      </view>
+    </view>
     <view class="search">
       <wd-search v-model="keyword" placeholder="搜索课程 / 教学楼 / 教室" hide-cancel @search="onSearch" @clear="onSearch" />
     </view>
-    <wd-drop-menu>
-      <wd-drop-menu-item v-model="filter.campusId" :options="campusOptions" @change="onFilterChange" />
-      <wd-drop-menu-item v-model="filter.status" :options="statusOptions" @change="onFilterChange" />
-    </wd-drop-menu>
-    <wd-datetime-picker
-      v-model="datePickerValue"
-      type="date"
-      label="上课日期"
-      placeholder="不限日期"
-      clearable
-      @confirm="onDateConfirm"
-      @clear="onDateClear"
-    />
+    <view class="home-filters">
+      <wd-drop-menu>
+        <wd-drop-menu-item v-model="filter.campusId" :options="campusOptions" @change="onFilterChange" />
+        <wd-drop-menu-item v-model="filter.status" :options="statusOptions" @change="onFilterChange" />
+        <wd-drop-menu-item v-model="filter.timeSlot" :options="timeOptions" @change="onFilterChange" />
+      </wd-drop-menu>
+      <wd-datetime-picker
+        v-model="datePickerValue"
+        type="date"
+        :label="dateLabel"
+        :placeholder="datePlaceholder"
+        clearable
+        @confirm="onDateConfirm"
+        @clear="onDateClear"
+      />
+    </view>
+    <view class="quick">
+      <view class="chip" :class="{ on: isToday }" @click="useToday">{{ todayLabel }}</view>
+      <view class="chip" :class="{ on: !selectedDate }" @click="onDateClear">{{ allDatesLabel }}</view>
+    </view>
+    <OngoingTasks v-if="userStore.isLoggedIn" :items="ongoing" :limit="3" />
     <view v-if="list.length" class="list">
       <view v-for="item in list" :key="item.id" class="card" @click="goDetail(item.id)">
         <view class="card-top">
           <text class="course">{{ item.courseName }}</text>
-          <text class="status">{{ TASK_STATUS_TEXT[item.status] || item.status }}</text>
+          <view class="card-right">
+            <text v-if="!item.mine" class="fav" @click.stop="toggleFavorite(item)">{{ item.favorited ? "★" : "☆" }}</text>
+            <text class="status">{{ TASK_STATUS_TEXT[item.status] || item.status }}</text>
+          </view>
         </view>
         <view class="meta">{{ item.taskDate }} {{ item.startTime }}-{{ item.endTime }}</view>
+        <view v-if="countdownOf(item)" class="count">{{ countdownOf(item) }}</view>
         <view class="meta">{{ item.campusName }} · {{ item.building }} {{ item.classroom }}</view>
         <view class="card-bottom">
           <text class="reward">{{ formatReward(item.reward) }}</text>
-          <text class="count">{{ item.applyCount }} 人申请</text>
+          <text class="count-app">{{ item.applyCount }} 人申请</text>
         </view>
       </view>
       <view class="end">{{ finished ? "没有更多了" : "上拉加载更多" }}</view>
     </view>
+    <view v-else-if="!loading && ongoing.length" class="end">今日暂无新的可申请代课</view>
     <wd-status-tip v-else-if="!loading" image="content" tip="暂无代课任务" />
     <wd-toast />
   </view>
 </template>
 
 <style scoped>
+.announce-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.announce-window {
+  width: 86%;
+  max-width: 320px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px 18px 16px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+}
+.announce-kicker {
+  font-size: 12px;
+  color: #3b82f6;
+  font-weight: 600;
+}
+.announce-title {
+  margin-top: 8px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1d2129;
+}
+.announce-body {
+  margin-top: 12px;
+  max-height: 240px;
+}
+.announce-text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #4e5969;
+  white-space: pre-wrap;
+}
+.announce-ok {
+  margin-top: 16px;
+  height: 40px;
+  border-radius: 10px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .page {
+  position: relative;
   min-height: 100vh;
   background: #f5f6f8;
 }
+.page.skinned {
+  background: transparent;
+}
+.home-filters {
+  position: relative;
+  z-index: 20;
+  background: #fff;
+}
+.page.skinned .home-filters {
+  background: rgba(12, 14, 18, 0.88) !important;
+}
+.page.skinned .home-filters :deep(.wd-drop-menu),
+.page.skinned .home-filters :deep(.wd-drop-menu__list),
+.page.skinned .home-filters :deep(.wd-drop-menu__item),
+.page.skinned .home-filters :deep(.wd-datetime-picker),
+.page.skinned .home-filters :deep(.wd-cell),
+.page.skinned .home-filters :deep(.wd-cell__wrapper) {
+  background: rgba(12, 14, 18, 0.88) !important;
+  background-color: rgba(12, 14, 18, 0.88) !important;
+}
+.page.skinned .home-filters :deep(.wd-drop-menu__item-title),
+.page.skinned .home-filters :deep(.wd-drop-menu__item-title-text),
+.page.skinned .home-filters :deep(.wd-cell__title),
+.page.skinned .home-filters :deep(.wd-cell__value),
+.page.skinned .home-filters :deep(.wd-cell__placeholder) {
+  color: #fff !important;
+  text-shadow: none !important;
+}
 .search {
   background: #fff;
+}
+.quick {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 4px;
+  position: relative;
+  z-index: 0;
+}
+.chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: #fff;
+  color: #4e5969;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+}
+.chip.on {
+  background: #3d6fe8;
+  color: #fff;
+  font-weight: 600;
+}
+.page.skinned .chip {
+  background: rgba(28, 28, 30, 0.86);
+  color: #dce6ff;
+}
+.page.skinned .chip.on {
+  background: #4d80f0;
+  color: #fff;
 }
 .list {
   padding: 12px 16px 24px;
@@ -175,6 +432,15 @@ onReachBottom(() => {
   font-weight: 600;
   color: #1d2129;
 }
+.card-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fav {
+  color: #f7ba2a;
+  font-size: 18px;
+}
 .status {
   font-size: 12px;
   color: #4d80f0;
@@ -183,6 +449,12 @@ onReachBottom(() => {
   margin-top: 8px;
   color: #4e5969;
   font-size: 13px;
+}
+.count {
+  margin-top: 6px;
+  color: #f77234;
+  font-size: 12px;
+  font-weight: 600;
 }
 .card-bottom {
   margin-top: 12px;

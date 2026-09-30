@@ -8,13 +8,29 @@ export interface AuthUser {
   nickname: string;
   gender?: string | null;
   phone?: string | null;
+  email?: string | null;
   avatarUrl?: string | null;
+  coverUrl?: string | null;
   schoolId?: number | null;
   campusId?: number | null;
   schoolName?: string | null;
   campusName?: string | null;
   completedCount?: number | null;
+  ratingAvg?: number | null;
+  ratingCount?: number | null;
+  publishCompletedCount?: number | null;
+  publishRatingAvg?: number | null;
+  publishRatingCount?: number | null;
+  applyRatingAvg?: number | null;
+  applyRatingCount?: number | null;
   cancelledCount?: number | null;
+  reportedCount?: number | null;
+  schoolChangeCount?: number | null;
+  status?: string | null;
+  forbidPublish?: number | null;
+  forbidApply?: number | null;
+  muted?: number | null;
+  privateAccount?: number | null;
 }
 
 export function getToken(): string {

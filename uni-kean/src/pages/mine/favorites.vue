@@ -1,6 +1,61 @@
+<script setup lang="ts">
+import { listFavorites, removeFavorite } from "@/api/favorite";
+import { TASK_STATUS_TEXT, type TaskItem } from "@/api/task";
+import { formatReward } from "@/utils/format";
+import { onShow } from "@dcloudio/uni-app";
+import { useToast } from "wot-design-uni";
+import { ref } from "vue";
+
+const toast = useToast();
+const list = ref<TaskItem[]>([]);
+const loading = ref(false);
+
+async function load() {
+  loading.value = true;
+  try {
+    const data = await listFavorites();
+    list.value = data.list || [];
+  } catch (error) {
+    toast.error((error as Error).message || "加载失败");
+  } finally {
+    loading.value = false;
+  }
+}
+
+function goDetail(id: number) {
+  uni.navigateTo({ url: `/pages/task/detail?id=${id}` });
+}
+
+async function unfavorite(id: number) {
+  try {
+    await removeFavorite(id);
+    toast.success("已取消收藏");
+    await load();
+  } catch (error) {
+    toast.error((error as Error).message || "操作失败");
+  }
+}
+
+onShow(() => {
+  load();
+});
+</script>
+
 <template>
   <view class="page">
-    <wd-status-tip image="content" tip="收藏功能暂未开放" />
+    <view v-if="list.length" class="list">
+      <view v-for="item in list" :key="item.id" class="card" @click="goDetail(item.id)">
+        <view class="top">
+          <text class="name">{{ item.courseName }}</text>
+          <text class="status">{{ TASK_STATUS_TEXT[item.status] || item.status }}</text>
+        </view>
+        <view class="meta">{{ item.taskDate }} {{ item.startTime }}-{{ item.endTime }}</view>
+        <view class="meta">{{ formatReward(item.reward) }} · {{ item.applyCount }} 人申请</view>
+        <view class="unfav" @click.stop="unfavorite(item.id)">取消收藏</view>
+      </view>
+    </view>
+    <wd-status-tip v-else-if="!loading" image="content" tip="还没有收藏代课" />
+    <wd-toast />
   </view>
 </template>
 
@@ -8,5 +63,35 @@
 .page {
   min-height: 100vh;
   background: #f5f6f8;
+}
+.list {
+  padding: 12px 16px;
+}
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.top {
+  display: flex;
+  justify-content: space-between;
+}
+.name {
+  font-weight: 600;
+}
+.status {
+  color: #4d80f0;
+  font-size: 12px;
+}
+.meta {
+  margin-top: 8px;
+  color: #4e5969;
+  font-size: 13px;
+}
+.unfav {
+  margin-top: 10px;
+  color: #86909c;
+  font-size: 12px;
 }
 </style>

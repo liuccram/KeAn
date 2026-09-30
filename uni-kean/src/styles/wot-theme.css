@@ -1,0 +1,22 @@
+/* wot-design-uni 二次样式入口。
+ * --wot-cell-padding 只能是单值（组件拿它当 padding-left / 水平间距）。
+ * 写成 13px 16px 会让单元格 padding 失效，行高只剩 22px。
+ */
+page {
+  --wot-color-theme: #3d6fe8;
+  --wot-button-primary-bg-color: #3d6fe8;
+  --wot-button-primary-color: #fff;
+  --wot-button-small-radius: 6px;
+  --wot-button-medium-radius: 8px;
+  --wot-button-large-radius: 8px;
+  --wot-cell-title-fs: 15px;
+  --wot-cell-value-fs: 14px;
+  --wot-cell-padding: 15px;
+  --wot-cell-group-radius: 8px;
+  --wot-search-input-radius: 8px;
+  --wot-input-border-radius: 8px;
+  --wot-color-success: #2f9e62;
+  --wot-color-warning: #d48806;
+  --wot-color-danger: #d94b4b;
+  --wot-color-tip: #8a9099;
+}

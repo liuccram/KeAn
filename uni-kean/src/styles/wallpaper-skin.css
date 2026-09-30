@@ -1,0 +1,275 @@
+/* 流星壁纸：白底改透明，文字改浅色，保证星空和内容同时可见 */
+
+.page.skinned {
+  position: relative;
+  background: transparent !important;
+  color: #f4f7ff;
+  --wot-color-white: transparent;
+  --wot-cell-title-color: #f4f7ff;
+  --wot-cell-value-color: rgba(235, 244, 255, 0.88);
+  --wot-cell-label-color: rgba(235, 244, 255, 0.7);
+  --wot-color-title: #f4f7ff;
+  --wot-color-content: rgba(235, 244, 255, 0.88);
+  --wot-color-secondary: rgba(235, 244, 255, 0.72);
+  --wot-color-aid: rgba(235, 244, 255, 0.55);
+  --wot-color-tip: rgba(235, 244, 255, 0.7);
+}
+
+.page.skinned > .backdrop,
+.page.skinned .backdrop {
+  z-index: 0;
+}
+
+.page.skinned > *:not(.backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+.page.skinned > .home-filters {
+  z-index: 20;
+}
+
+.page.skinned > .today {
+  z-index: 0;
+}
+
+/* 「我的」顶部云朵/封面：保持原样，不被流星壁纸盖住或改成浅色字 */
+.page.skinned .hero {
+  background: linear-gradient(180deg, #6eb4f4 0%, #c5e4fb 70%, #f4f7fb 100%) !important;
+}
+.page.skinned .hero-bg {
+  opacity: 1 !important;
+}
+.page.skinned .hero .nickname,
+.page.skinned .hero .nav-title {
+  color: #1d2129 !important;
+  text-shadow: none !important;
+}
+.page.skinned .hero .school-line,
+.page.skinned .hero .rate-line,
+.page.skinned .hero .cred-line,
+.page.skinned .hero .stars,
+.page.skinned .hero .done {
+  color: #5a6b82 !important;
+  text-shadow: none !important;
+}
+.page.skinned .hero .limit-line {
+  color: #d48806 !important;
+  text-shadow: none !important;
+}
+.page.skinned .hero.custom .nav-title,
+.page.skinned .hero.custom .nickname,
+.page.skinned .hero.custom .school-line,
+.page.skinned .hero.custom .rate-line,
+.page.skinned .hero.custom .cred-line {
+  color: #fff !important;
+}
+.page.skinned .guest {
+  background: linear-gradient(180deg, #edf3ff 0%, #f7f9fc 42%, #f7f9fc 100%) !important;
+  color: #1d2129;
+}
+
+.page.skinned .search,
+.page.skinned .card,
+.page.skinned .row,
+.page.skinned .chat-list,
+.page.skinned .chat-row,
+.page.skinned .tabs,
+.page.skinned .announce-window {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.page.skinned .card {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.page.skinned .row,
+.page.skinned .chat-row {
+  border-bottom-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.page.skinned .course,
+.page.skinned .title,
+.page.skinned .nickname,
+.page.skinned .today,
+.page.skinned .link {
+  color: #f7fbff !important;
+  text-shadow: 0 1px 3px rgba(0, 8, 24, 0.55);
+}
+
+.page.skinned .meta,
+.page.skinned .content,
+.page.skinned .preview,
+.page.skinned .hint,
+.page.skinned .end,
+.page.skinned .time,
+.page.skinned .count,
+.page.skinned .card-bottom {
+  color: rgba(235, 244, 255, 0.78) !important;
+}
+
+.page.skinned .result-line,
+.page.skinned .title.alert {
+  color: #ff4d4f !important;
+  text-shadow: none !important;
+}
+
+
+.page.skinned .status {
+  color: #9fd0ff !important;
+}
+
+.page.skinned .tab {
+  color: rgba(247, 251, 255, 0.72);
+}
+
+.page.skinned .tab.on {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.16) !important;
+}
+
+/* 消息页分栏：黑底蓝字；标题栏到分栏之间同色，避免透出壁纸 */
+.page.skinned .tabs-bar {
+  background: #1c1c1e !important;
+}
+.page.skinned .tabs-bar .tabs {
+  background: #111113 !important;
+  border: 1px solid #4d80f0 !important;
+}
+.page.skinned .tabs-bar .tab {
+  color: #4d80f0 !important;
+}
+.page.skinned .tabs-bar .tab.on {
+  color: #4d80f0 !important;
+  background: rgba(77, 128, 240, 0.2) !important;
+}
+
+.page.skinned .wd-search,
+.page.skinned .wd-search__block,
+.page.skinned .wd-search__cover,
+.page.skinned .wd-search__input,
+.page.skinned .wd-cell,
+.page.skinned .wd-cell-group,
+.page.skinned .wd-cell-group__body,
+.page.skinned .wd-input,
+.page.skinned .wd-textarea,
+.page.skinned .wd-picker,
+.page.skinned .wd-status-tip,
+.page.skinned .wd-form {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.page.skinned .wd-cell::after,
+.page.skinned .wd-cell-group::after,
+.page.skinned .wd-drop-menu__item::after {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.16) !important;
+}
+
+.page.skinned .wd-cell__title,
+.page.skinned .wd-cell__value,
+.page.skinned .wd-cell__label,
+.page.skinned .wd-cell__right,
+.page.skinned .wd-search__input,
+.page.skinned .wd-search__placeholder,
+.page.skinned .wd-status-tip__text,
+.page.skinned .wd-input__inner,
+.page.skinned .wd-textarea__inner,
+.page.skinned .wd-textarea__value {
+  color: #f4f7ff !important;
+}
+
+.page.skinned .wd-cell__value,
+.page.skinned .wd-cell__label,
+.page.skinned .wd-search__placeholder {
+  color: rgba(235, 244, 255, 0.76) !important;
+}
+
+.page.skinned .wd-icon,
+.page.skinned .wd-cell__arrow-right {
+  color: rgba(247, 251, 255, 0.7) !important;
+}
+
+.page.skinned .muted-tag {
+  background: rgba(255, 215, 102, 0.18);
+  color: #ffe08a;
+}
+
+.page.skinned .section-title {
+  color: rgba(235, 244, 255, 0.72) !important;
+  text-shadow: 0 1px 3px rgba(0, 8, 24, 0.55);
+}
+
+/* 主页筛选栏：黑底白字，壁纸上也能看清 */
+.page.skinned .home-filters {
+  --wot-color-white: #1c1c1e;
+  --wot-cell-title-color: #ffffff;
+  --wot-cell-value-color: #ffffff;
+  --wot-color-title: #ffffff;
+  --wot-color-content: rgba(255, 255, 255, 0.88);
+  --wot-color-secondary: rgba(255, 255, 255, 0.7);
+  background: rgba(12, 14, 18, 0.88) !important;
+}
+
+.page.skinned .home-filters .wd-drop-menu,
+.page.skinned .home-filters .wd-drop-menu__list,
+.page.skinned .home-filters .wd-drop-menu__item,
+.page.skinned .home-filters .wd-datetime-picker,
+.page.skinned .home-filters .wd-datetime-picker__cell,
+.page.skinned .home-filters .wd-cell,
+.page.skinned .home-filters .wd-cell__wrapper {
+  background: rgba(12, 14, 18, 0.88) !important;
+  background-color: rgba(12, 14, 18, 0.88) !important;
+  box-shadow: none !important;
+}
+
+.page.skinned .home-filters .wd-drop-menu__item-title,
+.page.skinned .home-filters .wd-drop-menu__item-title-text,
+.page.skinned .home-filters .wd-cell__title,
+.page.skinned .home-filters .wd-cell__value,
+.page.skinned .home-filters .wd-cell__placeholder {
+  color: #fff !important;
+  text-shadow: none !important;
+}
+
+.page.skinned .home-filters .wd-icon,
+.page.skinned .home-filters .wd-cell__arrow-right {
+  color: rgba(255, 255, 255, 0.78) !important;
+}
+
+.page.skinned .wd-popup,
+.page.skinned .wd-popup__content {
+  --wot-color-white: #1c1c1e;
+  --wot-cell-title-color: #ffffff;
+  --wot-color-title: #ffffff;
+  --wot-color-content: #ffffff;
+  background: #1c1c1e !important;
+  color: #fff !important;
+}
+
+.page.skinned .wd-popup .wd-cell,
+.page.skinned .wd-popup .wd-cell__title,
+.page.skinned .wd-popup .wd-cell__value,
+.page.skinned .wd-popup .wd-drop-menu-item__option {
+  background: #1c1c1e !important;
+  color: #fff !important;
+  text-shadow: none !important;
+}
+
+/* H5 底部栏：默认白底，开壁纸后黑底白字 */
+.uni-tabbar,
+.uni-tabbar-bottom {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+}
+.kean-meteor .uni-tabbar,
+.kean-meteor .uni-tabbar-bottom {
+  background-color: #1c1c1e !important;
+  background: #1c1c1e !important;
+}
+.kean-meteor .uni-tabbar__text,
+.kean-meteor .uni-tabbar__label {
+  color: #ffffff !important;
+}
