@@ -3,6 +3,7 @@ package com.kean.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kean.common.ErrorCode;
 import com.kean.common.Result;
+import com.kean.security.AdminMustChangePasswordFilter;
 import com.kean.security.JwtAuthFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -25,18 +26,24 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.List;
 
 @Configuration
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final AdminMustChangePasswordFilter adminMustChangePasswordFilter;
     private final CorsProperties corsProperties;
     private final ObjectMapper objectMapper;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter, CorsProperties corsProperties, ObjectMapper objectMapper) {
+    public SecurityConfig(
+            JwtAuthFilter jwtAuthFilter,
+            AdminMustChangePasswordFilter adminMustChangePasswordFilter,
+            CorsProperties corsProperties,
+            ObjectMapper objectMapper
+    ) {
         this.jwtAuthFilter = jwtAuthFilter;
+        this.adminMustChangePasswordFilter = adminMustChangePasswordFilter;
         this.corsProperties = corsProperties;
         this.objectMapper = objectMapper;
     }
@@ -50,28 +57,44 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/sms", "/api/auth/password/reset", "/api/auth/turnstile").permitAll()
+                        .requestMatchers("/turnstile.html").permitAll()
+                        .requestMatchers("/ws/**").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/schools",
+                                "/api/provinces",
                                 "/api/campuses",
                                 "/api/courses",
                                 "/api/tasks",
-                                "/api/tasks/*")
+                                "/api/tasks/*",
+                                "/api/announcements/active",
+                                "/api/files/**")
                         .permitAll()
                         .requestMatchers("/error").permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authenticationEntryPoint())
                         .accessDeniedHandler(accessDeniedHandler())
                 )
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(adminMustChangePasswordFilter, JwtAuthFilter.class);
         return http.build();
     }
 
     @Bean
     public FilterRegistrationBean<JwtAuthFilter> jwtAuthFilterRegistration(JwtAuthFilter filter) {
         FilterRegistrationBean<JwtAuthFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean<AdminMustChangePasswordFilter> adminMustChangePasswordFilterRegistration(
+            AdminMustChangePasswordFilter filter
+    ) {
+        FilterRegistrationBean<AdminMustChangePasswordFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }
@@ -84,10 +107,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        List<String> origins = Arrays.stream(corsProperties.getAllowedOrigins().split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
+        List<String> origins = corsProperties.origins();
         configuration.setAllowedOriginPatterns(origins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));

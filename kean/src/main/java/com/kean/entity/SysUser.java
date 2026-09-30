@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -23,6 +24,8 @@ public class SysUser {
 
     private String phone;
 
+    private String email;
+
     private String passwordHash;
 
     private String nickname;
@@ -31,11 +34,29 @@ public class SysUser {
 
     private String avatarUrl;
 
+    private String coverUrl;
+
     private Long schoolId;
 
     private Long campusId;
 
+    private Integer schoolChangeCount;
+
     private Integer completedCount;
+
+    private BigDecimal ratingAvg;
+
+    private Integer ratingCount;
+
+    private Integer publishCompletedCount;
+
+    private BigDecimal publishRatingAvg;
+
+    private Integer publishRatingCount;
+
+    private BigDecimal applyRatingAvg;
+
+    private Integer applyRatingCount;
 
     private Integer cancelledCount;
 
@@ -45,9 +66,19 @@ public class SysUser {
 
     private Integer forbidPublish;
 
+    private LocalDateTime forbidPublishUntil;
+
     private Integer forbidApply;
 
+    private LocalDateTime forbidApplyUntil;
+
     private Integer muted;
+
+    private Integer mustChangePassword;
+
+    private LocalDateTime mutedUntil;
+
+    private Integer privateAccount;
 
     private LocalDateTime lastLoginAt;
 

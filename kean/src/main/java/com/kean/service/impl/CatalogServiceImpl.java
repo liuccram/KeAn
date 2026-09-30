@@ -3,10 +3,12 @@ package com.kean.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.kean.entity.Campus;
 import com.kean.entity.Course;
+import com.kean.entity.Province;
 import com.kean.entity.School;
 import com.kean.entity.SysUser;
 import com.kean.mapper.CampusMapper;
 import com.kean.mapper.CourseMapper;
+import com.kean.mapper.ProvinceMapper;
 import com.kean.mapper.SchoolMapper;
 import com.kean.mapper.SysUserMapper;
 import com.kean.security.LoginUser;
@@ -14,6 +16,7 @@ import com.kean.security.SecurityUtils;
 import com.kean.service.CatalogService;
 import com.kean.vo.CampusVO;
 import com.kean.vo.CourseVO;
+import com.kean.vo.ProvinceVO;
 import com.kean.vo.SchoolVO;
 import org.springframework.stereotype.Service;
 
@@ -28,26 +31,44 @@ public class CatalogServiceImpl implements CatalogService {
     private final CampusMapper campusMapper;
     private final CourseMapper courseMapper;
     private final SysUserMapper sysUserMapper;
+    private final ProvinceMapper provinceMapper;
 
     public CatalogServiceImpl(
             SchoolMapper schoolMapper,
             CampusMapper campusMapper,
             CourseMapper courseMapper,
-            SysUserMapper sysUserMapper
+            SysUserMapper sysUserMapper,
+            ProvinceMapper provinceMapper
     ) {
         this.schoolMapper = schoolMapper;
         this.campusMapper = campusMapper;
         this.courseMapper = courseMapper;
         this.sysUserMapper = sysUserMapper;
+        this.provinceMapper = provinceMapper;
     }
 
     @Override
-    public List<SchoolVO> listSchools() {
-        return schoolMapper.selectList(new LambdaQueryWrapper<School>()
-                        .eq(School::getStatus, 1)
-                        .orderByAsc(School::getId))
+    public List<ProvinceVO> listProvinces() {
+        return provinceMapper.selectList(new LambdaQueryWrapper<Province>()
+                        .orderByAsc(Province::getSort)
+                        .orderByAsc(Province::getId))
                 .stream()
-                .map(item -> new SchoolVO(item.getId(), item.getName()))
+                .map(item -> new ProvinceVO(item.getId(), item.getName(), item.getSort()))
+                .toList();
+    }
+
+    @Override
+    public List<SchoolVO> listSchools(Long provinceId) {
+        LambdaQueryWrapper<School> wrapper = new LambdaQueryWrapper<School>()
+                .eq(School::getStatus, 1)
+                .orderByAsc(School::getName)
+                .orderByAsc(School::getId);
+        if (provinceId != null) {
+            wrapper.eq(School::getProvinceId, provinceId);
+        }
+        return schoolMapper.selectList(wrapper)
+                .stream()
+                .map(item -> new SchoolVO(item.getId(), item.getName(), item.getProvinceId()))
                 .toList();
     }
 

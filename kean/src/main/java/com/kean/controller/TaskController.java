@@ -3,6 +3,7 @@ package com.kean.controller;
 import com.kean.common.PageResult;
 import com.kean.common.Result;
 import com.kean.dto.CancelTaskRequest;
+import com.kean.dto.ConfirmTaskRequest;
 import com.kean.dto.CreateTaskRequest;
 import com.kean.dto.TaskQuery;
 import com.kean.service.TaskService;
@@ -32,6 +33,7 @@ public class TaskController {
     public Result<PageResult<TaskVO>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String taskDate,
+            @RequestParam(required = false) String timeSlot,
             @RequestParam(required = false) Long courseId,
             @RequestParam(required = false) Long campusId,
             @RequestParam(required = false) String status,
@@ -39,7 +41,7 @@ public class TaskController {
             @RequestParam(required = false) Long page,
             @RequestParam(required = false) Long size
     ) {
-        return Result.ok(taskService.list(new TaskQuery(keyword, taskDate, courseId, campusId, status, schoolId, page, size)));
+        return Result.ok(taskService.list(new TaskQuery(keyword, taskDate, timeSlot, courseId, campusId, status, schoolId, page, size)));
     }
 
     @GetMapping("/{id}")
@@ -64,8 +66,8 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/confirm")
-    public Result<TaskVO> confirm(@PathVariable Long id) {
-        return Result.ok(taskService.confirm(id));
+    public Result<TaskVO> confirm(@PathVariable Long id, @Valid @RequestBody ConfirmTaskRequest request) {
+        return Result.ok(taskService.confirm(id, request.objectKey()));
     }
 
     @PostMapping("/{id}/complete")
@@ -74,7 +76,7 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/cancel")
-    public Result<TaskVO> cancel(@PathVariable Long id, @Valid @RequestBody(required = false) CancelTaskRequest request) {
-        return Result.ok(taskService.cancel(id, request == null ? new CancelTaskRequest(null) : request));
+    public Result<TaskVO> cancel(@PathVariable Long id, @Valid @RequestBody CancelTaskRequest request) {
+        return Result.ok(taskService.cancel(id, request));
     }
 }

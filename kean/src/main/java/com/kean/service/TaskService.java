@@ -18,13 +18,13 @@ public interface TaskService {
 
     void delete(Long id);
 
-    TaskVO confirm(Long id);
+    TaskVO confirm(Long id, String objectKey);
 
     TaskVO complete(Long id);
 
     TaskVO cancel(Long id, CancelTaskRequest request);
 
-    PageResult<TaskVO> listMyPublished(Long page, Long size);
+    PageResult<TaskVO> listMyPublished(Long page, Long size, Boolean excludeCancelled);
 
-    PageResult<TaskVO> listMyApplied(Long page, Long size);
+    PageResult<TaskVO> listMyApplied(Long page, Long size, Boolean excludeCancelled);
 }

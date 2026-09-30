@@ -1,5 +1,6 @@
 package com.kean.dto;
 
+import com.kean.utils.QqEmails;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -29,8 +30,14 @@ public record RegisterRequest(
         @NotNull(message = "校区不能为空")
         Long campusId,
 
-        @Size(max = 20, message = "手机号长度不正确")
-        @Pattern(regexp = "^$|^1[3-9]\\d{9}$", message = "手机号格式不正确")
-        String phone
+        @NotBlank(message = "请填写 QQ 号")
+        @Pattern(regexp = QqEmails.REQUIRED_PATTERN, message = "请填写 5-11 位 QQ 号")
+        String email,
+
+        @NotBlank(message = "请填写邮箱验证码")
+        @Pattern(regexp = "^\\d{6}$", message = "请填写 6 位验证码")
+        String smsCode,
+
+        String turnstileToken
 ) {
 }

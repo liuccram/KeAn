@@ -7,6 +7,8 @@ public record LoginRequest(
         String username,
 
         @NotBlank(message = "密码不能为空")
-        String password
+        String password,
+
+        String turnstileToken
 ) {
 }

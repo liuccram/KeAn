@@ -46,6 +46,8 @@ public class SubstituteTask {
 
     private Integer computerLab;
 
+    private Integer requirePhoto;
+
     private String genderRequirement;
 
     private BigDecimal reward;
@@ -66,6 +68,8 @@ public class SubstituteTask {
 
     private Integer applicantConfirmed;
 
+    private String fulfillPhotoKey;
+
     private Integer publisherCompleted;
 
     private Integer applicantCompleted;
@@ -73,6 +77,12 @@ public class SubstituteTask {
     private String cancelReason;
 
     private String cancelledBy;
+
+    private Integer photoReminded;
+
+    private Integer classReminded;
+
+    private Integer completeReminded;
 
     @TableLogic
     private Integer deleted;

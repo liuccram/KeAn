@@ -26,15 +26,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final TokenBlacklistService tokenBlacklistService;
+    private final TokenRevokeService tokenRevokeService;
     private final ObjectMapper objectMapper;
 
     public JwtAuthFilter(
             JwtService jwtService,
             TokenBlacklistService tokenBlacklistService,
+            TokenRevokeService tokenRevokeService,
             ObjectMapper objectMapper
     ) {
         this.jwtService = jwtService;
         this.tokenBlacklistService = tokenBlacklistService;
+        this.tokenRevokeService = tokenRevokeService;
         this.objectMapper = objectMapper;
     }
 
@@ -46,6 +49,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = requestPath(request);
         return "/api/auth/register".equals(path)
                 || "/api/auth/login".equals(path)
+                || "/api/auth/password/reset".equals(path)
+                || "/api/auth/turnstile".equals(path)
+                || "/turnstile.html".equals(path)
+                || path.startsWith("/ws/")
                 || "/error".equals(path);
     }
 
@@ -87,9 +94,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 return;
             }
             Long userId = Long.valueOf(claims.getSubject());
+            if (tokenRevokeService.isBanned(userId)) {
+                writeBanned(response, tokenRevokeService.bannedMessage(userId));
+                return;
+            }
+            if (tokenRevokeService.isRevoked(userId, claims.getIssuedAt() == null ? null : claims.getIssuedAt().toInstant())) {
+                if (isAnonymousAllowed(request)) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+                writeUnauthorized(response);
+                return;
+            }
             String username = claims.get("username", String.class);
             String role = claims.get("role", String.class);
-            LoginUser loginUser = new LoginUser(userId, username, role);
+            LoginUser loginUser = new LoginUser(userId, username, role, jti);
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                     loginUser,
                     null,
@@ -107,15 +126,26 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     private boolean isAnonymousAllowed(HttpServletRequest request) {
+        String path = requestPath(request);
+        if ("POST".equalsIgnoreCase(request.getMethod()) && "/api/auth/sms".equals(path)) {
+            return true;
+        }
+        if ("POST".equalsIgnoreCase(request.getMethod()) && "/api/auth/password/reset".equals(path)) {
+            return true;
+        }
         if (!"GET".equalsIgnoreCase(request.getMethod())) {
             return false;
         }
-        String path = requestPath(request);
         return "/api/schools".equals(path)
+                || "/api/provinces".equals(path)
                 || "/api/campuses".equals(path)
                 || "/api/courses".equals(path)
                 || "/api/tasks".equals(path)
-                || path.matches("/api/tasks/\\d+");
+                || path.matches("/api/tasks/\\d+")
+                || "/api/announcements/active".equals(path)
+                || path.startsWith("/api/files/")
+                || "/api/auth/turnstile".equals(path)
+                || "/turnstile.html".equals(path);
     }
 
     private void writeUnauthorized(HttpServletResponse response) throws IOException {
@@ -123,5 +153,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         objectMapper.writeValue(response.getWriter(), Result.fail(ErrorCode.UNAUTHORIZED));
+    }
+
+    private void writeBanned(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(ErrorCode.ACCOUNT_BANNED.getHttpStatus().value());
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        String text = message == null || message.isBlank()
+                ? ErrorCode.ACCOUNT_BANNED.getMessage()
+                : message;
+        objectMapper.writeValue(response.getWriter(), Result.fail(ErrorCode.ACCOUNT_BANNED, text));
     }
 }

@@ -1,5 +1,6 @@
 package com.kean.vo;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public record ApplicationVO(
@@ -9,6 +10,15 @@ public record ApplicationVO(
         String nickname,
         String message,
         String status,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        Integer completedCount,
+        BigDecimal ratingAvg,
+        Integer ratingCount,
+        Integer cancelledCount,
+        Integer reportedCount,
+        String userStatus,
+        Integer forbidPublish,
+        Integer forbidApply,
+        Integer muted
 ) {
 }

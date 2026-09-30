@@ -26,6 +26,7 @@ public record TaskVO(
         String building,
         String classroom,
         Integer computerLab,
+        Integer requirePhoto,
         String genderRequirement,
         BigDecimal reward,
         String reason,
@@ -35,6 +36,7 @@ public record TaskVO(
         Integer applyCount,
         LocalDateTime createdAt,
         PublisherBriefVO publisher,
+        PublisherBriefVO applicant,
         Boolean mine,
         Integer publisherConfirmed,
         Integer applicantConfirmed,
@@ -43,6 +45,12 @@ public record TaskVO(
         Long acceptedApplicationId,
         String myApplicationStatus,
         Long myApplicationId,
-        Boolean matchedApplicant
+        Boolean matchedApplicant,
+        String matchedApplicantNickname,
+        Long matchedApplicantId,
+        Boolean canReview,
+        Integer myReviewRating,
+        Boolean favorited,
+        String fulfillPhotoUrl
 ) {
 }

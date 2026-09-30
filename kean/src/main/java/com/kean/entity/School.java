@@ -19,6 +19,8 @@ public class School {
 
     private String name;
 
+    private Long provinceId;
+
     private Integer status;
 
     @TableLogic

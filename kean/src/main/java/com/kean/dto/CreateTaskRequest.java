@@ -29,6 +29,7 @@ public record CreateTaskRequest(
         @NotBlank(message = "请填写教室") @Size(max = 64) String classroom,
         @NotNull(message = "请选择是否上机")
         Boolean computerLab,
+        Boolean requirePhoto,
         @NotBlank(message = "请选择性别要求")
         @Pattern(regexp = "^(ANY|MALE|FEMALE)$", message = "性别要求仅支持不限/男/女")
         String genderRequirement,
