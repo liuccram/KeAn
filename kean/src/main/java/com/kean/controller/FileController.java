@@ -2,7 +2,10 @@ package com.kean.controller;
 
 import com.kean.common.ErrorCode;
 import com.kean.common.Result;
+import com.kean.enums.UserRole;
+import com.kean.security.FileAccessGuard;
 import com.kean.security.FileUrlSigner;
+import com.kean.security.LoginUser;
 import com.kean.security.SecurityUtils;
 import com.kean.service.StorageService;
 import com.kean.utils.FileUrls;
@@ -28,10 +31,12 @@ public class FileController {
 
     private final StorageService storageService;
     private final FileUrlSigner fileUrlSigner;
+    private final FileAccessGuard fileAccessGuard;
 
-    public FileController(StorageService storageService, FileUrlSigner fileUrlSigner) {
+    public FileController(StorageService storageService, FileUrlSigner fileUrlSigner, FileAccessGuard fileAccessGuard) {
         this.storageService = storageService;
         this.fileUrlSigner = fileUrlSigner;
+        this.fileAccessGuard = fileAccessGuard;
     }
 
     @PostMapping
@@ -54,7 +59,9 @@ public class FileController {
             writeError(response, ErrorCode.FILE_NOT_FOUND);
             return;
         }
-        boolean allowed = fileUrlSigner.verify(key, exp, sig) || SecurityUtils.currentUserOrNull() != null;
+        LoginUser loginUser = SecurityUtils.currentUserOrNull();
+        boolean allowed = fileUrlSigner.verify(key, exp, sig)
+                || fileAccessGuard.canRead(key, loginUser == null ? null : loginUser.userId(), isAdmin(loginUser));
         if (!allowed) {
             writeError(response, ErrorCode.FORBIDDEN);
             return;
@@ -71,6 +78,10 @@ public class FileController {
         } catch (Exception ex) {
             writeError(response, ErrorCode.FILE_NOT_FOUND);
         }
+    }
+
+    private static boolean isAdmin(LoginUser loginUser) {
+        return loginUser != null && UserRole.ADMIN.name().equals(loginUser.role());
     }
 
     private void writeError(HttpServletResponse response, ErrorCode errorCode) throws java.io.IOException {

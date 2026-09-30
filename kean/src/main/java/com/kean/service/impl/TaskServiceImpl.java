@@ -964,6 +964,8 @@ public class TaskServiceImpl implements TaskService {
             Integer myReviewRating,
             boolean favorited
     ) {
+        // 履约照片仅对该任务的双方可见，与 detail() 里 applicant 简介的门控保持一致。
+        boolean party = mine || matchedApplicant;
         return new TaskVO(
                 task.getId(),
                 task.getPublisherId(),
@@ -1005,7 +1007,7 @@ public class TaskServiceImpl implements TaskService {
                 canReview,
                 myReviewRating,
                 favorited,
-                FileUrls.of(task.getFulfillPhotoKey())
+                party ? FileUrls.of(task.getFulfillPhotoKey()) : null
         );
     }
 

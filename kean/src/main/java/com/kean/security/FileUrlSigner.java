@@ -18,7 +18,8 @@ import java.util.Set;
 @Component
 public class FileUrlSigner {
 
-    private static final Set<String> SENSITIVE_FOLDERS = Set.of("report", "appeal", "chat", "fulfill");
+    /** 敏感目录：需要 URL 签名，且读取时还要校验归属关系。FileAccessGuard 复用同一份定义。 */
+    public static final Set<String> SENSITIVE_FOLDERS = Set.of("report", "appeal", "chat", "fulfill");
     private static final long TTL_SECONDS = 2 * 60 * 60;
 
     private final byte[] secret;
