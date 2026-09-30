@@ -1,0 +1,45 @@
+# 测试专用 profile（配合 @ActiveProfiles("unittest")）。
+#
+# 这里只放"让 Spring 上下文能起来"的最小覆盖值 —— 默认值在 src/main/resources/application-test.yml
+# 里是空的，会让下面这些组件在启动时直接抛异常。
+#
+# 为什么不直接叫 application-test.yml：
+#   src/test/resources 在测试 classpath 上优先于 src/main/resources，同名文件会【整体覆盖】
+#   main 里那份 application-test.yml，把其中的 datasource / redis / mail 配置一起丢掉。
+#   所以这里改用独立的 profile 名 unittest，避免遮蔽。
+#
+# 注意：本文件不提供数据源，只能支撑 @WebMvcTest 或不加载数据库的上下文。
+#       全量 @SpringBootTest（真跑 24 个 Flyway 迁移）仍需 Testcontainers，而 Testcontainers 需要 Docker。
+
+kean:
+  jwt:
+    # JwtService 构造时要求 secret 至少 32 字节，否则 IllegalStateException
+    secret: unittest-only-secret-key-at-least-32-bytes-long
+    expire-seconds: 86400
+  cors:
+    # CorsProperties 的 @PostConstruct 禁止空值与 *
+    allowed-origins: http://localhost:5173
+  admin:
+    username: admin
+    # AdminInitializer 播种时要求：非空、非默认口令、不少于 12 位
+    password: unittest-Admin-Pwd
+    nickname: 测试管理员
+  minio:
+    # MinioConfig 要求三项齐全，否则 IllegalStateException
+    # （连通性探测失败只记 warn，因此指向一个不存在的地址也能启动）
+    endpoint: http://127.0.0.1:9000
+    access-key: unittest
+    secret-key: unittest-secret
+    bucket: kean-unittest
+  turnstile:
+    # enabled=true 且未配 key 会让所有依赖登录的测试被拒
+    enabled: false
+    site-key: ""
+    secret: ""
+  sms:
+    expose-code: false
+    allow-console: false
+  mail:
+    enabled: false
+  http:
+    trusted-proxies: ""
