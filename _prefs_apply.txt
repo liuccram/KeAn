@@ -1,0 +1,74 @@
+export function applyWallpaperChrome(id?: WallpaperId) {
+  applyDisplayAppearance(id);
+}
+
+export function applyDisplayAppearance(wallpaper?: WallpaperId) {
+  const prefs = loadDisplayPrefs();
+  const id = wallpaper ?? prefs.wallpaper;
+  const meteor = isMeteorWallpaper(id);
+  const dark = resolveTheme(prefs.theme) === "dark";
+  const fontSize = prefs.fontSize === "s" ? "14px" : prefs.fontSize === "l" ? "18px" : "16px";
+
+  if (typeof document !== "undefined") {
+    const root = document.documentElement;
+    root.style.setProperty("--kean-fs", fontSize);
+    root.classList.toggle("kean-dark", dark && !meteor);
+    root.classList.toggle("kean-font-s", prefs.fontSize === "s");
+    root.classList.toggle("kean-font-l", prefs.fontSize === "l");
+    root.setAttribute("lang", prefs.lang === "en" ? "en" : "zh-CN");
+  }
+
+  const route = currentRoute();
+  const skipChrome = /mine\/crop|auth\/login|auth\/register|auth\/forgot/.test(route);
+  if (!skipChrome) {
+    if (meteor) {
+      uni.setNavigationBarColor({
+        frontColor: "#ffffff",
+        backgroundColor: "#08142c"
+      });
+      uni.setTabBarStyle({
+        color: "#9aa7c2",
+        selectedColor: "#8ec5ff",
+        backgroundColor: "#08142c",
+        borderStyle: "black"
+      });
+    } else if (dark) {
+      uni.setNavigationBarColor({
+        frontColor: "#ffffff",
+        backgroundColor: "#1c1c1e"
+      });
+      uni.setTabBarStyle({
+        color: "#8e8e93",
+        selectedColor: "#8ec5ff",
+        backgroundColor: "#1c1c1e",
+        borderStyle: "black"
+      });
+    } else {
+      uni.setNavigationBarColor({
+        frontColor: "#000000",
+        backgroundColor: "#ffffff"
+      });
+      uni.setTabBarStyle({
+        color: "#7A7E83",
+        selectedColor: "#4D80F0",
+        backgroundColor: "#FFFFFF",
+        borderStyle: "black"
+      });
+    }
+  }
+
+  const tabs = prefs.lang === "en" ? ["Home", "Post", "Inbox", "Me"] : ["首页", "发布", "消息", "我的"];
+  tabs.forEach((text, index) => {
+    uni.setTabBarItem({ index, text });
+  });
+}
+
+function currentRoute() {
+  try {
+    const pages = getCurrentPages();
+    const last = pages[pages.length - 1] as { route?: string } | undefined;
+    return last?.route || "";
+  } catch {
+    return "";
+  }
+}

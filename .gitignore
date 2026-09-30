@@ -1,5 +1,9 @@
 .env
+.env.dev
+.env.test
+.env.prod
 .env.local
+.env.*.local
 *.log
 .idea/
 .vscode/
