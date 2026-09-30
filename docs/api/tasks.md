@@ -18,6 +18,7 @@
 |---|---|---|---|
 | keyword | string | 否 | 搜课程名快照 / 教学楼 / 教室 |
 | taskDate | string | 否 | `yyyy-MM-dd` |
+| timeSlot | string | 否 | 上课开始时刻所在点段：`6-8` / `8-10` / `10-12` / `13-15` / `15-17` / `17-20` / `20-22` |
 | courseId | number | 否 | 课程目录 ID |
 | campusId | number | 否 | 校区 ID |
 | status | string | 否 | 精确状态；不传则为 WAITING+APPLYING |
@@ -88,6 +89,7 @@
 | building | string | 是 | 教学楼，最长 64 |
 | classroom | string | 是 | 教室，最长 64 |
 | computerLab | boolean | 是 | 是否上机 |
+| requirePhoto | boolean | 否 | 是否要求现场拍照，默认否 |
 | genderRequirement | string | 是 | `ANY` / `MALE` / `FEMALE` |
 | reward | number | 是 | ≥ 0 |
 | reason | string | 否 | 最长 500 |
@@ -106,6 +108,7 @@
   "building": "教学楼A",
   "classroom": "101",
   "computerLab": false,
+  "requirePhoto": false,
   "genderRequirement": "ANY",
   "reward": 20,
   "reason": "临时有事",

@@ -77,13 +77,13 @@
 
 ## POST /api/tasks/{id}/confirm
 
-`MATCHED` 阶段，发布者或已选代课者确认履约。双方都确认后进入 `CONFIRMED`。
+`MATCHED` 阶段，发布者或已选代课者确认履约。双方都确认后进入 `CONFIRMED`（若已到上课时间则进入 `IN_PROGRESS`），并给**代课者**的 `completedCount` +1。双方会在消息 Tab 收到履约通知。
 
 ---
 
 ## POST /api/tasks/{id}/complete
 
-`IN_PROGRESS` 阶段，双方确认完成。都确认后进入 `COMPLETED`，并增加双方 `completedCount`。
+`IN_PROGRESS` 阶段，双方确认完成。都确认后进入 `COMPLETED`，并给**发布者**的 `completedCount` +1。
 
 ---
 
@@ -101,7 +101,7 @@
 
 ## GET /api/me/applied
 
-我申请过的任务。`page`、`size` 可选。
+我申请中且未撤回的任务（申请状态 `PENDING`）。`page`、`size` 可选。撤回、被拒绝、已被接受的申请不出现在此列表。
 
 ---
 
@@ -119,6 +119,7 @@
 | myApplicationStatus | 当前登录用户在该任务的申请状态，可能为空 |
 | myApplicationId | 当前用户的申请 ID，可能为空 |
 | matchedApplicant | 当前用户是否为已选代课者 |
+| matchedApplicantNickname | 已选代课者昵称，未选人为空 |
 
 ---
 

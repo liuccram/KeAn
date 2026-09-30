@@ -34,7 +34,9 @@ Authorization: Bearer <token>
 | gender | string | 是 | `MALE` / `FEMALE` |
 | schoolId | number | 是 | 学校 ID |
 | campusId | number | 是 | 校区 ID，须属于该学校 |
-| phone | string | 否 | 中国大陆手机号 |
+| email | string | 是 | QQ 号 |
+| smsCode | string | 是 | 6 位邮箱验证码 |
+| turnstileToken | string | 开启时必填 | Cloudflare 一次性 token |
 
 请求示例：
 
@@ -46,7 +48,9 @@ Authorization: Bearer <token>
   "gender": "FEMALE",
   "schoolId": 1,
   "campusId": 1,
-  "phone": "13800000001"
+  "email": "123456",
+  "smsCode": "123456",
+  "turnstileToken": "0.xxxx"
 }
 ```
 
@@ -90,16 +94,38 @@ Authorization: Bearer <token>
 
 ---
 
+## GET /api/auth/turnstile
+
+公开接口。返回是否开启 Cloudflare Turnstile，以及前端 widget 使用的 `siteKey`（公钥，可暴露）。
+
+成功 `200`：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "enabled": true,
+    "siteKey": "0x4AAAAAAA..."
+  }
+}
+```
+
+`enabled=false` 时后端不校验 token，登录页可不展示组件。密钥未配置时 `enabled=true` 且 `siteKey` 为空，登录会被拒绝。
+
+---
+
 ## POST /api/auth/login
 
-公开接口。
+公开接口。开启 Turnstile 时必须先完成真人验证，并把一次性 token 一并提交；后端会向 Cloudflare `siteverify` 校验，失败则不签发 JWT。
 
 请求：
 
 ```json
 {
   "username": "student01",
-  "password": "Passw0rd!"
+  "password": "Passw0rd!",
+  "turnstileToken": "0.xxxx"
 }
 ```
 
@@ -116,15 +142,18 @@ Authorization: Bearer <token>
 }
 ```
 
-`user` 字段与注册返回的用户对象相同。
+`user` 字段与注册返回的用户对象相同。管理员若 `mustChangePassword=true`，除改密外管理接口返回 `40307`。
 
 失败：
 
 | HTTP | code | 含义 |
 |---|---|---|
 | 400 | 40000 | 参数校验失败 |
+| 400 | 40024 | 未完成真人验证 |
+| 400 | 40025 | 真人验证失败或未配置 |
 | 401 | 40101 | 用户名或密码错误 |
 | 403 | 40301 | 账号已被封禁 |
+| 429 | 42901 | 登录失败次数过多（同账号 15 分钟 5 次或同 IP 20 次） |
 
 ---
 
@@ -132,7 +161,7 @@ Authorization: Bearer <token>
 
 需登录。返回当前用户最新资料（查库，不以 Token 声明为准）。
 
-成功 `200`：`data` 为用户对象。
+成功 `200`：`data` 为用户对象，含 `schoolChangeCount`（学校已修改次数，最多 3 次）。
 
 失败：
 
@@ -140,6 +169,36 @@ Authorization: Bearer <token>
 |---|---|---|
 | 401 | 40100 | 未登录、Token 无效或已登出 |
 | 403 | 40301 | 账号已被封禁 |
+
+---
+
+## PUT /api/me/profile
+
+需登录。修改昵称、性别、学校、校区。
+
+学校最多改 3 次（仅学校 ID 变化才计数）；校区可随时改。修改学校后，首页只展示该校各校区发布的代课。
+
+请求：
+
+```json
+{
+  "nickname": "小安",
+  "gender": "FEMALE",
+  "schoolId": 2,
+  "campusId": 8
+}
+```
+
+成功 `200`：`data` 为最新用户对象。
+
+失败：
+
+| HTTP | code | 含义 |
+|---|---|---|
+| 400 | 40000 | 参数校验失败 |
+| 400 | 40001 | 学校或校区无效 |
+| 400 | 40009 | 学校最多只能修改 3 次 |
+| 401 | 40100 | 未登录 |
 
 ---
 
