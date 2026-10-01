@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { createReport, listMyReports, listReportTypes, type ReportItem, type ReportTypeItem } from "@/api/report";
+import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
 import { parseDateTime } from "@/utils/format";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
@@ -153,7 +154,7 @@ useLiveUpdates((event) => {
       <wd-picker v-model="model.type" label="反馈类型" :columns="typeColumns" />
       <wd-textarea v-model="model.description" placeholder="请描述你想反馈的内容" :maxlength="500" />
       <view class="images">
-        <image v-for="(src, index) in images" :key="src" class="shot" :src="src" mode="aspectFill" @click="removeImage(index)" />
+        <FallbackImage v-for="(src, index) in images" :key="src" class="shot" :src="src" mode="aspectFill" @click="removeImage(index)" />
         <view v-if="uploading" class="add uploading">{{ uploadLabel }}</view>
         <view v-else-if="images.length < 3" class="add" @click="chooseImage">+ 图片</view>
       </view>

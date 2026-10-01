@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { fetchMe } from "@/api/auth";
 import { listMyApplied, listMyPublished } from "@/api/task";
+import FallbackImage from "@/components/FallbackImage.vue";
 import OngoingTasks from "@/components/OngoingTasks.vue";
 import PageBackdrop from "@/components/PageBackdrop.vue";
 import PersonAvatar from "@/components/PersonAvatar.vue";
@@ -115,13 +116,13 @@ useLiveUpdates((event) => {
 
     <view v-else class="logged">
       <view class="hero" :class="{ custom: isCustom }" @longpress="openCoverSheet">
-        <image class="hero-bg" :src="heroSrc" mode="aspectFill" />
+        <FallbackImage class="hero-bg" :src="heroSrc" mode="aspectFill" />
         <view class="hero-wash" />
         <view class="status-bar" :style="{ height: statusBarHeight + 'px' }" />
         <view class="nav-title">我的</view>
         <view class="cover-btn" :style="{ top: statusBarHeight + 8 + 'px' }" @click.stop="openCoverSheet">{{ uploading ? uploadLabel || "上传中" : "更换背景" }}</view>
         <view class="profile-row">
-          <image v-if="avatarSrc" class="avatar" :src="avatarSrc" mode="aspectFill" />
+          <FallbackImage v-if="avatarSrc" class="avatar" :src="avatarSrc" mode="aspectFill" />
           <view v-else class="avatar avatar-text">{{ avatarText }}</view>
           <view class="profile-main">
             <view class="name-line">

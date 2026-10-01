@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FallbackImage from "@/components/FallbackImage.vue";
 import { useDisplayPrefs } from "@/composables/useDisplayPrefs";
 import { applyDisplayAppearance, type WallpaperId } from "@/utils/prefs";
 import { WALLPAPER_OPTIONS } from "@/utils/wallpapers";
@@ -33,7 +34,7 @@ function select(id: WallpaperId) {
         :class="{ on: prefs.wallpaper === item.id }"
         @click="select(item.id)"
       >
-        <image v-if="item.src" class="thumb" :src="item.src" mode="aspectFill" />
+        <FallbackImage v-if="item.src" class="thumb" :src="item.src" mode="aspectFill" />
         <view v-else class="thumb plain" />
         <view class="name">
           <text>{{ item.label }}</text>

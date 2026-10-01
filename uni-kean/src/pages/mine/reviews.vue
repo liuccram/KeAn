@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { listMyReviews, listPendingReviews, type ReviewItem, type ReviewPendingItem } from "@/api/review";
+import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
 import { useUserStore } from "@/store/user";
 import { parseDateTime, starText, trustRoleLabel } from "@/utils/format";
@@ -132,7 +133,7 @@ onShow(() => {
         <view v-for="item in list" :key="item.id" class="card" @click="goTask(item.taskId)">
           <view class="top">
             <view class="who">
-              <image v-if="item.fromAvatarUrl" class="mini" :src="resolveMediaUrl(item.fromAvatarUrl)" mode="aspectFill" />
+              <FallbackImage v-if="item.fromAvatarUrl" class="mini" :src="resolveMediaUrl(item.fromAvatarUrl)" mode="aspectFill" />
               <text class="name">{{ item.fromNickname }}</text>
             </view>
             <text class="rate">{{ starText(item.rating) }}</text>

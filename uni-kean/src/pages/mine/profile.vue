@@ -3,6 +3,7 @@ import { changeEmail, updateAvatar, updateProfile } from "@/api/auth";
 import { listCampuses, listProvinces, listSchools } from "@/api/catalog";
 import { sendSms } from "@/api/sms";
 import CodeBoxes from "@/components/CodeBoxes.vue";
+import FallbackImage from "@/components/FallbackImage.vue";
 import PersonAvatar from "@/components/PersonAvatar.vue";
 import { useUserStore } from "@/store/user";
 import { normalizeQqEmail } from "@/utils/qqEmail";
@@ -265,7 +266,7 @@ function handleSave() {
 <template>
   <view class="page">
     <view class="head">
-      <image v-if="avatarSrc" class="avatar" :src="avatarSrc" mode="aspectFill" @click="chooseAvatar" />
+      <FallbackImage v-if="avatarSrc" class="avatar" :src="avatarSrc" mode="aspectFill" @click="chooseAvatar" />
       <view v-else class="avatar avatar-fallback" @click="chooseAvatar">
         <PersonAvatar :size="72" />
       </view>

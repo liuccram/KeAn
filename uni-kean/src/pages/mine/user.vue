@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { openChat } from "@/api/chat";
 import { getPublicProfile, type PublicProfile } from "@/api/user";
+import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
 import { formatRoleRating, genderLabel, parseDateTime, starText, trustRoleLabel } from "@/utils/format";
 import { goReport } from "@/utils/report";
@@ -94,7 +95,7 @@ onLoad((query) => {
     >
       <view v-if="profile" class="card">
         <view class="hero">
-          <image v-if="profile.avatarUrl" class="avatar" :src="resolveMediaUrl(profile.avatarUrl)" mode="aspectFill" />
+          <FallbackImage v-if="profile.avatarUrl" class="avatar" :src="resolveMediaUrl(profile.avatarUrl)" mode="aspectFill" />
           <view v-else class="avatar text">{{ avatarText }}</view>
           <view class="meta">
             <view class="name">

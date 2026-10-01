@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { fetchMe } from "@/api/auth";
 import { listChatPeers, openChat, type ChatPeerItem } from "@/api/chat";
+import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
 import { useUserStore } from "@/store/user";
 import { actionBlockReason } from "@/utils/format";
@@ -80,7 +81,7 @@ onShow(async () => {
     >
       <view class="list">
         <view v-for="item in list" :key="item.id" class="row" @click="handleSelect(item)">
-          <image v-if="item.avatarUrl" class="avatar img" :src="resolveMediaUrl(item.avatarUrl)" mode="aspectFill" />
+          <FallbackImage v-if="item.avatarUrl" class="avatar img" :src="resolveMediaUrl(item.avatarUrl)" mode="aspectFill" />
           <view v-else class="avatar">{{ (item.nickname || "同").slice(0, 1) }}</view>
           <view class="info">
             <view class="name">{{ item.nickname }}</view>

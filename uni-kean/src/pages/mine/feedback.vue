@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { createAppeal, listMyReports, listReportsAgainstMe, type ReportItem } from "@/api/report";
+import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
 import { parseDateTime } from "@/utils/format";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
@@ -233,13 +234,13 @@ useLiveUpdates((event) => {
             <view v-for="appeal in item.appeals || []" :key="appeal.id" class="result">
               申诉{{ appealStatusText[appeal.status] || appeal.status }}：{{ appeal.content }}
               <view v-if="appeal.images?.length" class="images">
-                <image v-for="src in appeal.images" :key="src" class="shot" :src="src" mode="aspectFill" />
+                <FallbackImage v-for="src in appeal.images" :key="src" class="shot" :src="src" mode="aspectFill" />
               </view>
             </view>
             <view v-if="canAppeal(item)" class="appeal-box">
               <wd-textarea v-model="appealDrafts[item.id]" placeholder="对处理结果有异议，请说明理由" :maxlength="500" />
               <view class="images">
-                <image
+                <FallbackImage
                   v-for="(src, index) in appealImageUrls[item.id] || []"
                   :key="src"
                   class="shot"

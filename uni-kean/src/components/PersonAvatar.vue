@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FallbackImage from "@/components/FallbackImage.vue";
 import { computed } from "vue";
 
 const props = withDefaults(
@@ -21,7 +22,7 @@ const src = computed(() => {
 </script>
 
 <template>
-  <image class="pa" :src="src" :style="{ width: size + 'px', height: size + 'px' }" mode="aspectFit" />
+  <FallbackImage class="pa" :src="src" :style="{ width: size + 'px', height: size + 'px' }" mode="aspectFit" />
 </template>
 
 <style scoped>

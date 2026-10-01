@@ -7,6 +7,7 @@ import {
   unreadNotificationCount,
   type NotificationItem
 } from "@/api/notification";
+import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
 import PageBackdrop from "@/components/PageBackdrop.vue";
 import { usePageWallpaper } from "@/composables/usePageWallpaper";
@@ -461,7 +462,7 @@ onReachBottom(() => {
               class="chat-row"
               @click="openChat(item)"
             >
-              <image v-if="item.peerAvatarUrl" class="avatar img" :src="resolveMediaUrl(item.peerAvatarUrl)" mode="aspectFill" @click.stop="openPeer(item)" />
+              <FallbackImage v-if="item.peerAvatarUrl" class="avatar img" :src="resolveMediaUrl(item.peerAvatarUrl)" mode="aspectFill" @click.stop="openPeer(item)" />
               <view v-else class="avatar" @click.stop="openPeer(item)">{{ (item.peerNickname || "同").slice(0, 1) }}</view>
               <view class="chat-main">
                 <view class="top">

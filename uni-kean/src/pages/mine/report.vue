@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { createReport, listMyReports, listReportTypes, type ReportItem, type ReportTypeItem } from "@/api/report";
+import FallbackImage from "@/components/FallbackImage.vue";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { useUploadProgress } from "@/composables/useUploadProgress";
@@ -150,7 +151,7 @@ async function handleSubmit() {
       <wd-picker v-model="model.type" label="举报原因" :columns="typeColumns" />
       <wd-textarea v-model="model.description" placeholder="补充说明，选填" :maxlength="500" />
       <view class="images">
-        <image v-for="(src, index) in images" :key="src" class="shot" :src="src" mode="aspectFill" @click="removeImage(index)" />
+        <FallbackImage v-for="(src, index) in images" :key="src" class="shot" :src="src" mode="aspectFill" @click="removeImage(index)" />
         <view v-if="uploading" class="add uploading">{{ uploadLabel }}</view>
         <view v-else-if="images.length < 3" class="add" @click="chooseImage">+ 证据图</view>
       </view>

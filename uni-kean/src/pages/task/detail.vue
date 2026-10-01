@@ -29,6 +29,7 @@ import { onLoad, onShow } from "@dcloudio/uni-app";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { useNowTick } from "@/composables/useNowTick";
 import { useUploadProgress } from "@/composables/useUploadProgress";
+import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
 import { useToast } from "wot-design-uni";
 import { computed, nextTick, ref } from "vue";
@@ -782,7 +783,6 @@ useLiveUpdates((event) => {
         <wd-cell title="是否拍照" :value="task.requirePhoto === 1 ? '是' : '否'" />
         <wd-cell title="性别要求" :value="genderRequirementLabel(task.genderRequirement)" />
         <wd-cell title="酬谢" :value="formatReward(task.reward)" />
-        <wd-cell title="结算说明" value="酬谢仅展示，线下自行结算，平台不代收" />
         <wd-cell title="申请人数" :value="`${task.applyCount} 人`" />
         <wd-cell title="发布时间" :value="parseDateTime(task.createdAt)" />
       </wd-cell-group>
@@ -830,7 +830,7 @@ useLiveUpdates((event) => {
       </view>
       <view v-if="task.fulfillPhotoUrl" class="photo-box">
         <view class="apps-title">履约现场照片</view>
-        <image class="fulfill" :src="resolveMediaUrl(task.fulfillPhotoUrl)" mode="widthFix" @click="previewFulfill" />
+        <FallbackImage class="fulfill" :src="resolveMediaUrl(task.fulfillPhotoUrl)" mode="widthFix" @click="previewFulfill" />
       </view>
       <view v-if="task.status === 'IN_PROGRESS' || task.status === 'COMPLETED'" id="focus-complete">
         <wd-cell-group border title="完成确认">

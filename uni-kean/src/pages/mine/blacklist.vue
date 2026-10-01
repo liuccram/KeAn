@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { listBlacklist, unblockUser, type BlacklistItem } from "@/api/blacklist";
+import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
 import { resolveMediaUrl } from "@/utils/request";
 import { onShow } from "@dcloudio/uni-app";
@@ -68,7 +69,7 @@ onShow(() => {
     >
       <view class="list">
         <view v-for="item in list" :key="item.id" class="row">
-          <image v-if="item.avatarUrl" class="avatar img" :src="resolveMediaUrl(item.avatarUrl)" mode="aspectFill" />
+          <FallbackImage v-if="item.avatarUrl" class="avatar img" :src="resolveMediaUrl(item.avatarUrl)" mode="aspectFill" />
           <view v-else class="avatar">{{ (item.nickname || "同").slice(0, 1) }}</view>
           <view class="info">
             <view class="name">{{ item.nickname }}</view>

@@ -13,6 +13,7 @@ import { actionBlockReason, formatChatTime, shouldShowChatTime } from "@/utils/f
 import { blockUser } from "@/api/blacklist";
 import { refreshMessageBadge } from "@/utils/messageBadge";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
+import FallbackImage from "@/components/FallbackImage.vue";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { useUploadProgress } from "@/composables/useUploadProgress";
 import { useUserStore } from "@/store/user";
@@ -252,7 +253,7 @@ useLiveUpdates((event) => {
         <view v-if="item.showTime" class="stamp">{{ formatChatTime(item.createdAt) }}</view>
         <view class="row" :class="{ mine: item.mine }">
           <view class="avatar" @click="openUser(item.mine ? userStore.state.user?.id : session?.peerUserId, item.mine)">
-            <image
+            <FallbackImage
               v-if="item.mine ? myAvatar : peerAvatar"
               class="avatar-img"
               :src="item.mine ? myAvatar : peerAvatar"
@@ -261,7 +262,7 @@ useLiveUpdates((event) => {
             <text v-else>{{ ((item.mine ? userStore.state.user?.nickname : session?.peerNickname) || "同").slice(0, 1) }}</text>
           </view>
           <view class="bubble" :class="{ image: item.msgType === 'IMAGE' }">
-            <image
+            <FallbackImage
               v-if="item.msgType === 'IMAGE'"
               class="photo"
               :src="resolveMediaUrl(item.url || item.content)"

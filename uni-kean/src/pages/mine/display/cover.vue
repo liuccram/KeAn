@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FallbackImage from "@/components/FallbackImage.vue";
 import { useMineCover } from "@/composables/useMineCover";
 
 const { heroSrc, isCustom, uploading, uploadLabel, chooseCover, resetCover } = useMineCover();
@@ -7,7 +8,7 @@ const { heroSrc, isCustom, uploading, uploadLabel, chooseCover, resetCover } = u
 <template>
   <view class="page">
     <view class="preview">
-      <image class="preview-img" :src="heroSrc" mode="aspectFill" />
+      <FallbackImage class="preview-img" :src="heroSrc" mode="aspectFill" />
       <view class="preview-mask">{{ isCustom ? "当前为自定义背景" : "当前为默认天空" }}</view>
     </view>
     <wd-cell-group border>

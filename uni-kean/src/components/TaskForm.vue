@@ -308,7 +308,7 @@ onMounted(async () => {
         placeholder="仅展示，允许 0"
         :rules="[{ required: true, message: '请填写酬谢金额' }]"
       />
-      <view class="hint">酬谢仅展示，可私信自行结算{{ lockLocation ? "已有人接代课，开课前 1 小时内不能修改地点。" : lockCore ? "已有申请后只能改地点、备注和酬谢，是否拍照不可再改。" : "" }}</view>
+      <view class="hint">可私信自行结算{{ lockLocation ? "已有人接代课，开课前 1 小时内不能修改地点。" : lockCore ? "已有申请后只能改地点、备注和酬谢，是否拍照不可再改。" : "" }}</view>
       <wd-textarea v-model="model.reason" label="代课原因" label-width="80px" placeholder="选填" :maxlength="500" />
       <wd-textarea v-model="model.requirement" label="代课要求" label-width="80px" placeholder="选填" :maxlength="500" />
       <wd-textarea v-model="model.remark" label="备注" label-width="80px" placeholder="选填" :maxlength="500" />
