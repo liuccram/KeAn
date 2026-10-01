@@ -139,7 +139,9 @@ useLiveUpdates((event) => {
         <view v-if="uploading" class="add uploading">{{ uploadLabel }}</view>
         <view v-else-if="images.length < 3" class="add" @click="chooseImage">+ 图片</view>
       </view>
-      <wd-button type="primary" block :loading="submitting" @click="handleSubmit">提交反馈</wd-button>
+      <wd-button type="primary" block :loading="submitting" :disabled="uploading" @click="handleSubmit">
+        {{ uploading ? uploadLabel : "提交反馈" }}
+      </wd-button>
     </view>
 
     <view class="section">我的反馈</view>

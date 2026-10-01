@@ -211,7 +211,15 @@ useLiveUpdates((event) => {
               <view v-if="uploading && uploadingReportId === item.id" class="add uploading">{{ uploadLabel }}</view>
               <view v-else-if="(appealImageKeys[item.id] || []).length < 3" class="add" @click="chooseAppealImage(item.id)">+ 图片</view>
             </view>
-            <wd-button size="small" type="primary" :loading="appealingId === item.id" @click="handleAppeal(item)">提交申诉</wd-button>
+            <wd-button
+              size="small"
+              type="primary"
+              :loading="appealingId === item.id"
+              :disabled="uploading && uploadingReportId === item.id"
+              @click="handleAppeal(item)"
+            >
+              {{ uploading && uploadingReportId === item.id ? uploadLabel : "提交申诉" }}
+            </wd-button>
           </view>
         </view>
       </view>

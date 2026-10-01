@@ -236,6 +236,10 @@ function handleSave() {
             email: normalizeQqEmail(model.email) || model.email.trim(),
             smsCode: model.smsCode.trim()
           });
+          // 换绑邮箱已成功，先写入 store，避免后续更新资料失败时界面仍显示旧邮箱
+          if (userStore.state.token && latest) {
+            userStore.setLogin(userStore.state.token, latest);
+          }
         }
         latest = await updateProfile({
           nickname: model.nickname.trim(),
@@ -337,7 +341,9 @@ function handleSave() {
       {{ bound ? "更换QQ邮箱需向原邮箱发送验证码。" : "请先绑定QQ邮箱后再保存。" }}学校还可修改 {{ remainChanges }} 次，校区可随时修改。
     </view>
     <view class="footer">
-      <wd-button type="primary" size="large" block :loading="loading" @click="handleSave">保存</wd-button>
+      <wd-button type="primary" size="large" block :loading="loading" :disabled="uploading" @click="handleSave">
+        {{ uploading ? uploadLabel : "保存" }}
+      </wd-button>
     </view>
     <wd-toast />
   </view>

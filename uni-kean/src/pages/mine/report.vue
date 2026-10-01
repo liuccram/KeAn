@@ -155,7 +155,9 @@ async function handleSubmit() {
         <view v-else-if="images.length < 3" class="add" @click="chooseImage">+ 证据图</view>
       </view>
       <view v-if="alreadyReported" class="limit">该对象当前不可再次举报</view>
-      <wd-button type="primary" block :loading="submitting" :disabled="alreadyReported" @click="handleSubmit">提交举报</wd-button>
+      <wd-button type="primary" block :loading="submitting" :disabled="alreadyReported || uploading" @click="handleSubmit">
+        {{ uploading ? uploadLabel : "提交举报" }}
+      </wd-button>
     </view>
     <wd-toast />
   </view>
