@@ -141,11 +141,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 || "/api/campuses".equals(path)
                 || "/api/courses".equals(path)
                 || "/api/tasks".equals(path)
-                || path.matches("/api/tasks/\\d+")
+                // 必须与 SecurityConfig 的 GET /api/tasks/* 保持一致。此前这里只认 \d+，
+                // 于是 /api/tasks/abc 在过滤器就被判 401 —— 前端会当成"登录已失效"把用户
+                // 踢回登录页，实际只是 id 格式不对。放开后请求能到达控制器，
+                // 由 GlobalExceptionHandler 映射为 400（参数错误）。
+                || path.matches("/api/tasks/[^/]+")
                 || "/api/announcements/active".equals(path)
                 || path.startsWith("/api/files/")
                 || "/api/auth/turnstile".equals(path)
-                || "/turnstile.html".equals(path);
+                || "/turnstile.html".equals(path)
+                || "/health".equals(path)
+                || "/health/ready".equals(path);
     }
 
     private void writeUnauthorized(HttpServletResponse response) throws IOException {

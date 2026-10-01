@@ -59,6 +59,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/sms", "/api/auth/password/reset", "/api/auth/turnstile").permitAll()
                         .requestMatchers("/turnstile.html").permitAll()
+                        .requestMatchers("/health", "/health/ready").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/schools",

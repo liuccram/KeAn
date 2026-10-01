@@ -72,7 +72,10 @@ services:
     volumes:
       - kean-rustfs-data:/data
     # 不加 healthcheck：镜像里不一定有 curl/wget，写错会让容器永远显示 unhealthy。
-    # 健康端点 /health 与 /health/ready 免鉴权，需要探活时从外部探测即可。
+    # 要探活 RustFS 本身，就用 S3 接口探（例如 aws-cli 的 s3api head-bucket），
+    # 或直接判 9000 端口连通性。
+    # 注意：后端的 /health 与 /health/ready 只检查 MySQL 与 Redis，【不包含对象存储】，
+    # 不能拿它代替 RustFS 的存活判定 —— 否则存储挂了探针依然报 UP。
 
   rustfs-init:
     # 一次性任务：等 RustFS 就绪后建桶。
