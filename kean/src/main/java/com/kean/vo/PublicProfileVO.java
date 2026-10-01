@@ -18,6 +18,7 @@ public record PublicProfileVO(
         Integer publishRatingCount,
         BigDecimal applyRatingAvg,
         Integer applyRatingCount,
+        /** 1 = 隐私账号。此时 limited=true、统计字段为 null，但 avatarUrl 与 nickname 仍返回。 */
         Integer privateAccount,
         boolean limited,
         boolean mine,

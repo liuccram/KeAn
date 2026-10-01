@@ -78,6 +78,11 @@ public class SysUser {
 
     private LocalDateTime mutedUntil;
 
+    /**
+     * 1 = 隐私账号。开启后隐藏完整主页的统计字段与可发现性
+     * （不出现在可私聊列表、不能被主动发起私聊）；
+     * <b>头像与昵称仍对外公开</b>。完整语义见 docs/api/auth.md 的「隐私账号语义」。
+     */
     private Integer privateAccount;
 
     private LocalDateTime lastLoginAt;
