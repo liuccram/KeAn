@@ -8,6 +8,7 @@ import com.kean.service.StorageService;
 import com.kean.service.SysConfigService;
 import com.kean.utils.FileUrls;
 import com.kean.utils.ImageMagic;
+import com.kean.utils.ImageNormalizer;
 import com.kean.vo.FileVO;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
@@ -66,16 +67,18 @@ public class StorageServiceImpl implements StorageService {
         if (data.length > MAX_BYTES) {
             throw new BizException(ErrorCode.FILE_TOO_LARGE);
         }
-        String ext = ImageMagic.extensionOf(data);
-        if (ext == null) {
+        String detected = ImageMagic.extensionOf(data);
+        if (detected == null) {
             throw new BizException(ErrorCode.FILE_TYPE_INVALID);
         }
-        String contentType = switch (ext) {
-            case "png" -> "image/png";
-            case "webp" -> "image/webp";
-            case "gif" -> "image/gif";
-            default -> "image/jpeg";
-        };
+        // 重编码以剥离 EXIF（GPS / 设备 / 时间），同时限制像素与边长。
+        // GIF 与 WebP 两个已知缺口见 ImageNormalizer 的类注释。
+        ImageNormalizer.Result stored = ImageNormalizer.normalize(data, detected);
+        byte[] content = stored.data();
+        if (content.length > MAX_BYTES) {
+            // 归一化后仍超限：重编码可能变大（例如大幅面 PNG）
+            throw new BizException(ErrorCode.FILE_TOO_LARGE);
+        }
         String folder = switch (normalized) {
             case "AVATAR" -> "avatar";
             case "COVER" -> "cover";
@@ -84,13 +87,13 @@ public class StorageServiceImpl implements StorageService {
             case "FULFILL" -> "fulfill";
             default -> "chat";
         };
-        String objectKey = folder + "/" + userId + "/" + UUID.randomUUID() + "." + ext;
-        try (InputStream input = new ByteArrayInputStream(data)) {
+        String objectKey = folder + "/" + userId + "/" + UUID.randomUUID() + "." + stored.extension();
+        try (InputStream input = new ByteArrayInputStream(content)) {
             minioClient.putObject(PutObjectArgs.builder()
                     .bucket(properties.getBucket())
                     .object(objectKey)
-                    .stream(input, data.length, -1)
-                    .contentType(contentType)
+                    .stream(input, content.length, -1)
+                    .contentType(stored.contentType())
                     .build());
         } catch (BizException ex) {
             throw ex;
