@@ -2,6 +2,7 @@ package com.kean.controller;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -50,6 +51,11 @@ public class HealthController {
     private final StringRedisTemplate redisTemplate;
     private final long probeTimeoutMs;
 
+    /**
+     * 显式标注 {@code @Autowired}：本类还有一个包级私有的构造函数（供测试注入更短的超时），
+     * 两个构造函数会让 Spring 无法判断用哪个，从而直接启动失败。
+     */
+    @Autowired
     public HealthController(DataSource dataSource, StringRedisTemplate redisTemplate) {
         this(dataSource, redisTemplate, DEFAULT_PROBE_TIMEOUT_MS);
     }
