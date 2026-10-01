@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { APPLICATION_STATUS_TEXT } from "@/api/application";
 import { listMyApplied, TASK_STATUS_TEXT, type TaskItem } from "@/api/task";
+import ListState from "@/components/ListState.vue";
 import { formatReward } from "@/utils/format";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { onShow } from "@dcloudio/uni-app";
@@ -10,17 +11,25 @@ import { ref } from "vue";
 const toast = useToast();
 const list = ref<TaskItem[]>([]);
 const loading = ref(false);
+const error = ref("");
 
 async function load() {
   const first = list.value.length === 0;
   if (first) {
     loading.value = true;
   }
+  error.value = "";
   try {
     const data = await listMyApplied();
     list.value = data.list;
-  } catch (error) {
-    toast.error((error as Error).message || "加载失败");
+  } catch (err) {
+    const message = (err as Error).message || "加载失败";
+    error.value = message;
+    // 已有内容时只用轻提示：这时若让失败态顶掉列表，比不提示更糟。
+    // 没有内容时交给 ListState 显示原因和「重新加载」。
+    if (!first) {
+      toast.error(message);
+    }
   } finally {
     if (first) {
       loading.value = false;
@@ -49,18 +58,25 @@ useLiveUpdates((event) => {
 
 <template>
   <view class="page">
-    <view v-if="list.length" class="list">
-      <view v-for="item in list" :key="item.id" class="card" @click="goDetail(item.id)">
-        <view class="top">
-          <text class="name">{{ item.courseName }}</text>
-          <text class="status">{{ TASK_STATUS_TEXT[item.status] || item.status }}</text>
+    <ListState
+      :loading="loading"
+      :error="error"
+      :empty="list.length === 0"
+      empty-text="还没有申请过代课"
+      @retry="load"
+    >
+      <view class="list">
+        <view v-for="item in list" :key="item.id" class="card" @click="goDetail(item.id)">
+          <view class="top">
+            <text class="name">{{ item.courseName }}</text>
+            <text class="status">{{ TASK_STATUS_TEXT[item.status] || item.status }}</text>
+          </view>
+          <view class="meta">申请状态：{{ applyText(item) }}</view>
+          <view class="meta">{{ item.taskDate }} {{ item.startTime }}-{{ item.endTime }}</view>
+          <view class="meta">{{ formatReward(item.reward) }}</view>
         </view>
-        <view class="meta">申请状态：{{ applyText(item) }}</view>
-        <view class="meta">{{ item.taskDate }} {{ item.startTime }}-{{ item.endTime }}</view>
-        <view class="meta">{{ formatReward(item.reward) }}</view>
       </view>
-    </view>
-    <wd-status-tip v-else-if="!loading" image="content" tip="还没有申请过代课" />
+    </ListState>
     <wd-toast />
   </view>
 </template>

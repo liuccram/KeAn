@@ -107,7 +107,7 @@ function handleSubmit() {
       }
       const email = normalizeQqEmail(model.email);
       if (!email) {
-        toast.error("请填写正确的qq邮箱");
+        toast.error("请填写正确的 QQ 邮箱");
         return;
       }
       if (!/^\d{6}$/.test(model.smsCode)) {

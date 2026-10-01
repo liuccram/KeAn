@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { createReport, listMyReports, listReportTypes, type ReportItem, type ReportTypeItem } from "@/api/report";
+import ListState from "@/components/ListState.vue";
 import { parseDateTime } from "@/utils/format";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
@@ -16,6 +17,8 @@ const imageKeys = ref<string[]>([]);
 // 解构到顶层，模板才会自动解包 ref
 const { active: uploading, label: uploadLabel, onProgress, reset: resetUpload } = useUploadProgress();
 const records = ref<ReportItem[]>([]);
+const loading = ref(false);
+const error = ref("");
 const model = ref({
   type: "SUGGESTION",
   description: ""
@@ -47,11 +50,26 @@ async function loadTypes() {
 }
 
 async function loadRecords() {
+  // 本次请求前是否已有记录：没有时才由 ListState 显示加载中 / 失败原因和重试入口
+  const first = records.value.length === 0;
+  if (first) {
+    loading.value = true;
+  }
+  error.value = "";
   try {
     const reports = await listMyReports();
     records.value = (reports || []).filter((item) => item.targetType === "FEEDBACK");
-  } catch (error) {
-    toast.error((error as Error).message || "加载失败");
+  } catch (err) {
+    const message = (err as Error).message || "加载失败";
+    error.value = message;
+    // 已经有记录时只用轻提示，避免失败态把列表顶掉
+    if (!first) {
+      toast.error(message);
+    }
+  } finally {
+    if (first) {
+      loading.value = false;
+    }
   }
 }
 
@@ -145,18 +163,25 @@ useLiveUpdates((event) => {
     </view>
 
     <view class="section">我的反馈</view>
-    <view v-if="records.length" class="list">
-      <view v-for="item in records" :key="item.id" class="card">
-        <view class="top">
-          <text class="name">{{ item.typeLabel }}</text>
-          <text class="status">{{ resultText[item.handleResult || ""] || statusText[item.status] || item.status }}</text>
+    <ListState
+      :loading="loading"
+      :error="error"
+      :empty="records.length === 0"
+      empty-text="暂无反馈记录"
+      @retry="loadRecords"
+    >
+      <view class="list">
+        <view v-for="item in records" :key="item.id" class="card">
+          <view class="top">
+            <text class="name">{{ item.typeLabel }}</text>
+            <text class="status">{{ resultText[item.handleResult || ""] || statusText[item.status] || item.status }}</text>
+          </view>
+          <view v-if="item.description" class="desc">{{ item.description }}</view>
+          <view v-if="item.handleRemark" class="desc">管理员：{{ item.handleRemark }}</view>
+          <view class="time">{{ parseDateTime(item.handledAt || item.createdAt) }}</view>
         </view>
-        <view v-if="item.description" class="desc">{{ item.description }}</view>
-        <view v-if="item.handleRemark" class="desc">管理员：{{ item.handleRemark }}</view>
-        <view class="time">{{ parseDateTime(item.handledAt || item.createdAt) }}</view>
       </view>
-    </view>
-    <wd-status-tip v-else image="content" tip="暂无反馈记录" />
+    </ListState>
     <wd-toast />
   </view>
 </template>

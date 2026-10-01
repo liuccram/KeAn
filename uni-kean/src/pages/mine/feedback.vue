@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { createAppeal, listMyReports, listReportsAgainstMe, type ReportItem } from "@/api/report";
+import ListState from "@/components/ListState.vue";
 import { parseDateTime } from "@/utils/format";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
@@ -12,6 +13,8 @@ type TabKey = "records" | "results" | "against";
 
 const toast = useToast();
 const tab = ref<TabKey>("records");
+const loading = ref(false);
+const error = ref("");
 const mine = ref<ReportItem[]>([]);
 const againstMe = ref<ReportItem[]>([]);
 const appealDrafts = ref<Record<number, string>>({});
@@ -64,12 +67,27 @@ onLoad((query) => {
 });
 
 async function load() {
+  // 本次请求前页面是否已有内容：没有时才由 ListState 显示加载中 / 失败原因和重试入口
+  const first = mine.value.length === 0 && againstMe.value.length === 0;
+  if (first) {
+    loading.value = true;
+  }
+  error.value = "";
   try {
     const [reports, received] = await Promise.all([listMyReports(), listReportsAgainstMe()]);
     mine.value = (reports || []).filter((item) => item.targetType !== "FEEDBACK");
     againstMe.value = received || [];
-  } catch (error) {
-    toast.error((error as Error).message || "加载失败");
+  } catch (err) {
+    const message = (err as Error).message || "加载失败";
+    error.value = message;
+    // 已经有内容时只用轻提示：这时若让失败态顶掉列表，比不提示更糟
+    if (!first) {
+      toast.error(message);
+    }
+  } finally {
+    if (first) {
+      loading.value = false;
+    }
   }
 }
 
@@ -153,77 +171,98 @@ useLiveUpdates((event) => {
     </view>
 
     <template v-if="tab === 'records'">
-      <view v-if="records.length" class="list">
-        <view v-for="item in records" :key="item.id" class="card">
-          <view class="top">
-            <text class="name">{{ item.targetLabel }}</text>
-            <text class="status">{{ statusText[item.status] || item.status }}</text>
+      <ListState
+        :loading="loading"
+        :error="error"
+        :empty="records.length === 0"
+        empty-text="暂无举报记录，可在代课、私信或他人主页发起举报"
+        @retry="load"
+      >
+        <view class="list">
+          <view v-for="item in records" :key="item.id" class="card">
+            <view class="top">
+              <text class="name">{{ item.targetLabel }}</text>
+              <text class="status">{{ statusText[item.status] || item.status }}</text>
+            </view>
+            <view class="meta">{{ item.typeLabel }} · {{ targetTypeText[item.targetType] || item.targetType }}</view>
+            <view v-if="item.description" class="desc">{{ item.description }}</view>
+            <view class="time">{{ parseDateTime(item.createdAt) }}</view>
           </view>
-          <view class="meta">{{ item.typeLabel }} · {{ targetTypeText[item.targetType] || item.targetType }}</view>
-          <view v-if="item.description" class="desc">{{ item.description }}</view>
-          <view class="time">{{ parseDateTime(item.createdAt) }}</view>
         </view>
-      </view>
-      <wd-status-tip v-else image="content" tip="暂无举报记录，可在代课、私聊或他人主页发起举报" />
+      </ListState>
     </template>
 
     <template v-else-if="tab === 'results'">
-      <view v-if="results.length" class="list">
-        <view v-for="item in results" :key="item.id" class="card">
-          <view class="top">
-            <text class="name">{{ item.targetLabel }}</text>
-            <text class="status">{{ resultText[item.handleResult || ""] || statusText[item.status] }}</text>
+      <ListState
+        :loading="loading"
+        :error="error"
+        :empty="results.length === 0"
+        empty-text="暂无处理结果"
+        @retry="load"
+      >
+        <view class="list">
+          <view v-for="item in results" :key="item.id" class="card">
+            <view class="top">
+              <text class="name">{{ item.targetLabel }}</text>
+              <text class="status">{{ resultText[item.handleResult || ""] || statusText[item.status] }}</text>
+            </view>
+            <view class="meta">{{ item.typeLabel }} · {{ targetTypeText[item.targetType] || item.targetType }}</view>
+            <view v-if="item.handleRemark" class="desc">处理说明：{{ item.handleRemark }}</view>
+            <view class="time">{{ parseDateTime(item.handledAt || item.createdAt) }}</view>
           </view>
-          <view class="meta">{{ item.typeLabel }} · {{ targetTypeText[item.targetType] || item.targetType }}</view>
-          <view v-if="item.handleRemark" class="desc">处理说明：{{ item.handleRemark }}</view>
-          <view class="time">{{ parseDateTime(item.handledAt || item.createdAt) }}</view>
         </view>
-      </view>
-      <wd-status-tip v-else image="content" tip="暂无处理结果" />
+      </ListState>
     </template>
 
     <template v-else>
-      <view v-if="againstMe.length" class="list">
-        <view v-for="item in againstMe" :key="'a-' + item.id" class="card">
-          <view class="top">
-            <text class="name">{{ item.reporterNickname || "同学" }}</text>
-            <text class="status">{{ resultText[item.handleResult || ""] || statusText[item.status] }}</text>
-          </view>
-          <view class="meta">举报人 · {{ item.typeLabel }} · {{ parseDateTime(item.handledAt || item.createdAt) }}</view>
-          <view v-if="item.handleRemark" class="desc">{{ item.handleRemark }}</view>
-          <view v-for="appeal in item.appeals || []" :key="appeal.id" class="result">
-            申诉{{ appealStatusText[appeal.status] || appeal.status }}：{{ appeal.content }}
-            <view v-if="appeal.images?.length" class="images">
-              <image v-for="src in appeal.images" :key="src" class="shot" :src="src" mode="aspectFill" />
+      <ListState
+        :loading="loading"
+        :error="error"
+        :empty="againstMe.length === 0"
+        empty-text="暂无针对你的处理"
+        @retry="load"
+      >
+        <view class="list">
+          <view v-for="item in againstMe" :key="'a-' + item.id" class="card">
+            <view class="top">
+              <text class="name">{{ item.reporterNickname || "同学" }}</text>
+              <text class="status">{{ resultText[item.handleResult || ""] || statusText[item.status] }}</text>
             </view>
-          </view>
-          <view v-if="canAppeal(item)" class="appeal-box">
-            <wd-textarea v-model="appealDrafts[item.id]" placeholder="对处理结果有异议，请说明理由" :maxlength="500" />
-            <view class="images">
-              <image
-                v-for="(src, index) in appealImageUrls[item.id] || []"
-                :key="src"
-                class="shot"
-                :src="src"
-                mode="aspectFill"
-                @click="removeAppealImage(item.id, index)"
-              />
-              <view v-if="uploading && uploadingReportId === item.id" class="add uploading">{{ uploadLabel }}</view>
-              <view v-else-if="(appealImageKeys[item.id] || []).length < 3" class="add" @click="chooseAppealImage(item.id)">+ 图片</view>
+            <view class="meta">举报人 · {{ item.typeLabel }} · {{ parseDateTime(item.handledAt || item.createdAt) }}</view>
+            <view v-if="item.handleRemark" class="desc">{{ item.handleRemark }}</view>
+            <view v-for="appeal in item.appeals || []" :key="appeal.id" class="result">
+              申诉{{ appealStatusText[appeal.status] || appeal.status }}：{{ appeal.content }}
+              <view v-if="appeal.images?.length" class="images">
+                <image v-for="src in appeal.images" :key="src" class="shot" :src="src" mode="aspectFill" />
+              </view>
             </view>
-            <wd-button
-              size="small"
-              type="primary"
-              :loading="appealingId === item.id"
-              :disabled="uploading && uploadingReportId === item.id"
-              @click="handleAppeal(item)"
-            >
-              {{ uploading && uploadingReportId === item.id ? uploadLabel : "提交申诉" }}
-            </wd-button>
+            <view v-if="canAppeal(item)" class="appeal-box">
+              <wd-textarea v-model="appealDrafts[item.id]" placeholder="对处理结果有异议，请说明理由" :maxlength="500" />
+              <view class="images">
+                <image
+                  v-for="(src, index) in appealImageUrls[item.id] || []"
+                  :key="src"
+                  class="shot"
+                  :src="src"
+                  mode="aspectFill"
+                  @click="removeAppealImage(item.id, index)"
+                />
+                <view v-if="uploading && uploadingReportId === item.id" class="add uploading">{{ uploadLabel }}</view>
+                <view v-else-if="(appealImageKeys[item.id] || []).length < 3" class="add" @click="chooseAppealImage(item.id)">+ 图片</view>
+              </view>
+              <wd-button
+                size="small"
+                type="primary"
+                :loading="appealingId === item.id"
+                :disabled="uploading && uploadingReportId === item.id"
+                @click="handleAppeal(item)"
+              >
+                {{ uploading && uploadingReportId === item.id ? uploadLabel : "提交申诉" }}
+              </wd-button>
+            </view>
           </view>
         </view>
-      </view>
-      <wd-status-tip v-else image="content" tip="暂无针对你的处理" />
+      </ListState>
     </template>
     <wd-toast />
   </view>

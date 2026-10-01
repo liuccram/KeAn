@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { listBlacklist, unblockUser, type BlacklistItem } from "@/api/blacklist";
+import ListState from "@/components/ListState.vue";
 import { resolveMediaUrl } from "@/utils/request";
 import { onShow } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
@@ -7,22 +8,34 @@ import { ref } from "vue";
 
 const toast = useToast();
 const loading = ref(false);
+const error = ref("");
 const list = ref<BlacklistItem[]>([]);
 
 async function load() {
-  loading.value = true;
+  const first = list.value.length === 0;
+  if (first) {
+    loading.value = true;
+  }
+  error.value = "";
   try {
     list.value = await listBlacklist();
-  } catch (error) {
-    toast.error((error as Error).message || "加载失败");
+  } catch (err) {
+    const message = (err as Error).message || "加载失败";
+    error.value = message;
+    // 已有内容时只用轻提示：这时若让失败态顶掉列表，比不提示更糟。
+    if (!first) {
+      toast.error(message);
+    }
   } finally {
-    loading.value = false;
+    if (first) {
+      loading.value = false;
+    }
   }
 }
 
 function handleUnblock(item: BlacklistItem) {
   uni.showModal({
-    title: "取消拉黑",
+    title: "移出黑名单",
     content: `确定将 ${item.nickname} 移出黑名单？`,
     success: async (res) => {
       if (!res.confirm) {
@@ -46,18 +59,25 @@ onShow(() => {
 
 <template>
   <view class="page">
-    <view v-if="list.length" class="list">
-      <view v-for="item in list" :key="item.id" class="row">
-        <image v-if="item.avatarUrl" class="avatar img" :src="resolveMediaUrl(item.avatarUrl)" mode="aspectFill" />
-        <view v-else class="avatar">{{ (item.nickname || "同").slice(0, 1) }}</view>
-        <view class="info">
-          <view class="name">{{ item.nickname }}</view>
-          <view class="campus">{{ item.campusName || "本校同学" }}</view>
+    <ListState
+      :loading="loading"
+      :error="error"
+      :empty="list.length === 0"
+      empty-text="黑名单是空的"
+      @retry="load"
+    >
+      <view class="list">
+        <view v-for="item in list" :key="item.id" class="row">
+          <image v-if="item.avatarUrl" class="avatar img" :src="resolveMediaUrl(item.avatarUrl)" mode="aspectFill" />
+          <view v-else class="avatar">{{ (item.nickname || "同").slice(0, 1) }}</view>
+          <view class="info">
+            <view class="name">{{ item.nickname }}</view>
+            <view class="campus">{{ item.campusName || "本校同学" }}</view>
+          </view>
+          <wd-button size="small" plain @click="handleUnblock(item)">移出黑名单</wd-button>
         </view>
-        <wd-button size="small" plain @click="handleUnblock(item)">取消拉黑</wd-button>
       </view>
-    </view>
-    <wd-status-tip v-else-if="!loading" image="content" tip="黑名单是空的" />
+    </ListState>
     <wd-toast />
   </view>
 </template>

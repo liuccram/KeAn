@@ -254,11 +254,11 @@ function handleRegister() {
         />
         <wd-input
           v-model="model.email"
-          label="QQ邮箱"
+          label="QQ 邮箱"
           label-width="80px"
           prop="email"
           clearable
-          placeholder="请填写正确的qq邮箱"
+          placeholder="请填写正确的 QQ 邮箱"
           :rules="[{ required: true, message: '请填写 QQ 号' }]"
         />
       </wd-cell-group>

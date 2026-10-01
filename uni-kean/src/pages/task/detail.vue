@@ -29,6 +29,7 @@ import { onLoad, onShow } from "@dcloudio/uni-app";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { useNowTick } from "@/composables/useNowTick";
 import { useUploadProgress } from "@/composables/useUploadProgress";
+import ListState from "@/components/ListState.vue";
 import { useToast } from "wot-design-uni";
 import { computed, nextTick, ref } from "vue";
 
@@ -38,6 +39,8 @@ const nowTick = useNowTick();
 const task = ref<TaskItem | null>(null);
 const applications = ref<ApplicationItem[]>([]);
 const loading = ref(true);
+// 只有「任务不存在」以外的失败才算加载失败：不存在是真的查不到，走空态
+const loadError = ref("");
 const submitting = ref(false);
 // 解构到顶层，模板才会自动解包 ref
 const { active: uploading, label: uploadLabel, onProgress, reset: resetUpload } = useUploadProgress();
@@ -240,19 +243,19 @@ const actionBar = computed(() => {
     return { visible: true, label: "下课确认完成", hint: "", type: "primary" as const, key: "complete", more: true };
   }
   if (task.value.status === "COMPLETED" && task.value.canReview) {
-    return { visible: true, label: "为对方打星", hint: "", type: "primary" as const, key: "review", more: true };
+    return { visible: true, label: "为对方评价", hint: "", type: "primary" as const, key: "review", more: true };
   }
   const pendingApps = isPublisher.value && task.value.status === "APPLYING" && applications.value.some((item) => item.status === "PENDING");
   if (pendingApps) {
     return { visible: true, label: "处理申请", hint: "在上方选择代课人", type: "primary" as const, key: "applicants", more: true };
   }
   if (showMatchGuide.value && canChat.value) {
-    return { visible: true, label: "私聊确认教室", hint: photoWindowHint.value || "先对好教室和见面点", type: "primary" as const, key: "chat", more: true };
+    return { visible: true, label: "私信确认教室", hint: photoWindowHint.value || "请先与对方确认教室和见面地点", type: "primary" as const, key: "chat", more: true };
   }
   if (canChat.value) {
     return {
       visible: true,
-      label: task.value.mine ? "私聊代课者" : "私聊发布者",
+      label: task.value.mine ? "私信代课者" : "私信发布者",
       hint: photoWindowHint.value,
       type: "primary" as const,
       key: "chat",
@@ -343,16 +346,16 @@ function openMore() {
     rows.push({ label: "撤回申请", run: handleWithdraw });
   }
   if (canChat.value && primary !== "chat") {
-    rows.push({ label: task.value?.mine ? "私聊代课者" : "私聊发布者", run: handleChat });
+    rows.push({ label: task.value?.mine ? "私信代课者" : "私信发布者", run: handleChat });
   }
   if (canReportPublisher.value) {
     rows.push({ label: "举报该代课", run: () => goReportPage("TASK", task.value?.id, task.value?.courseName) });
     rows.push({ label: "举报发布者", run: () => goReportPage("USER", task.value?.publisher?.id, task.value?.publisher?.nickname) });
-    rows.push({ label: "拉黑发布者", run: () => handleBlock(task.value?.publisher?.id, task.value?.publisher?.nickname) });
+    rows.push({ label: "将发布者加入黑名单", run: () => handleBlock(task.value?.publisher?.id, task.value?.publisher?.nickname) });
   }
   if (canReportApplicant.value) {
     rows.push({ label: "举报代课者", run: () => goReportPage("USER", task.value?.matchedApplicantId, task.value?.matchedApplicantNickname) });
-    rows.push({ label: "拉黑代课者", run: () => handleBlock(task.value?.matchedApplicantId, task.value?.matchedApplicantNickname) });
+    rows.push({ label: "将代课者加入黑名单", run: () => handleBlock(task.value?.matchedApplicantId, task.value?.matchedApplicantNickname) });
   }
   if (canCancel.value) {
     rows.push({ label: "取消任务", run: handleCancel });
@@ -378,10 +381,14 @@ const canReportApplicant = computed(() => {
 
 async function load(quiet = false) {
   if (!id.value) {
+    // 没有 id 不存在「加载中」可言，直接落到「任务不存在」空态
+    loading.value = false;
     return;
   }
   if (!quiet) {
     loading.value = true;
+    // 后台静默刷新不清失败原因：清掉会让「加载失败」闪成「任务不存在」
+    loadError.value = "";
   }
   try {
     if (userStore.isLoggedIn.value) {
@@ -395,6 +402,7 @@ async function load(quiet = false) {
       }
     }
     task.value = await getTask(id.value);
+    loadError.value = "";
     if (task.value.applicantConfirmed === 1) {
       pendingFulfillKey.value = "";
     }
@@ -408,8 +416,14 @@ async function load(quiet = false) {
       focusApplied.value = true;
     }
   } catch (error) {
-    if (!quiet) {
-      toast.error((error as Error).message || "加载失败");
+    const message = (error as Error).message || "加载失败";
+    // 「不存在」是真的查不到，保留原空态；其它失败用 ListState 显示「加载失败 + 重新加载」
+    if (!message.includes("不存在")) {
+      loadError.value = message;
+    }
+    // 已经有内容时只用轻提示：这时若让失败态顶掉详情，比不提示更糟。
+    if (!quiet && task.value) {
+      toast.error(message);
     }
   } finally {
     if (!quiet) {
@@ -475,8 +489,8 @@ async function handleAccept(appId: number) {
     await load();
     uni.showModal({
       title: "已匹配",
-      content: "建议先私聊确认教室和见面点",
-      confirmText: "去私聊",
+      content: "建议先与对方确认教室和见面地点",
+      confirmText: "去发消息",
       cancelText: "稍后",
       success: (res) => {
         if (res.confirm) {
@@ -553,7 +567,7 @@ async function handleComplete() {
   submitting.value = true;
   try {
     task.value = await completeTask(id.value);
-    toast.success("已确认完成，已通知对方打星");
+    toast.success("已确认完成，已通知对方评价");
     uni.navigateTo({ url: `/pages/task/rate?id=${id.value}` });
   } catch (error) {
     toast.error((error as Error).message || "操作失败");
@@ -588,7 +602,7 @@ async function startChat(peerId?: number | null) {
     const session = await openChat(peerId);
     uni.navigateTo({ url: `/pages/message/chat?id=${session.id}` });
   } catch (error) {
-    toast.error((error as Error).message || "发起私聊失败");
+    toast.error((error as Error).message || "发起私信失败");
   } finally {
     submitting.value = false;
   }
@@ -662,12 +676,12 @@ function goReportPage(targetType: string, targetId?: number | null, targetLabel?
 
 function handleBlock(userId?: number | null, nickname?: string | null) {
   if (!userId) {
-    toast.error("暂无可拉黑对象");
+    toast.error("暂无可加入黑名单的对象");
     return;
   }
   uni.showModal({
-    title: "拉黑",
-    content: `拉黑后将无法与 ${nickname || "对方"} 申请或私聊，确定继续？`,
+    title: "加入黑名单",
+    content: `加入黑名单后，对方将无法再向你申请任务，你们也无法互发消息，确定继续？`,
     success: async (res) => {
       if (!res.confirm) {
         return;
@@ -677,7 +691,7 @@ function handleBlock(userId?: number | null, nickname?: string | null) {
         await blockUser(userId);
         toast.success("已加入黑名单");
       } catch (error) {
-        toast.error((error as Error).message || "拉黑失败");
+        toast.error((error as Error).message || "加入黑名单失败");
       } finally {
         submitting.value = false;
       }
@@ -714,6 +728,14 @@ useLiveUpdates((event) => {
 
 <template>
   <view class="page">
+    <!-- 没有内容可显示时才由 ListState 接管：加载中 / 加载失败+重新加载 / 任务不存在 -->
+    <ListState
+      :loading="loading"
+      :error="loadError"
+      :empty="!task"
+      empty-text="任务不存在"
+      @retry="load()"
+    />
     <view v-if="task" class="content">
       <view class="hero">
         <view class="title-row">
@@ -725,7 +747,7 @@ useLiveUpdates((event) => {
       </view>
       <view v-if="showMatchGuide" id="focus-guide" class="guide">
         <view class="guide-title">已匹配</view>
-        <view class="guide-text">建议先私聊确认教室和见面点，避免到场对不上。</view>
+        <view class="guide-text">建议先与对方确认教室和见面地点，避免到场后地点不一致。</view>
       </view>
       <view v-if="showTrust" class="trust">
         <view class="trust-title">发布者可信度</view>
@@ -747,7 +769,7 @@ useLiveUpdates((event) => {
           <view v-if="item.status === 'PENDING' || item.status === 'ACCEPTED'" class="app-actions">
             <wd-button v-if="item.status === 'PENDING' && task.status === 'APPLYING'" size="small" type="primary" :disabled="submitting" @click="handleAccept(item.id)">接受</wd-button>
             <wd-button v-if="item.status === 'PENDING' && task.status === 'APPLYING'" size="small" plain :disabled="submitting" @click="handleReject(item.id)">拒绝</wd-button>
-            <wd-button size="small" plain :disabled="submitting" @click="handleChatPeer(item.applicantId)">私聊</wd-button>
+            <wd-button size="small" plain :disabled="submitting" @click="handleChatPeer(item.applicantId)">私信</wd-button>
           </view>
         </view>
       </view>
@@ -840,7 +862,6 @@ useLiveUpdates((event) => {
         </view>
       </view>
     </view>
-    <wd-status-tip v-if="!task && !loading" image="content" tip="任务不存在" />
     <wd-toast />
   </view>
 </template>

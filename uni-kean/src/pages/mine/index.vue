@@ -18,12 +18,14 @@ import { computed, ref } from "vue";
 const userStore = useUserStore();
 const { wallpaperOn, wallpaperImage } = usePageWallpaper();
 const { heroSrc, isCustom, uploading, uploadLabel, openCoverSheet } = useMineCover();
-const { items: ongoing, load: loadOngoing } = useOngoingTasks();
+const { items: ongoing, error: ongoingError, load: loadOngoing } = useOngoingTasks();
 const isLoggedIn = userStore.isLoggedIn;
 const user = computed(() => userStore.state.user);
 const statusBarHeight = uni.getSystemInfoSync().statusBarHeight || 20;
-const publishedCount = ref(0);
-const appliedCount = ref(0);
+// 统计数字用 null 表示「还不知道」：请求失败时保留上一次的值，
+// 归零会让用户以为自己的数据被清空了。
+const publishedCount = ref<number | null>(null);
+const appliedCount = ref<number | null>(null);
 
 const avatarText = computed(() => {
   const name = user.value?.nickname || user.value?.username || "我";
@@ -58,8 +60,8 @@ function go(url: string) {
 
 async function refreshUser() {
   if (!isLoggedIn.value) {
-    publishedCount.value = 0;
-    appliedCount.value = 0;
+    publishedCount.value = null;
+    appliedCount.value = null;
     return;
   }
   try {
@@ -75,8 +77,7 @@ async function refreshUser() {
     publishedCount.value = published.total || 0;
     appliedCount.value = applied.total || 0;
   } catch {
-    publishedCount.value = 0;
-    appliedCount.value = 0;
+    // 请求失败时保留上一次的统计值，不归零：全变成 0 会被理解成数据被清空。
   }
 }
 
@@ -143,11 +144,11 @@ useLiveUpdates((event) => {
       </view>
       <view class="stats">
         <view class="stat">
-          <view class="num">{{ publishedCount }}</view>
+          <view class="num">{{ publishedCount === null ? "—" : publishedCount }}</view>
           <view class="label">我发布</view>
         </view>
         <view class="stat">
-          <view class="num">{{ appliedCount }}</view>
+          <view class="num">{{ appliedCount === null ? "—" : appliedCount }}</view>
           <view class="label">我申请</view>
         </view>
         <view class="stat">
@@ -157,6 +158,8 @@ useLiveUpdates((event) => {
       </view>
       <view class="ongoing-wrap">
         <OngoingTasks :items="ongoing" :limit="5" />
+        <!-- 仅失败时多一行小字：没有失败时不渲染，观感与原来完全一致 -->
+        <view v-if="ongoingError" class="ongoing-error" @click="loadOngoing">进行中的代课加载失败，点击重试</view>
       </view>
       <view class="section">
         <view class="section-title">我的代课</view>
@@ -451,6 +454,11 @@ useLiveUpdates((event) => {
 }
 .ongoing-wrap {
   margin-top: 16px;
+}
+.ongoing-error {
+  padding: 0 18px 8px;
+  color: #d94b4b;
+  font-size: 12px;
 }
 .section-title {
   font-size: 13px;

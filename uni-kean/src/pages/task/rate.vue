@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { createReview, listReviewTags } from "@/api/review";
 import { getTask, type TaskItem } from "@/api/task";
+import ListState from "@/components/ListState.vue";
 import { useUserStore } from "@/store/user";
 import { genderLabel, starText } from "@/utils/format";
 import { onLoad } from "@dcloudio/uni-app";
@@ -15,6 +16,8 @@ const toast = useToast();
 const userStore = useUserStore();
 const id = ref(0);
 const loading = ref(true);
+// 只有「任务不存在」以外的失败才算加载失败：不存在是真的查不到，走空态
+const loadError = ref("");
 const submitting = ref(false);
 // 不再默认预选 5 星：不动就发出 5 星会把可信度冲成一片满分，这里是刻意要求用户主动选
 const rating = ref(0);
@@ -33,8 +36,8 @@ const peer = computed(() => {
 const peerTitle = computed(() => (task.value?.mine ? "代课者" : "发布者"));
 const rateHint = computed(() =>
   task.value?.mine
-    ? "本次打星会计入对方的代课可信度，与发布可信度分开计算"
-    : "本次打星会计入对方的发布可信度，与代课可信度分开计算"
+    ? "本次评价会计入对方的代课可信度，与发布可信度分开计算"
+    : "本次评价会计入对方的发布可信度，与代课可信度分开计算"
 );
 
 const alreadyRated = computed(() => Boolean(task.value?.myReviewRating));
@@ -46,7 +49,7 @@ async function loadTags() {
   try {
     availableTags.value = await listReviewTags();
   } catch {
-    // 标签是加分项，取不到就只填文字，不阻塞打星
+    // 标签是加分项，取不到就只填文字，不阻塞评价
   }
 }
 
@@ -64,9 +67,12 @@ function toggleTag(tag: string) {
 
 async function load() {
   if (!id.value) {
+    // 没有 id 不存在「加载中」可言，直接落到「任务不存在」空态
+    loading.value = false;
     return;
   }
   loading.value = true;
+  loadError.value = "";
   try {
     task.value = await getTask(id.value);
     if (task.value.myReviewRating) {
@@ -75,7 +81,15 @@ async function load() {
       loadTags();
     }
   } catch (error) {
-    toast.error((error as Error).message || "加载失败");
+    const message = (error as Error).message || "加载失败";
+    // 「不存在」是真的查不到，保留原空态；其它失败用 ListState 显示「加载失败 + 重新加载」
+    if (!message.includes("不存在")) {
+      loadError.value = message;
+    }
+    // 已经有内容时只用轻提示：这时若让失败态顶掉页面，比不提示更糟。
+    if (task.value) {
+      toast.error(message);
+    }
   } finally {
     loading.value = false;
   }
@@ -83,7 +97,7 @@ async function load() {
 
 async function handleSubmit() {
   if (!rating.value) {
-    toast.error("请先打星");
+    toast.error("请先选择评分");
     return;
   }
   submitting.value = true;
@@ -110,6 +124,8 @@ onLoad((query) => {
   }
   id.value = Number(query?.id || 0);
   if (!id.value) {
+    // 没有 id 不进入加载中，直接显示「任务不存在」空态
+    loading.value = false;
     toast.error("任务不存在");
     return;
   }
@@ -119,6 +135,14 @@ onLoad((query) => {
 
 <template>
   <view class="page">
+    <!-- 没有内容可显示时才由 ListState 接管：加载中 / 加载失败+重新加载 / 任务不存在 -->
+    <ListState
+      :loading="loading"
+      :error="loadError"
+      :empty="!task"
+      empty-text="任务不存在"
+      @retry="load"
+    />
     <view v-if="task" class="card">
       <view class="course">{{ task.courseName }}</view>
       <view class="peer-name">{{ peerTitle }}：{{ peer?.nickname || task.matchedApplicantNickname || "同学" }}</view>
@@ -127,7 +151,7 @@ onLoad((query) => {
       </view>
       <view v-if="alreadyRated" class="done">
         <view class="stars">{{ starText(task.myReviewRating) }}</view>
-        <view class="hint">已完成打星</view>
+        <view class="hint">已完成评价</view>
       </view>
       <template v-else>
         <wd-rate v-model="rating" size="28" />
@@ -143,12 +167,11 @@ onLoad((query) => {
             >{{ tag }}</text>
           </view>
         </view>
-        <wd-textarea v-model="content" :maxlength="MAX_CONTENT" placeholder="再说一句，选填" />
+        <wd-textarea v-model="content" :maxlength="MAX_CONTENT" placeholder="补充说明（选填）" />
         <view class="hint">{{ rateHint }}</view>
         <wd-button type="primary" block :loading="submitting" @click="handleSubmit">提交评价</wd-button>
       </template>
     </view>
-    <wd-status-tip v-else-if="!loading" image="content" tip="任务不存在" />
     <wd-toast />
   </view>
 </template>

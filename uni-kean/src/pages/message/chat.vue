@@ -64,7 +64,7 @@ function openUser(userId?: number | null, mine = false) {
 
 async function loadSession() {
   session.value = await getChat(sessionId.value);
-  uni.setNavigationBarTitle({ title: session.value.peerNickname || "私聊" });
+  uni.setNavigationBarTitle({ title: session.value.peerNickname || "私信" });
 }
 
 async function loadMessages() {
@@ -185,8 +185,8 @@ function handleBlockPeer() {
     return;
   }
   uni.showModal({
-    title: "拉黑",
-    content: `拉黑后将无法与 ${session.value?.peerNickname || "对方"} 私聊，确定继续？`,
+    title: "加入黑名单",
+    content: `加入黑名单后，你将无法再与 ${session.value?.peerNickname || "对方"} 互发消息，确定继续？`,
     success: async (res) => {
       if (!res.confirm) {
         return;
@@ -196,7 +196,7 @@ function handleBlockPeer() {
         toast.success("已加入黑名单");
         setTimeout(() => uni.navigateBack(), 400);
       } catch (error) {
-        toast.error((error as Error).message || "拉黑失败");
+        toast.error((error as Error).message || "加入黑名单失败");
       }
     }
   });
@@ -276,7 +276,7 @@ useLiveUpdates((event) => {
     <view class="actions">
       <text @click="handleReportUser">举报对方</text>
       <text @click="handleReportLastMessage">举报消息</text>
-      <text @click="handleBlockPeer">拉黑</text>
+      <text @click="handleBlockPeer">加入黑名单</text>
     </view>
     <view v-if="sendBlocked" class="mute-tip" :class="{ banned: peerBanned }">{{ sendBlocked }}</view>
     <view v-else class="composer">

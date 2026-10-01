@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { openChat } from "@/api/chat";
 import { getPublicProfile, type PublicProfile } from "@/api/user";
+import ListState from "@/components/ListState.vue";
 import { formatRoleRating, genderLabel, parseDateTime, starText, trustRoleLabel } from "@/utils/format";
 import { goReport } from "@/utils/report";
 import { resolveMediaUrl } from "@/utils/request";
@@ -10,6 +11,7 @@ import { computed, ref } from "vue";
 
 const toast = useToast();
 const loading = ref(false);
+const error = ref("");
 const chatting = ref(false);
 const profile = ref<PublicProfile | null>(null);
 const userId = ref(0);
@@ -30,14 +32,26 @@ async function load() {
   if (!userId.value) {
     return;
   }
-  loading.value = true;
+  // 本次请求前有没有资料：没有资料时加载失败交给 ListState 展示原因和「重新加载」，
+  // 已有资料时只用轻提示，避免刷新失败把整页顶掉
+  const first = !profile.value;
+  if (first) {
+    loading.value = true;
+  }
+  error.value = "";
   try {
     profile.value = await getPublicProfile(userId.value);
     uni.setNavigationBarTitle({ title: profile.value.nickname || "同学主页" });
-  } catch (error) {
-    toast.error((error as Error).message || "无法查看该主页");
+  } catch (err) {
+    const message = (err as Error).message || "无法查看该主页";
+    error.value = message;
+    if (!first) {
+      toast.error(message);
+    }
   } finally {
-    loading.value = false;
+    if (first) {
+      loading.value = false;
+    }
   }
 }
 
@@ -50,7 +64,7 @@ async function startChat() {
     const session = await openChat(userId.value);
     uni.navigateTo({ url: `/pages/message/chat?id=${session.id}` });
   } catch (error) {
-    toast.error((error as Error).message || "无法发起私聊");
+    toast.error((error as Error).message || "无法发起私信");
   } finally {
     chatting.value = false;
   }
@@ -71,51 +85,59 @@ onLoad((query) => {
 
 <template>
   <view class="page">
-    <view v-if="profile" class="card">
-      <view class="hero">
-        <image v-if="profile.avatarUrl" class="avatar" :src="resolveMediaUrl(profile.avatarUrl)" mode="aspectFill" />
-        <view v-else class="avatar text">{{ avatarText }}</view>
-        <view class="meta">
-          <view class="name">
-            {{ profile.nickname }}
-            <text v-if="!profile.limited && profile.gender" class="tag">{{ genderLabel(profile.gender) }}</text>
-          </view>
-          <view class="school">{{ schoolLine }}</view>
-          <view v-if="!profile.limited" class="rate">
-            发布 {{ formatRoleRating(profile.publishRatingAvg, profile.publishRatingCount) }}
-            · 完成 {{ profile.publishCompletedCount || 0 }} 次
-          </view>
-          <view v-if="!profile.limited" class="rate">
-            代课 {{ formatRoleRating(profile.applyRatingAvg, profile.applyRatingCount) }}
-            · 完成 {{ profile.completedCount || 0 }} 次
+    <ListState
+      :loading="loading"
+      :error="error"
+      :empty="!profile"
+      empty-text="没有找到该用户"
+      @retry="load"
+    >
+      <view v-if="profile" class="card">
+        <view class="hero">
+          <image v-if="profile.avatarUrl" class="avatar" :src="resolveMediaUrl(profile.avatarUrl)" mode="aspectFill" />
+          <view v-else class="avatar text">{{ avatarText }}</view>
+          <view class="meta">
+            <view class="name">
+              {{ profile.nickname }}
+              <text v-if="!profile.limited && profile.gender" class="tag">{{ genderLabel(profile.gender) }}</text>
+            </view>
+            <view class="school">{{ schoolLine }}</view>
+            <view v-if="!profile.limited" class="rate">
+              发布 {{ formatRoleRating(profile.publishRatingAvg, profile.publishRatingCount) }}
+              · 完成 {{ profile.publishCompletedCount || 0 }} 次
+            </view>
+            <view v-if="!profile.limited" class="rate">
+              代课 {{ formatRoleRating(profile.applyRatingAvg, profile.applyRatingCount) }}
+              · 完成 {{ profile.completedCount || 0 }} 次
+            </view>
           </view>
         </view>
+        <view v-if="profile.limited" class="lock">该账号已设为隐私账号，仅展示有限信息</view>
+        <wd-button v-if="!profile.mine && !profile.limited" type="primary" block :loading="chatting" @click="startChat">
+          发私信
+        </wd-button>
+        <wd-button v-else-if="!profile.mine" type="primary" plain block :loading="chatting" @click="startChat">
+          发私信
+        </wd-button>
+        <wd-button v-if="!profile.mine" plain block @click="handleReport">举报该用户</wd-button>
       </view>
-      <view v-if="profile.limited" class="lock">该账号已设为隐私账号，仅展示有限信息</view>
-      <wd-button v-if="!profile.mine && !profile.limited" type="primary" block :loading="chatting" @click="startChat">
-        发私聊
-      </wd-button>
-      <wd-button v-else-if="!profile.mine" type="primary" plain block :loading="chatting" @click="startChat">
-        发私聊
-      </wd-button>
-      <wd-button v-if="!profile.mine" plain block @click="handleReport">举报该用户</wd-button>
-    </view>
 
-    <template v-if="profile && !profile.limited">
-      <view class="block-title">收到的评价</view>
-      <view v-if="profile.reviews?.length" class="reviews">
-        <view v-for="item in profile.reviews" :key="item.id" class="review">
-          <view class="review-top">
-            <text class="from">{{ item.fromNickname || "同学" }}</text>
-            <text class="stars">{{ starText(item.rating) }}</text>
+      <template v-if="profile && !profile.limited">
+        <view class="block-title">收到的评价</view>
+        <view v-if="profile.reviews?.length" class="reviews">
+          <view v-for="item in profile.reviews" :key="item.id" class="review">
+            <view class="review-top">
+              <text class="from">{{ item.fromNickname || "同学" }}</text>
+              <text class="stars">{{ starText(item.rating) }}</text>
+            </view>
+            <view class="course">{{ item.courseName }}<text v-if="trustRoleLabel(item.targetRole)"> · {{ trustRoleLabel(item.targetRole) }}</text></view>
+            <view v-if="item.content" class="body">{{ item.content }}</view>
+            <view class="time">{{ parseDateTime(item.createdAt) }}</view>
           </view>
-          <view class="course">{{ item.courseName }}<text v-if="trustRoleLabel(item.targetRole)"> · {{ trustRoleLabel(item.targetRole) }}</text></view>
-          <view v-if="item.content" class="body">{{ item.content }}</view>
-          <view class="time">{{ parseDateTime(item.createdAt) }}</view>
         </view>
-      </view>
-      <wd-status-tip v-else image="content" tip="暂无评价" />
-    </template>
+        <wd-status-tip v-else image="content" tip="暂无评价" />
+      </template>
+    </ListState>
     <wd-toast />
   </view>
 </template>

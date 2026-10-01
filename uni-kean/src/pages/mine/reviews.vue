@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { listMyReviews, listPendingReviews, type ReviewItem, type ReviewPendingItem } from "@/api/review";
+import ListState from "@/components/ListState.vue";
 import { useUserStore } from "@/store/user";
 import { parseDateTime, starText, trustRoleLabel } from "@/utils/format";
 import { resolveMediaUrl } from "@/utils/request";
 import { onShow } from "@dcloudio/uni-app";
+import { useToast } from "wot-design-uni";
 import { computed, ref } from "vue";
 
+const toast = useToast();
 const userStore = useUserStore();
 const loading = ref(false);
+const error = ref("");
 const publishRatingAvg = ref<number | null>(null);
 const publishRatingCount = ref(0);
 const publishCompletedCount = ref(0);
@@ -32,10 +36,14 @@ function pendingHint(item: ReviewPendingItem) {
 }
 
 async function load() {
+  error.value = "";
   if (!userStore.isLoggedIn.value) {
     return;
   }
-  loading.value = true;
+  const first = list.value.length === 0;
+  if (first) {
+    loading.value = true;
+  }
   try {
     const [data, wait] = await Promise.all([listMyReviews(1, 50), listPendingReviews()]);
     publishRatingAvg.value = data.publishRatingAvg ?? null;
@@ -46,7 +54,11 @@ async function load() {
     applyCompletedCount.value = data.applyCompletedCount || 0;
     list.value = data.page?.list || [];
     pending.value = wait || [];
-  } catch {
+  } catch (err) {
+    // 分数仍用本地缓存兜底，但此前是静默顶替：用户会以为看到的是最新分数，
+    // 所以失败必须可见（评分卡片上标注缓存 + 有列表时轻提示 + ListState 失败态）。
+    const message = (err as Error).message || "加载失败";
+    error.value = message;
     const me = userStore.state.user;
     publishRatingAvg.value = me?.publishRatingAvg ?? null;
     publishRatingCount.value = me?.publishRatingCount || 0;
@@ -54,8 +66,14 @@ async function load() {
     applyRatingAvg.value = me?.applyRatingAvg ?? null;
     applyRatingCount.value = me?.applyRatingCount || 0;
     applyCompletedCount.value = me?.completedCount || 0;
+    // 已有评价列表时只用轻提示；没有内容时交给 ListState 显示失败原因和「重新加载」。
+    if (!first) {
+      toast.error(message);
+    }
   } finally {
-    loading.value = false;
+    if (first) {
+      loading.value = false;
+    }
   }
 }
 
@@ -89,36 +107,46 @@ onShow(() => {
           <view class="from">{{ applyRatingCount }} 次评价 · 代课完成 {{ applyCompletedCount }}</view>
         </view>
       </view>
+      <view v-if="error" class="score-stale">评分加载失败，以下是本地缓存</view>
     </view>
     <view v-if="pending.length" class="list-title">待评价</view>
     <view v-if="pending.length" class="list">
       <view v-for="item in pending" :key="item.taskId" class="card pending" @click="goRate(item.taskId)">
         <view class="top">
           <text class="name">{{ item.courseName }}</text>
-          <text class="go">去打星</text>
+          <text class="go">去评价</text>
         </view>
         <view class="course">对方：{{ item.peerNickname }} · {{ pendingHint(item) }}</view>
       </view>
     </view>
+    <!-- 「收到的评价」标题与空态解耦：待评价非空时也不能只剩一个空标题 -->
     <view class="list-title">收到的评价</view>
-    <view v-if="list.length" class="list">
-      <view v-for="item in list" :key="item.id" class="card" @click="goTask(item.taskId)">
-        <view class="top">
-          <view class="who">
-            <image v-if="item.fromAvatarUrl" class="mini" :src="resolveMediaUrl(item.fromAvatarUrl)" mode="aspectFill" />
-            <text class="name">{{ item.fromNickname }}</text>
+    <ListState
+      :loading="loading"
+      :error="error"
+      :empty="list.length === 0"
+      empty-text="暂无评价"
+      @retry="load"
+    >
+      <view class="list">
+        <view v-for="item in list" :key="item.id" class="card" @click="goTask(item.taskId)">
+          <view class="top">
+            <view class="who">
+              <image v-if="item.fromAvatarUrl" class="mini" :src="resolveMediaUrl(item.fromAvatarUrl)" mode="aspectFill" />
+              <text class="name">{{ item.fromNickname }}</text>
+            </view>
+            <text class="rate">{{ starText(item.rating) }}</text>
           </view>
-          <text class="rate">{{ starText(item.rating) }}</text>
+          <view class="course">{{ item.courseName }}<text v-if="trustRoleLabel(item.targetRole)" class="role"> · {{ trustRoleLabel(item.targetRole) }}</text></view>
+          <view v-if="item.tags?.length" class="tags">
+            <text v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</text>
+          </view>
+          <view v-if="item.content" class="content">{{ item.content }}</view>
+          <view class="time">{{ parseDateTime(item.createdAt) }}</view>
         </view>
-        <view class="course">{{ item.courseName }}<text v-if="trustRoleLabel(item.targetRole)" class="role"> · {{ trustRoleLabel(item.targetRole) }}</text></view>
-        <view v-if="item.tags?.length" class="tags">
-          <text v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</text>
-        </view>
-        <view v-if="item.content" class="content">{{ item.content }}</view>
-        <view class="time">{{ parseDateTime(item.createdAt) }}</view>
       </view>
-    </view>
-    <wd-status-tip v-else-if="!loading && !pending.length" image="content" tip="暂无评价" />
+    </ListState>
+    <wd-toast />
   </view>
 </template>
 
@@ -164,6 +192,12 @@ onShow(() => {
   font-size: 11px;
   padding: 0 8px;
   line-height: 1.4;
+}
+.score-stale {
+  margin-top: 12px;
+  text-align: center;
+  color: #d48806;
+  font-size: 12px;
 }
 .role {
   color: #86909c;

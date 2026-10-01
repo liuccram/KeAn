@@ -7,6 +7,7 @@ import {
   unreadNotificationCount,
   type NotificationItem
 } from "@/api/notification";
+import ListState from "@/components/ListState.vue";
 import PageBackdrop from "@/components/PageBackdrop.vue";
 import { usePageWallpaper } from "@/composables/usePageWallpaper";
 import { useUserStore } from "@/store/user";
@@ -31,6 +32,8 @@ const pickedBusy = ref(false);
 const list = ref<NotificationItem[]>([]);
 const chats = ref<ChatSessionItem[]>([]);
 const loading = ref(false);
+const chatLoading = ref(false);
+const error = ref("");
 const finished = ref(false);
 const page = ref(1);
 const dots = ref({ system: 0, task: 0, chat: 0 });
@@ -39,7 +42,7 @@ const noticeScope = computed(() => (tab.value === "system" ? "SYSTEM" : "TASK") 
 const TASK_KINDS: { key: TaskKind; label: string; hint: string }[] = [
   { key: "apply", label: "申请", hint: "谁来申请、接没接上" },
   { key: "fulfill", label: "履约", hint: "上课、拍照、确认完成" },
-  { key: "review", label: "评价", hint: "完成后给对方打星" },
+  { key: "review", label: "评价", hint: "完成后对对方进行评价" },
   { key: "change", label: "变动", hint: "取消、过期、信息变更" }
 ];
 
@@ -80,6 +83,22 @@ const visibleNotices = computed(() => {
   }
   return list.value.filter((item) => taskKind(item) === taskFilter.value);
 });
+
+// 通知 Tab（系统 / 申请与履约）当前是否有内容可显示，交给 ListState 决定是加载中、失败还是空态
+const noticeEmpty = computed(() =>
+  tab.value === "system" ? list.value.length === 0 : visibleNotices.value.length === 0
+);
+
+const noticeEmptyText = computed(() => {
+  if (tab.value === "system") {
+    return "暂无系统通知";
+  }
+  return taskFilter.value === "all" ? "暂无申请或履约消息" : "暂无该类消息";
+});
+
+// 当前 Tab 的加载状态：通知与私信是两次独立请求，不能共用一个 loading，
+// 否则切换 Tab 时正在飞行的那次请求会把另一个 Tab 的加载挡住，最后显示成空态
+const listLoading = computed(() => (tab.value === "chat" ? chatLoading.value : loading.value));
 
 function splitNotice(content?: string | null) {
   const text = (content || "").replace(/\r\n/g, "\n").trim();
@@ -141,14 +160,22 @@ async function loadNotices(reset = false) {
     page.value = 1;
     finished.value = false;
   }
+  // 本次请求前列表是否为空：为空说明加载失败后没有内容可显示，交给 ListState 展示原因和重试
+  const first = list.value.length === 0;
   loading.value = true;
+  error.value = "";
   try {
     const data = await listNotifications(page.value, 20, noticeScope.value);
     const rows = data.list || [];
     list.value = reset ? rows : list.value.concat(rows);
     finished.value = list.value.length >= data.total;
-  } catch (error) {
-    toast.error((error as Error).message || "加载失败");
+  } catch (err) {
+    const message = (err as Error).message || "加载失败";
+    error.value = message;
+    // 已经有内容时只用轻提示：这时若让失败态顶掉列表，比不提示更糟
+    if (!first) {
+      toast.error(message);
+    }
   } finally {
     loading.value = false;
     uni.stopPullDownRefresh();
@@ -160,13 +187,20 @@ async function loadChats() {
     chats.value = [];
     return;
   }
-  loading.value = true;
+  const first = chats.value.length === 0;
+  chatLoading.value = true;
+  error.value = "";
   try {
     chats.value = await listChats();
-  } catch (error) {
-    toast.error((error as Error).message || "加载失败");
+  } catch (err) {
+    const message = (err as Error).message || "加载失败";
+    error.value = message;
+    // 已经有私信列表时只用轻提示，避免失败态把已有内容顶掉
+    if (!first) {
+      toast.error(message);
+    }
   } finally {
-    loading.value = false;
+    chatLoading.value = false;
     uni.stopPullDownRefresh();
   }
 }
@@ -296,7 +330,7 @@ onReachBottom(() => {
   <view class="page" :class="{ skinned: wallpaperOn }">
     <PageBackdrop :src="wallpaperImage" />
     <view v-if="!userStore.isLoggedIn" class="guest">
-      <wd-status-tip image="content" tip="登录后查看系统通知、申请履约与私聊" />
+      <wd-status-tip image="content" tip="登录后查看系统通知、申请履约与私信" />
       <wd-button type="primary" @click="goLogin">去登录</wd-button>
     </view>
     <template v-else>
@@ -311,7 +345,7 @@ onReachBottom(() => {
             <view v-if="dots.task > 0" class="dot" />
           </view>
           <view class="tab" :class="{ on: tab === 'chat' }" @click="switchTab('chat')">
-            <text>私聊</text>
+            <text>私信</text>
             <view v-if="dots.chat > 0" class="dot" />
           </view>
         </view>
@@ -344,17 +378,44 @@ onReachBottom(() => {
           }}</text>
           <text class="link" @click="handleReadAll">全部已读</text>
         </view>
-        <template v-if="tab === 'task' && taskFilter === 'all' && groupedTaskNotices.length">
-          <view v-for="section in groupedTaskNotices" :key="section.key" class="section">
-            <view class="section-head">
-              <text class="section-label">{{ section.label }}</text>
-              <text class="section-hint">{{ section.hint }}</text>
+        <ListState
+          :loading="listLoading"
+          :error="error"
+          :empty="noticeEmpty"
+          :empty-text="noticeEmptyText"
+          @retry="load(true)"
+        >
+          <template v-if="tab === 'task' && taskFilter === 'all' && groupedTaskNotices.length">
+            <view v-for="section in groupedTaskNotices" :key="section.key" class="section">
+              <view class="section-head">
+                <text class="section-label">{{ section.label }}</text>
+                <text class="section-hint">{{ section.hint }}</text>
+              </view>
+              <view
+                v-for="item in section.items"
+                :key="item.id"
+                class="row"
+                :class="[section.key, { unread: item.readFlag !== 1 }]"
+                @click="openItem(item)"
+              >
+                <view class="mark" />
+                <view class="main">
+                  <view class="top">
+                    <text class="title" :class="{ alert: isAlertTitle(item) }">{{ item.title }}</text>
+                    <text class="time">{{ parseDateTime(item.createdAt) }}</text>
+                  </view>
+                  <view class="content">{{ item.content }}</view>
+                </view>
+              </view>
             </view>
+            <view class="end">{{ finished ? "没有更多了" : "上拉加载更多" }}</view>
+          </template>
+          <view v-else class="list">
             <view
-              v-for="item in section.items"
+              v-for="item in tab === 'system' ? list : visibleNotices"
               :key="item.id"
               class="row"
-              :class="[section.key, { unread: item.readFlag !== 1 }]"
+              :class="[tab === 'task' ? taskKind(item) : '', { unread: item.readFlag !== 1 }]"
               @click="openItem(item)"
             >
               <view class="mark" />
@@ -363,79 +424,62 @@ onReachBottom(() => {
                   <text class="title" :class="{ alert: isAlertTitle(item) }">{{ item.title }}</text>
                   <text class="time">{{ parseDateTime(item.createdAt) }}</text>
                 </view>
-                <view class="content">{{ item.content }}</view>
+                <view class="content" :class="{ handle: isHandleNotice(item) }">
+                  <template v-if="isHandleNotice(item)">
+                    <view class="lead">{{ splitNotice(item.content).lead }}</view>
+                    <view
+                      v-for="(line, index) in splitNotice(item.content).highlights"
+                      :key="index"
+                      class="result-line"
+                    >{{ line }}</view>
+                  </template>
+                  <template v-else>{{ item.content }}</template>
+                </view>
               </view>
             </view>
+            <view class="end">{{ finished ? "没有更多了" : "上拉加载更多" }}</view>
           </view>
-          <view class="end">{{ finished ? "没有更多了" : "上拉加载更多" }}</view>
-        </template>
-        <view v-else-if="(tab === 'system' ? list : visibleNotices).length" class="list">
-          <view
-            v-for="item in tab === 'system' ? list : visibleNotices"
-            :key="item.id"
-            class="row"
-            :class="[tab === 'task' ? taskKind(item) : '', { unread: item.readFlag !== 1 }]"
-            @click="openItem(item)"
-          >
-            <view class="mark" />
-            <view class="main">
-              <view class="top">
-                <text class="title" :class="{ alert: isAlertTitle(item) }">{{ item.title }}</text>
-                <text class="time">{{ parseDateTime(item.createdAt) }}</text>
-              </view>
-              <view class="content" :class="{ handle: isHandleNotice(item) }">
-                <template v-if="isHandleNotice(item)">
-                  <view class="lead">{{ splitNotice(item.content).lead }}</view>
-                  <view
-                    v-for="(line, index) in splitNotice(item.content).highlights"
-                    :key="index"
-                    class="result-line"
-                  >{{ line }}</view>
-                </template>
-                <template v-else>{{ item.content }}</template>
-              </view>
-            </view>
-          </view>
-          <view class="end">{{ finished ? "没有更多了" : "上拉加载更多" }}</view>
-        </view>
-        <wd-status-tip
-          v-else-if="!loading"
-          image="content"
-          :tip="tab === 'system' ? '暂无系统通知' : taskFilter === 'all' ? '暂无申请或履约消息' : '暂无该类消息'"
-        />
+        </ListState>
       </template>
 
       <template v-else>
         <view class="toolbar">
-          <text class="hint">本校同学可发起私聊</text>
-          <text class="link" @click="goPeers">发起私聊</text>
+          <text class="hint">本校同学可发起私信</text>
+          <text class="link" @click="goPeers">发起私信</text>
         </view>
-        <view v-if="chats.length" class="chat-list">
-          <view
-            v-for="item in chats"
-            :key="item.id"
-            class="chat-row"
-            @click="openChat(item)"
-          >
-            <image v-if="item.peerAvatarUrl" class="avatar img" :src="resolveMediaUrl(item.peerAvatarUrl)" mode="aspectFill" @click.stop="openPeer(item)" />
-            <view v-else class="avatar" @click.stop="openPeer(item)">{{ (item.peerNickname || "同").slice(0, 1) }}</view>
-            <view class="chat-main">
-              <view class="top">
-                <view class="name-row">
-                  <text class="title">{{ item.peerNickname || "同学" }}</text>
-                  <text v-if="item.peerBanned" class="muted-tag banned">已封禁</text>
-                  <text v-else-if="item.peerMuted" class="muted-tag">已禁言</text>
+        <ListState
+          :loading="listLoading"
+          :error="error"
+          :empty="chats.length === 0"
+          empty-text="暂无私信"
+          @retry="load(true)"
+        >
+          <view class="chat-list">
+            <view
+              v-for="item in chats"
+              :key="item.id"
+              class="chat-row"
+              @click="openChat(item)"
+            >
+              <image v-if="item.peerAvatarUrl" class="avatar img" :src="resolveMediaUrl(item.peerAvatarUrl)" mode="aspectFill" @click.stop="openPeer(item)" />
+              <view v-else class="avatar" @click.stop="openPeer(item)">{{ (item.peerNickname || "同").slice(0, 1) }}</view>
+              <view class="chat-main">
+                <view class="top">
+                  <view class="name-row">
+                    <text class="title">{{ item.peerNickname || "同学" }}</text>
+                    <text v-if="item.peerBanned" class="muted-tag banned">已封禁</text>
+                    <text v-else-if="item.peerMuted" class="muted-tag">已禁言</text>
+                  </view>
+                  <text class="time">{{ parseDateTime(item.lastMessageAt) }}</text>
                 </view>
-                <text class="time">{{ parseDateTime(item.lastMessageAt) }}</text>
-              </view>
-              <view class="preview-row">
-                <text class="preview">{{ item.lastContent || "暂无消息" }}</text>
-                <view v-if="item.unreadCount > 0" class="badge">{{ item.unreadCount > 99 ? "99+" : item.unreadCount }}</view>
+                <view class="preview-row">
+                  <text class="preview">{{ item.lastContent || "暂无消息" }}</text>
+                  <view v-if="item.unreadCount > 0" class="badge">{{ item.unreadCount > 99 ? "99+" : item.unreadCount }}</view>
+                </view>
               </view>
             </view>
           </view>
-        </view>
-        <wd-status-tip v-else-if="!loading" image="content" tip="还没有私聊" />
+        </ListState>
       </template>
     </template>
     <wd-toast />

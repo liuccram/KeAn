@@ -3,6 +3,7 @@ import { addFavorite, removeFavorite } from "@/api/favorite";
 import { listActiveAnnouncements, type ActiveAnnouncement } from "@/api/announcement";
 import { listCampuses } from "@/api/catalog";
 import { listTasks, TASK_STATUS_TEXT, type TaskItem } from "@/api/task";
+import ListState from "@/components/ListState.vue";
 import OngoingTasks from "@/components/OngoingTasks.vue";
 import PageBackdrop from "@/components/PageBackdrop.vue";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
@@ -21,9 +22,10 @@ import { computed, reactive, ref } from "vue";
 const toast = useToast();
 const userStore = useUserStore();
 const { wallpaperOn, wallpaperImage, prefs } = usePageWallpaper();
-const { items: ongoing, load: loadOngoing } = useOngoingTasks();
+const { items: ongoing, error: ongoingError, load: loadOngoing } = useOngoingTasks();
 const nowTick = useNowTick();
 const loading = ref(false);
+const error = ref("");
 const finished = ref(false);
 const list = ref<TaskItem[]>([]);
 const keyword = ref("");
@@ -49,6 +51,8 @@ const dateLabel = computed(() => t("classDate", prefs.lang));
 const datePlaceholder = computed(() => t("datePlaceholder", prefs.lang));
 const todayLabel = computed(() => t("todayOnly", prefs.lang));
 const allDatesLabel = computed(() => t("allDates", prefs.lang));
+// 空态文案沿用改版前的两种说法：有进行中任务时只是「今日暂无新的」，否则是真的没有任务
+const emptyText = computed(() => (ongoing.value.length ? "今日暂无新的可申请代课" : "暂无代课任务"));
 const isToday = computed(() => selectedDate.value === todayText(nowTick.value));
 const timeOptions = computed(() => [
   { label: t("allTimes", prefs.lang), value: "ALL" },
@@ -127,11 +131,13 @@ async function loadList(reset = false) {
   if (loading.value) {
     return;
   }
+  const first = list.value.length === 0;
   if (reset) {
     page.value = 1;
     finished.value = false;
   }
   loading.value = true;
+  error.value = "";
   try {
     const data = await listTasks({
       keyword: keyword.value.trim() || undefined,
@@ -146,12 +152,23 @@ async function loadList(reset = false) {
     total.value = data.total;
     list.value = reset ? data.list : list.value.concat(data.list);
     finished.value = list.value.length >= data.total;
-  } catch (error) {
-    toast.error((error as Error).message || "加载失败");
+  } catch (err) {
+    const message = (err as Error).message || "加载失败";
+    error.value = message;
+    // 已经有内容时只用轻提示：这时若让失败态顶掉列表，比不提示更糟。
+    // 没有内容时交给 ListState 显示原因和「重新加载」。
+    if (!first) {
+      toast.error(message);
+    }
   } finally {
     loading.value = false;
     uni.stopPullDownRefresh();
   }
+}
+
+// 重新加载：按首次加载处理，重置分页后重拉第一页
+function retry() {
+  loadList(true);
 }
 
 function onSearch() {
@@ -270,27 +287,37 @@ onReachBottom(() => {
       <view class="chip" :class="{ on: !selectedDate }" @click="onDateClear">{{ allDatesLabel }}</view>
     </view>
     <OngoingTasks v-if="userStore.isLoggedIn" :items="ongoing" :limit="3" />
-    <view v-if="list.length" class="list">
-      <view v-for="item in list" :key="item.id" class="card" @click="goDetail(item.id)">
-        <view class="card-top">
-          <text class="course">{{ item.courseName }}</text>
-          <view class="card-right">
-            <text v-if="!item.mine" class="fav" @click.stop="toggleFavorite(item)">{{ item.favorited ? "★" : "☆" }}</text>
-            <text class="status">{{ TASK_STATUS_TEXT[item.status] || item.status }}</text>
+    <!-- 仅失败时多一行小字：没有失败时这一行不渲染，观感与原来完全一致 -->
+    <view v-if="userStore.isLoggedIn && ongoingError" class="ongoing-error" @click="loadOngoing">
+      进行中的代课加载失败，点击重试
+    </view>
+    <ListState
+      :loading="loading"
+      :error="error"
+      :empty="list.length === 0"
+      :empty-text="emptyText"
+      @retry="retry"
+    >
+      <view class="list">
+        <view v-for="item in list" :key="item.id" class="card" @click="goDetail(item.id)">
+          <view class="card-top">
+            <text class="course">{{ item.courseName }}</text>
+            <view class="card-right">
+              <text v-if="!item.mine" class="fav" @click.stop="toggleFavorite(item)">{{ item.favorited ? "★" : "☆" }}</text>
+              <text class="status">{{ TASK_STATUS_TEXT[item.status] || item.status }}</text>
+            </view>
+          </view>
+          <view class="meta">{{ item.taskDate }} {{ item.startTime }}-{{ item.endTime }}</view>
+          <view v-if="countdownOf(item)" class="count">{{ countdownOf(item) }}</view>
+          <view class="meta">{{ item.campusName }} · {{ item.building }} {{ item.classroom }}</view>
+          <view class="card-bottom">
+            <text class="reward">{{ formatReward(item.reward) }}</text>
+            <text class="count-app">{{ item.applyCount }} 人申请</text>
           </view>
         </view>
-        <view class="meta">{{ item.taskDate }} {{ item.startTime }}-{{ item.endTime }}</view>
-        <view v-if="countdownOf(item)" class="count">{{ countdownOf(item) }}</view>
-        <view class="meta">{{ item.campusName }} · {{ item.building }} {{ item.classroom }}</view>
-        <view class="card-bottom">
-          <text class="reward">{{ formatReward(item.reward) }}</text>
-          <text class="count-app">{{ item.applyCount }} 人申请</text>
-        </view>
+        <view class="end">{{ finished ? "没有更多了" : "上拉加载更多" }}</view>
       </view>
-      <view class="end">{{ finished ? "没有更多了" : "上拉加载更多" }}</view>
-    </view>
-    <view v-else-if="!loading && ongoing.length" class="end">今日暂无新的可申请代课</view>
-    <wd-status-tip v-else-if="!loading" image="content" tip="暂无代课任务" />
+    </ListState>
     <wd-toast />
   </view>
 </template>
@@ -415,6 +442,11 @@ onReachBottom(() => {
 }
 .list {
   padding: 12px 16px 24px;
+}
+.ongoing-error {
+  padding: 0 18px 8px;
+  color: #d94b4b;
+  font-size: 12px;
 }
 .card {
   background: #fff;

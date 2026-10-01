@@ -190,14 +190,17 @@ function uploadOnce(
           resolve(body.data);
           return;
         }
+        console.warn("[upload] 响应异常", { status: res.statusCode, code: body?.code });
         reject(uploadFailure(
-          body?.message || `上传失败(${res.statusCode})`,
+          body?.message || "上传失败，请稍后重试",
           isRetryableStatus(res.statusCode)
         ));
       },
       fail: (err) => {
         // 传输层失败（断网、超时）都值得重试。
-        reject(uploadFailure(err.errMsg || "图片上传失败", true));
+        // errMsg 是平台原始信息（形如 uploadFile:fail timeout），用户看不懂，只写进控制台。
+        console.warn("[upload] 上传失败", { path: readyPath, raw: err.errMsg });
+        reject(uploadFailure("图片上传失败，请检查网络后重试", true));
       }
     });
     task?.onProgressUpdate?.((res) => {
@@ -273,7 +276,9 @@ export function request<T>(options: RequestOptions): Promise<T> {
   const url = buildUrl(options.url);
   // #ifdef APP-PLUS
   if (!/^https?:\/\//i.test(url)) {
-    return Promise.reject(new Error("接口地址必须是 http/https，请配置 VITE_API_BASE_URL"));
+    // 这是打包配置问题，用户无从处理：对外给一句通用提示，细节留给开发者排查。
+    console.error("[request] 接口地址必须是 http/https，请检查 VITE_API_BASE_URL", url);
+    return Promise.reject(new Error("应用配置有误，请联系管理员"));
   }
   // #endif
 
@@ -304,16 +309,18 @@ export function request<T>(options: RequestOptions): Promise<T> {
           resolve(body.data);
           return;
         }
-        reject(new Error(body?.message || `请求失败(${res.statusCode})`));
+        console.warn("[request] 响应异常", { url, status: res.statusCode, code: body?.code });
+        reject(new Error(body?.message || "请求失败，请稍后重试"));
       },
       fail: (err) => {
-        const msg = err.errMsg || "网络异常";
-        const host = resolveApiBase() || "后端";
-        if (/timeout/i.test(msg)) {
-          reject(new Error(`请求超时，请确认 ${host} 已启动，且手机与电脑同一 WiFi`));
+        // 网络层失败：用户看不懂 host 和 errMsg，对外统一话术，具体原因写进控制台。
+        const raw = err.errMsg || "网络异常";
+        console.warn("[request] 请求失败", { url, raw });
+        if (/timeout/i.test(raw)) {
+          reject(new Error("请求超时，请检查网络后重试"));
           return;
         }
-        reject(new Error(`无法连接 ${host}（${msg}）`));
+        reject(new Error("网络连接失败，请检查网络后重试"));
       }
     });
   });

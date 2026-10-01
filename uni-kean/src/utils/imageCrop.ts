@@ -34,7 +34,9 @@ export function startCrop(src: string, mode: CropMode): Promise<string> {
       url: "/pages/mine/crop",
       fail: (err) => {
         waiter = null;
-        reject(new Error(err.errMsg || "无法打开裁剪页"));
+        // errMsg 是平台原始信息，用户看不懂，只写进控制台
+        console.warn("[crop] 打开裁剪页失败", err);
+        reject(new Error("无法打开裁剪页"));
       }
     });
   });

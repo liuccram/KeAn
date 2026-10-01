@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { fetchMe } from "@/api/auth";
 import { listChatPeers, openChat, type ChatPeerItem } from "@/api/chat";
+import ListState from "@/components/ListState.vue";
 import { useUserStore } from "@/store/user";
 import { actionBlockReason } from "@/utils/format";
 import { resolveMediaUrl } from "@/utils/request";
@@ -13,14 +14,24 @@ const userStore = useUserStore();
 const keyword = ref("");
 const list = ref<ChatPeerItem[]>([]);
 const loading = ref(false);
+const error = ref("");
 const chatBlock = computed(() => actionBlockReason(userStore.state.user, "chat"));
+// 有搜索词时的空结果和「本校没有可聊的人」不是一回事，文案要分开
+const emptyText = computed(() => (keyword.value.trim() ? "没有找到相关同学" : "暂无可聊同学"));
 
 async function load() {
+  const first = list.value.length === 0;
   loading.value = true;
+  error.value = "";
   try {
     list.value = await listChatPeers(keyword.value.trim() || undefined);
-  } catch (error) {
-    toast.error((error as Error).message || "加载失败");
+  } catch (err) {
+    const message = (err as Error).message || "加载失败";
+    error.value = message;
+    // 已经有内容时只用轻提示，避免失败态把上一次的搜索结果顶掉
+    if (!first) {
+      toast.error(message);
+    }
   } finally {
     loading.value = false;
   }
@@ -35,7 +46,7 @@ async function handleSelect(item: ChatPeerItem) {
     const session = await openChat(item.id);
     uni.redirectTo({ url: `/pages/message/chat?id=${session.id}` });
   } catch (error) {
-    toast.error((error as Error).message || "发起私聊失败");
+    toast.error((error as Error).message || "发起私信失败");
   }
 }
 
@@ -60,18 +71,25 @@ onShow(async () => {
     <view class="search">
       <wd-search v-model="keyword" placeholder="搜索本校同学昵称" hide-cancel @search="load" @clear="load" />
     </view>
-    <view v-if="list.length" class="list">
-      <view v-for="item in list" :key="item.id" class="row" @click="handleSelect(item)">
-        <image v-if="item.avatarUrl" class="avatar img" :src="resolveMediaUrl(item.avatarUrl)" mode="aspectFill" />
-        <view v-else class="avatar">{{ (item.nickname || "同").slice(0, 1) }}</view>
-        <view class="info">
-          <view class="name">{{ item.nickname }}</view>
-          <view class="campus">{{ item.campusName || "本校同学" }}</view>
+    <ListState
+      :loading="loading"
+      :error="error"
+      :empty="list.length === 0"
+      :empty-text="emptyText"
+      @retry="load"
+    >
+      <view class="list">
+        <view v-for="item in list" :key="item.id" class="row" @click="handleSelect(item)">
+          <image v-if="item.avatarUrl" class="avatar img" :src="resolveMediaUrl(item.avatarUrl)" mode="aspectFill" />
+          <view v-else class="avatar">{{ (item.nickname || "同").slice(0, 1) }}</view>
+          <view class="info">
+            <view class="name">{{ item.nickname }}</view>
+            <view class="campus">{{ item.campusName || "本校同学" }}</view>
+          </view>
+          <text class="go">私信</text>
         </view>
-        <text class="go">私聊</text>
       </view>
-    </view>
-    <wd-status-tip v-else-if="!loading" image="content" tip="暂无可聊同学" />
+    </ListState>
     <wd-toast />
   </view>
 </template>
