@@ -2,7 +2,6 @@
 import { fetchTurnstileConfig, login } from "@/api/auth";
 import TurnstileChallenge from "@/components/TurnstileChallenge.vue";
 import { useUserStore } from "@/store/user";
-import { clearGestureLock } from "@/utils/gesture";
 import { refreshMessageBadge } from "@/utils/messageBadge";
 import { startRealtime } from "@/utils/realtime";
 import { onLoad } from "@dcloudio/uni-app";
@@ -87,9 +86,6 @@ function handleLogin() {
           turnstileToken: model.turnstileToken || undefined
         });
         userStore.setLogin(data.token, data.user);
-        // 刚用账号密码认证过，清掉手势锁标记：重新登录不该再被要求画手势。
-        // 注意不能放进 store 的 setLogin —— 那里被 10 处「刷新资料」复用，放进去会让锁形同虚设。
-        clearGestureLock();
         startRealtime();
         toast.success("登录成功");
         refreshMessageBadge();
