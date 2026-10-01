@@ -10,6 +10,7 @@ import com.kean.security.LoginUser;
 import com.kean.security.SecurityUtils;
 import com.kean.security.TokenBlacklistService;
 import com.kean.service.LoginDeviceService;
+import com.kean.service.NotificationService;
 import com.kean.utils.IpUtils;
 import com.kean.vo.LoginDeviceVO;
 import io.jsonwebtoken.Claims;
@@ -21,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
 
@@ -30,15 +32,18 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
     private final LoginDeviceMapper loginDeviceMapper;
     private final JwtService jwtService;
     private final TokenBlacklistService tokenBlacklistService;
+    private final NotificationService notificationService;
 
     public LoginDeviceServiceImpl(
             LoginDeviceMapper loginDeviceMapper,
             JwtService jwtService,
-            TokenBlacklistService tokenBlacklistService
+            TokenBlacklistService tokenBlacklistService,
+            NotificationService notificationService
     ) {
         this.loginDeviceMapper = loginDeviceMapper;
         this.jwtService = jwtService;
         this.tokenBlacklistService = tokenBlacklistService;
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -67,6 +72,7 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
             device.setLastSeenAt(now);
             device.setExpireAt(expireAt);
             saveDevice(device);
+            notifyNewDevice(userId, deviceName, ip, now);
             return;
         }
         if (!Objects.equals(existing.getJti(), jti)) {
@@ -84,6 +90,36 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
             existing.setLoginCount(1);
         }
         saveDevice(existing);
+    }
+
+    /**
+     * 新设备登录提醒。
+     *
+     * 只在「此前从未见过这台设备」时提醒（按设备名 + IP 识别，与登录设备列表的分组口径一致），
+     * 所以同一台设备反复登录不会刷屏。通知落库后由 NotificationService 顺带做实时推送，
+     * 已登录的其他设备会立刻在消息页看到。
+     *
+     * 注意：通知是按用户存的，无法只发给「其他」设备，因此刚登录的这台也会看到同一条 ——
+     * 这反过来也可以当作一份登录记录，不算坏事。
+     */
+    private void notifyNewDevice(Long userId, String deviceName, String ip, LocalDateTime at) {
+        try {
+            String time = at == null ? "" : at.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+            notificationService.notifyUser(
+                    userId,
+                    // 必须用 "SYSTEM"：消息页的两个 Tab 是按 type 过滤的
+                    // （SYSTEM 归「系统」，TASK/APPLICATION 或 bizType 为 TASK/REVIEW 归「申请与履约」）。
+                    // 用自定义 type 会落库但哪个 Tab 都看不到，而未读角标却会涨。
+                    "SYSTEM",
+                    "账号安全提醒",
+                    "你的账号在一台新设备上登录（" + deviceName + "，IP " + ip + "，" + time
+                            + "）。如果不是你本人操作，请立即修改密码。",
+                    "USER",
+                    userId
+            );
+        } catch (Exception ignored) {
+            // 提醒失败不影响登录本身
+        }
     }
 
     @Override
