@@ -62,7 +62,9 @@ public final class UserConverter {
                 user.getCreatedAt(),
                 user.getPrivateAccount() == null ? 0 : user.getPrivateAccount(),
                 online,
-                user.getMustChangePassword() != null && user.getMustChangePassword() == 1
+                user.getMustChangePassword() != null && user.getMustChangePassword() == 1,
+                // 必须放在参数列表最后：UserVO 是 record，这里按位置构造。
+                user.getSingleDevice() == null ? 0 : user.getSingleDevice()
         );
     }
 }

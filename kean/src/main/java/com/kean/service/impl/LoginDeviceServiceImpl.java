@@ -3,8 +3,10 @@ package com.kean.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.kean.common.ErrorCode;
 import com.kean.entity.LoginDevice;
+import com.kean.entity.SysUser;
 import com.kean.exception.BizException;
 import com.kean.mapper.LoginDeviceMapper;
+import com.kean.mapper.SysUserMapper;
 import com.kean.security.JwtService;
 import com.kean.security.LoginUser;
 import com.kean.security.SecurityUtils;
@@ -30,6 +32,7 @@ import java.util.Objects;
 public class LoginDeviceServiceImpl implements LoginDeviceService {
 
     private final LoginDeviceMapper loginDeviceMapper;
+    private final SysUserMapper sysUserMapper;
     private final JwtService jwtService;
     private final TokenBlacklistService tokenBlacklistService;
     private final NotificationService notificationService;
@@ -38,12 +41,14 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
             LoginDeviceMapper loginDeviceMapper,
             JwtService jwtService,
             TokenBlacklistService tokenBlacklistService,
-            NotificationService notificationService
+            NotificationService notificationService,
+            SysUserMapper sysUserMapper
     ) {
         this.loginDeviceMapper = loginDeviceMapper;
         this.jwtService = jwtService;
         this.tokenBlacklistService = tokenBlacklistService;
         this.notificationService = notificationService;
+        this.sysUserMapper = sysUserMapper;
     }
 
     @Override
@@ -73,6 +78,9 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
             device.setExpireAt(expireAt);
             saveDevice(device);
             notifyNewDevice(userId, deviceName, ip, now);
+            // 原来这条分支直接 return；顶号处理必须在「记录完本次设备」之后接上，
+            // 否则首次登录（设备表里还没有这台设备）时不会踢掉其他设备。
+            enforceSingleDevice(userId, jti);
             return;
         }
         if (!Objects.equals(existing.getJti(), jti)) {
@@ -90,6 +98,7 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
             existing.setLoginCount(1);
         }
         saveDevice(existing);
+        enforceSingleDevice(userId, jti);
     }
 
     /**
@@ -114,6 +123,87 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
                     "账号安全提醒",
                     "你的账号在一台新设备上登录（" + deviceName + "，IP " + ip + "，" + time
                             + "）。如果不是你本人操作，请立即修改密码。",
+                    "USER",
+                    userId
+            );
+        } catch (Exception ignored) {
+            // 提醒失败不影响登录本身
+        }
+    }
+
+    /**
+     * 「仅允许一台设备在线」的顶号动作：把该用户除 {@code keepJti} 以外的登录态全部顶下线。
+     *
+     * <p>两个调用点：{@link #recordLogin} 传本次登录的 jti（新设备登录即顶号）；
+     * {@code AuthServiceImpl.updateSingleDevice} 传当前请求所在设备的 jti
+     * （打开开关时立刻生效，不必等下次登录）。方法本身不关心触发场景。
+     *
+     * <p><b>先判断再执行</b>：只有 {@code sys_user.single_device = 1} 时才做任何事。
+     * 开关为 0（默认值，也是引入本开关之前所有用户的状态）时，这里只多一次按主键读
+     * 用户记录，不会拉黑、不会删设备行 —— 关闭态与历史行为逐字节一致。
+     * 因此「把开关关掉」这条路径天然什么都不做。
+     *
+     * <p>拉黑对象：该用户当前未被软删的 {@code login_device} 行里，jti 与 {@code keepJti}
+     * 不同的那些（即其他设备）。传入的这台设备永远排除在外 —— 与 {@link #kick(Long)}
+     * 「拒绝踢当前设备」的口径一致。
+     *
+     * <p>ttl 直接复用 {@link #blacklistJti(String, LocalDateTime)}，与 {@code kick} 以及
+     * 本类中「同一台设备换了 jti」时的做法保持同一套算法：按该 device 行的
+     * {@code expire_at} 计算剩余秒数，{@code expire_at} 为空时兜底 7 天，下限 60 秒。
+     * 之所以不另写一套，是因为同一件事两处口径早晚会不一致。
+     *
+     * <p>同时把被顶掉的 device 行软删（{@code @TableLogic} 的 {@code deleteById} 即置
+     * {@code deleted = 1}）：{@link #listMine()} 只查未删除的行，所以开启开关后用户在
+     * 「登录设备」页看到的就只有当前这一台，不会留下一排已经被踢掉、点「退出登录」
+     * 还会报错的僵尸设备。记录不做物理删除，{@code login_count}、最后在线时间等历史仍可查。
+     */
+    @Override
+    public void enforceSingleDevice(Long userId, String keepJti) {
+        if (userId == null) {
+            return;
+        }
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null || user.getSingleDevice() == null || user.getSingleDevice() != 1) {
+            return;
+        }
+        List<LoginDevice> devices = loginDeviceMapper.selectList(
+                new LambdaQueryWrapper<LoginDevice>().eq(LoginDevice::getUserId, userId)
+        );
+        int kicked = 0;
+        for (LoginDevice device : devices) {
+            if (keepJti != null && keepJti.equals(device.getJti())) {
+                continue;
+            }
+            blacklistJti(device.getJti(), device.getExpireAt());
+            loginDeviceMapper.deleteById(device.getId());
+            kicked += 1;
+        }
+        if (kicked > 0) {
+            notifySingleDeviceKick(userId, kicked);
+        }
+    }
+
+    /**
+     * 真的顶掉了其他设备才提醒（没踢到就不发，所以正常单端用户不会被刷屏）。
+     *
+     * <p>文案要同时覆盖两种触发：新设备登录顶号、以及刚打开开关时立刻顶号 ——
+     * 所以不提「新设备登录」，只说因为开启了「仅允许一台设备在线」，其他设备已被退出。
+     *
+     * <p>通知按用户存、所有设备都会看到，所以写成对谁读都成立的「其他设备」，
+     * 而不是「本设备」。被踢的那台设备下一次请求会拿到 40102，客户端随即弹
+     * 「已退出登录」并回到登录页 —— 这条通知是那份提示的留痕，
+     * 也覆盖了「被踢时 App 不在前台、当时看不到弹窗」的情况。
+     */
+    private void notifySingleDeviceKick(Long userId, int kicked) {
+        try {
+            notificationService.notifyUser(
+                    userId,
+                    // 必须用 "SYSTEM"：消息页两个 Tab 按 type 过滤，自定义 type 会落库但哪个 Tab 都看不到。
+                    "SYSTEM",
+                    "账号安全提醒",
+                    "你的账号开启了「仅允许一台设备在线」，"
+                            + (kicked > 1 ? "其他 " + kicked + " 台设备" : "其他设备")
+                            + "已被退出登录。如非本人操作，请立即修改密码。",
                     "USER",
                     userId
             );

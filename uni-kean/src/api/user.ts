@@ -1,4 +1,5 @@
 import { request } from "@/utils/request";
+import type { AuthUser } from "@/utils/storage";
 
 export interface PublicReview {
   id: number;
@@ -45,5 +46,14 @@ export function updatePrivacy(privateAccount: 0 | 1) {
     url: "/api/me/privacy",
     method: "PUT",
     data: { privateAccount }
+  });
+}
+
+/** 切换「仅允许一台设备在线」。0 = 关闭（多端可同时在线），1 = 打开（新设备登录顶掉其他设备）。 */
+export function updateSingleDevice(singleDevice: 0 | 1) {
+  return request<AuthUser>({
+    url: "/api/me/single-device",
+    method: "PUT",
+    data: { singleDevice }
   });
 }

@@ -85,6 +85,16 @@ public class SysUser {
      */
     private Integer privateAccount;
 
+    /**
+     * 1 = 仅允许一台设备在线。默认 0 = 关闭。
+     * <p>关闭时（默认）：多端可同时在线，新设备登录只发「新设备登录提醒」，不踢任何设备，
+     * 与引入本开关之前的行为完全一致。
+     * <p>打开后：每次登录成功都会把该用户<b>其他</b>登录态的 jti 拉黑（当前设备除外），
+     * 被踢的设备下一次请求就会收到 40102，客户端提示后回到登录页。
+     * 生效点为 {@code LoginDeviceServiceImpl.recordLogin}。
+     */
+    private Integer singleDevice;
+
     private LocalDateTime lastLoginAt;
 
     private String lastLoginIp;

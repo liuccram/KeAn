@@ -20,6 +20,7 @@ import com.kean.mapper.CampusMapper;
 import com.kean.mapper.SchoolMapper;
 import com.kean.mapper.SysUserMapper;
 import com.kean.security.JwtService;
+import com.kean.security.LoginUser;
 import com.kean.security.SecurityUtils;
 import com.kean.security.TokenBlacklistService;
 import com.kean.service.AuthRateLimitService;
@@ -258,6 +259,53 @@ public class AuthServiceImpl implements AuthService {
         }
         user.setPrivateAccount(privateAccount != null && privateAccount == 1 ? 1 : 0);
         sysUserMapper.updateById(user);
+        return toUserVo(user);
+    }
+
+    /**
+     * 「仅允许一台设备在线」开关。写法与 {@link #updatePrivacy(Integer)} 完全一致。
+     *
+     * <p>打开时（写入 1）会<b>立刻</b>顶掉该用户其他设备的登录态，不必等下一次登录 ——
+     * 否则别的设备还活着，用户会以为这个开关没作用。当前这台设备保留：
+     * 取当前请求的 jti（{@link SecurityUtils#currentUserOrNull()} 的 {@code jti()}，
+     * 与 {@code LoginDeviceServiceImpl} 里取当前设备 jti 的方式一致）传给
+     * {@link LoginDeviceService#enforceSingleDevice(Long, String)}。
+     *
+     * <p>关闭时（写入 0）<b>什么都不做</b>：不拉黑、不删设备行、不发通知，
+     * 与引入本开关之前的行为完全一致。
+     *
+     * <p>顺序是先写库再顶号，且顶号整段 try/catch：开关没写进库就谈不上顶号；
+     * 而顶号失败（Redis 抖动、删行失败等）绝不能把已经写好的开关回滚掉。
+     */
+    @Override
+    @Transactional
+    public UserVO updateSingleDevice(Integer singleDevice) {
+        SysUser user = sysUserMapper.selectById(SecurityUtils.currentUserId());
+        if (user == null) {
+            throw new BizException(ErrorCode.UNAUTHORIZED);
+        }
+        if (UserStatus.BANNED.name().equals(user.getStatus())) {
+            throw new BizException(ErrorCode.ACCOUNT_BANNED);
+        }
+        user.setSingleDevice(singleDevice != null && singleDevice == 1 ? 1 : 0);
+        sysUserMapper.updateById(user);
+        if (user.getSingleDevice() == 1) {
+            LoginUser current = SecurityUtils.currentUserOrNull();
+            String keepJti = current == null ? null : current.jti();
+            if (!StringUtils.hasText(keepJti)) {
+                // 正常走鉴权流程不会到这里。真拿不到当前设备的 jti 时宁可不踢：
+                // 若把 null 传下去，会把包括自己在内的所有设备一起踢掉，
+                // 用户刚打开开关就被登出，比「暂时没顶号」更糟。
+                log.warn("开启单设备在线但取不到当前 jti，跳过顶号：userId={}", user.getId());
+            } else {
+                try {
+                    loginDeviceService.enforceSingleDevice(user.getId(), keepJti);
+                } catch (Exception ex) {
+                    // 顶号失败不影响开关：updateById 已执行，吞掉异常让事务继续提交。
+                    log.warn("开启单设备在线后顶号失败（开关已生效）：userId={}", user.getId(), ex);
+                }
+            }
+        }
         return toUserVo(user);
     }
 

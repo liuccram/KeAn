@@ -31,6 +31,8 @@ export interface AuthUser {
   forbidApply?: number | null;
   muted?: number | null;
   privateAccount?: number | null;
+  /** 1 = 仅允许一台设备在线（后端 sys_user.single_device，缺省 0） */
+  singleDevice?: number | null;
 }
 
 export function getToken(): string {

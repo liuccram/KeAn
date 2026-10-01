@@ -7,6 +7,7 @@ import com.kean.dto.UpdateAvatarRequest;
 import com.kean.dto.UpdateCoverRequest;
 import com.kean.dto.UpdatePrivacyRequest;
 import com.kean.dto.UpdateProfileRequest;
+import com.kean.dto.UpdateSingleDeviceRequest;
 import com.kean.service.AuthService;
 import com.kean.service.LoginDeviceService;
 import com.kean.service.PresenceService;
@@ -95,6 +96,11 @@ public class MeController {
     @PutMapping("/privacy")
     public Result<UserVO> updatePrivacy(@Valid @RequestBody UpdatePrivacyRequest request) {
         return Result.ok(authService.updatePrivacy(request.privateAccount()));
+    }
+
+    @PutMapping("/single-device")
+    public Result<UserVO> updateSingleDevice(@Valid @RequestBody UpdateSingleDeviceRequest request) {
+        return Result.ok(authService.updateSingleDevice(request.singleDevice()));
     }
 
     @GetMapping("/published")

@@ -39,6 +39,9 @@ public record UserVO(
         LocalDateTime createdAt,
         Integer privateAccount,
         Boolean online,
-        Boolean mustChangePassword
+        Boolean mustChangePassword,
+        // 新增字段一律追加在参数列表末尾：UserConverter.toVo 用位置参数构造，
+        // 插在中间会静默错位（编译能过、值全串位）。
+        Integer singleDevice
 ) {
 }

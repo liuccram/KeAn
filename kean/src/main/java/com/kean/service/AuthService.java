@@ -34,6 +34,11 @@ public interface AuthService {
 
     UserVO updatePrivacy(Integer privateAccount);
 
+    /**
+     * 切换「仅允许一台设备在线」。0 = 关闭（默认，多端可同时在线），1 = 打开。
+     */
+    UserVO updateSingleDevice(Integer singleDevice);
+
     void resetPassword(ResetPasswordRequest request, HttpServletRequest httpRequest);
 
     void logout(HttpServletRequest httpRequest);
