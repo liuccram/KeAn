@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { logout } from "@/api/auth";
 import { useUserStore } from "@/store/user";
-import { markGestureLocked } from "@/utils/gesture";
 import { refreshMessageBadge } from "@/utils/messageBadge";
 import { useToast } from "wot-design-uni";
 
@@ -19,7 +18,6 @@ async function handleLogout() {
     // 本地也退出
   }
   userStore.logoutLocal();
-  markGestureLocked();
   refreshMessageBadge();
   toast.success("已退出");
   setTimeout(() => {

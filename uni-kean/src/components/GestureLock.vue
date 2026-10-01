@@ -7,7 +7,6 @@ import { clearAuth } from "@/utils/storage";
 import { ref } from "vue";
 
 const emit = defineEmits<{ unlocked: []; escaped: [] }>();
-const tip = ref("请绘制解锁手势");
 const error = ref("");
 
 function onComplete(points: number[]) {
@@ -53,7 +52,7 @@ function onForgot() {
 <template>
   <view class="lock">
     <view class="title">手势解锁</view>
-    <view class="tip">{{ tip }}</view>
+    <view class="tip">请绘制解锁手势</view>
     <view v-if="error" class="err">{{ error }}</view>
     <GesturePad @complete="onComplete" />
     <view class="forgot" @click="onForgot">忘记手势？重新登录</view>
