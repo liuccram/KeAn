@@ -3,6 +3,7 @@ import { createReport, listMyReports, listReportTypes, type ReportItem, type Rep
 import { parseDateTime } from "@/utils/format";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
+import { useUploadProgress } from "@/composables/useUploadProgress";
 import { onShow } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
 import { computed, ref } from "vue";
@@ -12,6 +13,8 @@ const submitting = ref(false);
 const types = ref<ReportTypeItem[]>([]);
 const images = ref<string[]>([]);
 const imageKeys = ref<string[]>([]);
+// 解构到顶层，模板才会自动解包 ref
+const { active: uploading, label: uploadLabel, onProgress, reset: resetUpload } = useUploadProgress();
 const records = ref<ReportItem[]>([]);
 const model = ref({
   type: "SUGGESTION",
@@ -64,13 +67,14 @@ function chooseImage() {
     success: async (res) => {
       for (const filePath of res.tempFilePaths || []) {
         try {
-          const uploaded = await uploadFile(filePath, "REPORT");
+          const uploaded = await uploadFile(filePath, "REPORT", { onProgress });
           imageKeys.value = imageKeys.value.concat(uploaded.objectKey);
           images.value = images.value.concat(resolveMediaUrl(uploaded.url || uploaded.objectKey));
         } catch (error) {
           toast.error((error as Error).message || "图片上传失败");
         }
       }
+      resetUpload();
     }
   });
 }
@@ -132,7 +136,8 @@ useLiveUpdates((event) => {
       <wd-textarea v-model="model.description" placeholder="请描述你想反馈的内容" :maxlength="500" />
       <view class="images">
         <image v-for="(src, index) in images" :key="src" class="shot" :src="src" mode="aspectFill" @click="removeImage(index)" />
-        <view v-if="images.length < 3" class="add" @click="chooseImage">+ 图片</view>
+        <view v-if="uploading" class="add uploading">{{ uploadLabel }}</view>
+        <view v-else-if="images.length < 3" class="add" @click="chooseImage">+ 图片</view>
       </view>
       <wd-button type="primary" block :loading="submitting" @click="handleSubmit">提交反馈</wd-button>
     </view>
@@ -200,6 +205,13 @@ useLiveUpdates((event) => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.add.uploading {
+  color: #3b82f6;
+  font-size: 11px;
+  text-align: center;
+  padding: 0 4px;
+  box-sizing: border-box;
 }
 .top {
   display: flex;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useMineCover } from "@/composables/useMineCover";
 
-const { heroSrc, isCustom, uploading, chooseCover, resetCover } = useMineCover();
+const { heroSrc, isCustom, uploading, uploadLabel, chooseCover, resetCover } = useMineCover();
 </script>
 
 <template>
@@ -14,7 +14,7 @@ const { heroSrc, isCustom, uploading, chooseCover, resetCover } = useMineCover()
       <wd-cell title="从相册选择" is-link :clickable="!uploading" @click="chooseCover" />
       <wd-cell v-if="isCustom" title="恢复默认" is-link :clickable="!uploading" @click="resetCover" />
     </wd-cell-group>
-    <view class="tip">{{ uploading ? "正在上传..." : "选图后可拖动、缩放，框出对外展示的部分。这张图只显示在「我的」页顶部。" }}</view>
+    <view class="tip">{{ uploading ? uploadLabel || "正在上传..." : "选图后可拖动、缩放，框出对外展示的部分。这张图只显示在「我的」页顶部。" }}</view>
     <wd-toast />
   </view>
 </template>

@@ -2,6 +2,7 @@
 import { createReport, listMyReports, listReportTypes, type ReportItem, type ReportTypeItem } from "@/api/report";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
+import { useUploadProgress } from "@/composables/useUploadProgress";
 import { onLoad } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
 import { computed, ref } from "vue";
@@ -12,6 +13,8 @@ const alreadyReported = ref(false);
 const types = ref<ReportTypeItem[]>([]);
 const images = ref<string[]>([]);
 const imageKeys = ref<string[]>([]);
+// 解构到顶层，模板才会自动解包 ref
+const { active: uploading, label: uploadLabel, onProgress, reset: resetUpload } = useUploadProgress();
 const model = ref({
   targetType: "USER",
   targetId: 0,
@@ -85,13 +88,14 @@ function chooseImage() {
     success: async (res) => {
       for (const filePath of res.tempFilePaths || []) {
         try {
-          const uploaded = await uploadFile(filePath, "REPORT");
+          const uploaded = await uploadFile(filePath, "REPORT", { onProgress });
           imageKeys.value = imageKeys.value.concat(uploaded.objectKey);
           images.value = images.value.concat(resolveMediaUrl(uploaded.url || uploaded.objectKey));
         } catch (error) {
           toast.error((error as Error).message || "图片上传失败");
         }
       }
+      resetUpload();
     }
   });
 }
@@ -147,7 +151,8 @@ async function handleSubmit() {
       <wd-textarea v-model="model.description" placeholder="补充说明，选填" :maxlength="500" />
       <view class="images">
         <image v-for="(src, index) in images" :key="src" class="shot" :src="src" mode="aspectFill" @click="removeImage(index)" />
-        <view v-if="images.length < 3" class="add" @click="chooseImage">+ 证据图</view>
+        <view v-if="uploading" class="add uploading">{{ uploadLabel }}</view>
+        <view v-else-if="images.length < 3" class="add" @click="chooseImage">+ 证据图</view>
       </view>
       <view v-if="alreadyReported" class="limit">该对象当前不可再次举报</view>
       <wd-button type="primary" block :loading="submitting" :disabled="alreadyReported" @click="handleSubmit">提交举报</wd-button>
@@ -204,5 +209,12 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.add.uploading {
+  color: #3b82f6;
+  font-size: 11px;
+  text-align: center;
+  padding: 0 4px;
+  box-sizing: border-box;
 }
 </style>

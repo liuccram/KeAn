@@ -3,6 +3,7 @@ import { createAppeal, listMyReports, listReportsAgainstMe, type ReportItem } fr
 import { parseDateTime } from "@/utils/format";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
+import { useUploadProgress } from "@/composables/useUploadProgress";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
 import { computed, ref } from "vue";
@@ -17,6 +18,10 @@ const appealDrafts = ref<Record<number, string>>({});
 const appealImageUrls = ref<Record<number, string[]>>({});
 const appealImageKeys = ref<Record<number, string[]>>({});
 const appealingId = ref<number | null>(null);
+// 同一页面可能有多条申诉入口，用 reportId 标记进度显示在哪一条
+const uploadingReportId = ref<number | null>(null);
+// 解构到顶层，模板才会自动解包 ref
+const { active: uploading, label: uploadLabel, onProgress, reset: resetUpload } = useUploadProgress();
 
 const records = computed(() => mine.value.filter((item) => item.status === "PENDING" || item.status === "PROCESSING"));
 const results = computed(() => mine.value.filter((item) => item.status === "RESOLVED" || item.status === "REJECTED"));
@@ -83,9 +88,10 @@ function chooseAppealImage(reportId: number) {
     sizeType: ["original"],
     sourceType: ["album", "camera"],
     success: async (res) => {
+      uploadingReportId.value = reportId;
       for (const filePath of res.tempFilePaths || []) {
         try {
-          const uploaded = await uploadFile(filePath, "APPEAL");
+          const uploaded = await uploadFile(filePath, "APPEAL", { onProgress });
           appealImageKeys.value[reportId] = (appealImageKeys.value[reportId] || []).concat(uploaded.objectKey);
           appealImageUrls.value[reportId] = (appealImageUrls.value[reportId] || []).concat(
             resolveMediaUrl(uploaded.url || uploaded.objectKey)
@@ -94,6 +100,8 @@ function chooseAppealImage(reportId: number) {
           toast.error((error as Error).message || "图片上传失败");
         }
       }
+      resetUpload();
+      uploadingReportId.value = null;
     }
   });
 }
@@ -200,7 +208,8 @@ useLiveUpdates((event) => {
                 mode="aspectFill"
                 @click="removeAppealImage(item.id, index)"
               />
-              <view v-if="(appealImageKeys[item.id] || []).length < 3" class="add" @click="chooseAppealImage(item.id)">+ 图片</view>
+              <view v-if="uploading && uploadingReportId === item.id" class="add uploading">{{ uploadLabel }}</view>
+              <view v-else-if="(appealImageKeys[item.id] || []).length < 3" class="add" @click="chooseAppealImage(item.id)">+ 图片</view>
             </view>
             <wd-button size="small" type="primary" :loading="appealingId === item.id" @click="handleAppeal(item)">提交申诉</wd-button>
           </view>
@@ -295,5 +304,12 @@ useLiveUpdates((event) => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.add.uploading {
+  color: #3b82f6;
+  font-size: 11px;
+  text-align: center;
+  padding: 0 4px;
+  box-sizing: border-box;
 }
 </style>

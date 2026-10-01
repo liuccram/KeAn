@@ -115,39 +115,130 @@ export interface UploadedFile {
   url: string;
 }
 
-export async function uploadFile(filePath: string, scene: "AVATAR" | "CHAT" | "REPORT" | "APPEAL" | "FULFILL" | "COVER"): Promise<UploadedFile> {
-  const token = getToken();
-  const header: Record<string, string> = {};
-  if (token) {
-    header.Authorization = `Bearer ${token}`;
+export type UploadScene = "AVATAR" | "CHAT" | "REPORT" | "APPEAL" | "FULFILL" | "COVER";
+
+export type UploadPhase = "preparing" | "uploading";
+
+export interface UploadProgress {
+  /** preparing = 本地转码（HEIC 之类可能耗时数秒）；uploading = 正在传输 */
+  phase: UploadPhase;
+  /** 0-100；preparing 阶段恒为 0 */
+  percent: number;
+  /** 第几次尝试，从 1 开始 —— 重试时界面可以提示"正在重试" */
+  attempt: number;
+}
+
+export interface UploadOptions {
+  onProgress?: (progress: UploadProgress) => void;
+  /** 失败自动重试次数，默认 2（最多尝试 3 次）。只对传输失败与 5xx/429 重试 */
+  retries?: number;
+}
+
+const UPLOAD_TIMEOUT_MS = 30000;
+const DEFAULT_UPLOAD_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 400;
+
+/**
+ * 用普通 Error + 标记位而不是 class extends Error：
+ * uni-app 可能编译到 ES5，那种情况下继承内置 Error 会让 instanceof 失效。
+ */
+function uploadFailure(message: string, retryable: boolean): Error {
+  const error = new Error(message) as Error & { retryable?: boolean };
+  error.retryable = retryable;
+  return error;
+}
+
+function isRetryable(error: Error): boolean {
+  return (error as { retryable?: boolean }).retryable !== false;
+}
+
+/** 4xx 业务错误（格式不支持、图片过大、未登录等）重试没有意义，只有 5xx/429/传输失败值得重试。 */
+function isRetryableStatus(status?: number): boolean {
+  if (status == null) {
+    return true;
   }
-  const readyPath = await prepareImageForUpload(filePath);
+  return status >= 500 || status === 429;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function uploadOnce(
+  readyPath: string,
+  scene: UploadScene,
+  header: Record<string, string>,
+  attempt: number,
+  onProgress?: (progress: UploadProgress) => void
+): Promise<UploadedFile> {
   return new Promise((resolve, reject) => {
-    uni.uploadFile({
+    const task = uni.uploadFile({
       url: buildUrl("/api/files"),
       filePath: readyPath,
       name: "file",
       formData: { scene },
       header,
-      timeout: 30000,
+      timeout: UPLOAD_TIMEOUT_MS,
       success: (res) => {
         const body = parseBody<UploadedFile>(res.data);
         if (res.statusCode === 401 || body?.code === 40100) {
           clearAuth();
-          reject(new Error(body?.message || "未登录或登录已失效"));
+          reject(uploadFailure(body?.message || "未登录或登录已失效", false));
           return;
         }
-        if (res.statusCode >= 200 && res.statusCode < 300 && body?.code === 0) {
+        if (res.statusCode >= 200 && res.statusCode < 300 && body?.code === 0 && body.data) {
           resolve(body.data);
           return;
         }
-        reject(new Error(body?.message || `上传失败(${res.statusCode})`));
+        reject(uploadFailure(
+          body?.message || `上传失败(${res.statusCode})`,
+          isRetryableStatus(res.statusCode)
+        ));
       },
       fail: (err) => {
-        reject(new Error(err.errMsg || "图片上传失败"));
+        // 传输层失败（断网、超时）都值得重试。
+        reject(uploadFailure(err.errMsg || "图片上传失败", true));
       }
     });
+    task?.onProgressUpdate?.((res) => {
+      const percent = Math.min(100, Math.max(0, Math.round(res.progress || 0)));
+      onProgress?.({ phase: "uploading", percent, attempt });
+    });
   });
+}
+
+export async function uploadFile(
+  filePath: string,
+  scene: UploadScene,
+  options: UploadOptions = {}
+): Promise<UploadedFile> {
+  const retries = Math.max(0, options.retries ?? DEFAULT_UPLOAD_RETRIES);
+  const token = getToken();
+  const header: Record<string, string> = {};
+  if (token) {
+    header.Authorization = `Bearer ${token}`;
+  }
+
+  // 转码在本地完成，HEIC 之类可能耗时数秒 —— 先播报"处理中"，否则界面看起来像卡死。
+  options.onProgress?.({ phase: "preparing", percent: 0, attempt: 1 });
+  const readyPath = await prepareImageForUpload(filePath);
+
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= retries + 1; attempt += 1) {
+    try {
+      options.onProgress?.({ phase: "uploading", percent: 0, attempt });
+      // 转码结果在多次尝试之间复用，不重复转码。
+      return await uploadOnce(readyPath, scene, header, attempt, options.onProgress);
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      lastError = failure;
+      if (!isRetryable(failure) || attempt > retries) {
+        break;
+      }
+      await delay(RETRY_BASE_DELAY_MS * attempt);
+    }
+  }
+  throw lastError ?? new Error("图片上传失败");
 }
 
 function parseBody<T>(raw: unknown): ApiResult<T> | null {

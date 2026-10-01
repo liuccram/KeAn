@@ -28,6 +28,7 @@ import { classCountdown, publisherTrustLine, applicantTrustLine } from "@/utils/
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { useNowTick } from "@/composables/useNowTick";
+import { useUploadProgress } from "@/composables/useUploadProgress";
 import { useToast } from "wot-design-uni";
 import { computed, nextTick, ref } from "vue";
 
@@ -38,6 +39,8 @@ const task = ref<TaskItem | null>(null);
 const applications = ref<ApplicationItem[]>([]);
 const loading = ref(true);
 const submitting = ref(false);
+// 解构到顶层，模板才会自动解包 ref
+const { active: uploading, label: uploadLabel, onProgress, reset: resetUpload } = useUploadProgress();
 const applyMessage = ref("");
 const id = ref(0);
 const focus = ref("");
@@ -517,12 +520,14 @@ async function handleConfirm() {
       }
       submitting.value = true;
       try {
-        const uploaded = await uploadFile(filePath, "FULFILL");
+        const uploaded = await uploadFile(filePath, "FULFILL", { onProgress });
         pendingFulfillKey.value = uploaded.objectKey;
       } catch (error) {
         toast.error((error as Error).message || "上传失败");
         submitting.value = false;
         return;
+      } finally {
+        resetUpload();
       }
       await submitFulfill(pendingFulfillKey.value);
     }
@@ -831,7 +836,7 @@ useLiveUpdates((event) => {
       <view class="bar-row">
         <wd-button v-if="actionBar.more" plain :disabled="submitting" @click="openMore">更多</wd-button>
         <view v-if="actionBar.label" class="bar-main">
-          <wd-button :type="actionBar.type" block :loading="submitting" @click="runPrimary">{{ actionBar.label }}</wd-button>
+          <wd-button :type="actionBar.type" block :loading="submitting" @click="runPrimary">{{ uploading ? uploadLabel : actionBar.label }}</wd-button>
         </view>
       </view>
     </view>

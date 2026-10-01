@@ -8,6 +8,7 @@ import { useUserStore } from "@/store/user";
 import { normalizeQqEmail } from "@/utils/qqEmail";
 import { chooseAndCrop } from "@/utils/imageCrop";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
+import { useUploadProgress } from "@/composables/useUploadProgress";
 import { useToast } from "wot-design-uni";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 
@@ -43,7 +44,8 @@ const usedChanges = computed(() => user.value?.schoolChangeCount || 0);
 const remainChanges = computed(() => Math.max(0, 3 - usedChanges.value));
 const schoolLocked = computed(() => remainChanges.value <= 0);
 const avatarSrc = computed(() => resolveMediaUrl(user.value?.avatarUrl));
-const uploading = ref(false);
+// 解构到顶层，模板才会自动解包 ref
+const { active: uploading, label: uploadLabel, onProgress, reset: resetUpload } = useUploadProgress();
 const emailChanged = computed(() => {
   const next = normalizeQqEmail(model.email) || model.email.trim().toLowerCase();
   const current = (user.value?.email || "").trim().toLowerCase();
@@ -145,9 +147,8 @@ function chooseAvatar() {
     if (!filePath) {
       return;
     }
-    uploading.value = true;
     try {
-      const uploaded = await uploadFile(filePath, "AVATAR");
+      const uploaded = await uploadFile(filePath, "AVATAR", { onProgress });
       const latest = await updateAvatar(uploaded.objectKey);
       if (userStore.state.token) {
         userStore.setLogin(userStore.state.token, latest);
@@ -156,7 +157,7 @@ function chooseAvatar() {
     } catch (error) {
       toast.error((error as Error).message || "头像上传失败");
     } finally {
-      uploading.value = false;
+      resetUpload();
     }
   });
 }
@@ -265,7 +266,7 @@ function handleSave() {
         <PersonAvatar :size="72" />
       </view>
       <view class="name">{{ user?.nickname || user?.username || "未登录" }}</view>
-      <view class="hint-avatar">{{ uploading ? "上传中..." : "点击头像更换，可框选出展示区域" }}</view>
+      <view class="hint-avatar">{{ uploading ? uploadLabel || "上传中..." : "点击头像更换，可框选出展示区域" }}</view>
     </view>
     <wd-form ref="formRef" :model="model" error-type="toast">
       <wd-cell-group border>

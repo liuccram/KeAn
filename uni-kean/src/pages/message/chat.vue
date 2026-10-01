@@ -14,6 +14,7 @@ import { blockUser } from "@/api/blacklist";
 import { refreshMessageBadge } from "@/utils/messageBadge";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
+import { useUploadProgress } from "@/composables/useUploadProgress";
 import { useUserStore } from "@/store/user";
 import { onLoad } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
@@ -26,6 +27,8 @@ const session = ref<ChatSessionItem | null>(null);
 const messages = ref<ChatMessageItem[]>([]);
 const content = ref("");
 const sending = ref(false);
+// 解构到顶层，模板才会自动解包 ref
+const { active: uploading, label: uploadLabel, onProgress, reset: resetUpload } = useUploadProgress();
 const chatBlock = computed(() => actionBlockReason(userStore.state.user, "chat"));
 const peerBanned = computed(() => Boolean(session.value?.peerBanned));
 const peerNotice = computed(() => {
@@ -137,7 +140,7 @@ function handleSendImage() {
       }
       sending.value = true;
       try {
-        const uploaded = await uploadFile(filePath, "CHAT");
+        const uploaded = await uploadFile(filePath, "CHAT", { onProgress });
         const message = await sendChatMessage(sessionId.value, uploaded.objectKey, "IMAGE");
         messages.value = messages.value.concat(message);
         await nextTick();
@@ -146,6 +149,7 @@ function handleSendImage() {
         toast.error((error as Error).message || "图片发送失败");
       } finally {
         sending.value = false;
+        resetUpload();
       }
     }
   });
@@ -276,7 +280,7 @@ useLiveUpdates((event) => {
     </view>
     <view v-if="sendBlocked" class="mute-tip" :class="{ banned: peerBanned }">{{ sendBlocked }}</view>
     <view v-else class="composer">
-      <wd-button size="small" plain :disabled="sending" @click="handleSendImage">图片</wd-button>
+      <wd-button size="small" plain :disabled="sending" @click="handleSendImage">{{ uploading ? uploadLabel : "图片" }}</wd-button>
       <input v-model="content" class="input" confirm-type="send" placeholder="输入消息" @confirm="handleSend" />
       <wd-button size="small" type="primary" :loading="sending" @click="handleSend">发送</wd-button>
     </view>

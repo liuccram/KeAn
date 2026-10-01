@@ -3,13 +3,17 @@ import defaultCover from "@/static/mine-hero-bg.png";
 import { chooseAndCrop } from "@/utils/imageCrop";
 import { useUserStore } from "@/store/user";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
+import { useUploadProgress } from "@/composables/useUploadProgress";
 import { useToast } from "wot-design-uni";
 import { computed, ref } from "vue";
 
 export function useMineCover() {
   const toast = useToast();
   const userStore = useUserStore();
+  // 保留 busy 语义：恢复默认背景不发文件，但要和上传一样挡住重复点击
   const uploading = ref(false);
+  // uploadLabel 只在真正上传时才有内容（inactive 时为空串）
+  const { label: uploadLabel, onProgress, reset: resetUpload } = useUploadProgress();
 
   const isCustom = computed(() => Boolean(userStore.state.user?.coverUrl));
   const heroSrc = computed(() => resolveMediaUrl(userStore.state.user?.coverUrl) || defaultCover);
@@ -30,7 +34,7 @@ export function useMineCover() {
     }
     uploading.value = true;
     try {
-      const uploaded = await uploadFile(filePath, "COVER");
+      const uploaded = await uploadFile(filePath, "COVER", { onProgress });
       const latest = await updateCover(uploaded.objectKey);
       applyUser(latest);
       toast.success("背景图已更新");
@@ -38,6 +42,7 @@ export function useMineCover() {
       toast.error((error as Error).message || "背景图上传失败");
     } finally {
       uploading.value = false;
+      resetUpload();
     }
   }
 
@@ -75,6 +80,7 @@ export function useMineCover() {
 
   return {
     uploading,
+    uploadLabel,
     isCustom,
     heroSrc,
     chooseCover,

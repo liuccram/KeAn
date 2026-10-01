@@ -17,7 +17,7 @@ import { computed, ref } from "vue";
 
 const userStore = useUserStore();
 const { wallpaperOn, wallpaperImage } = usePageWallpaper();
-const { heroSrc, isCustom, uploading, openCoverSheet } = useMineCover();
+const { heroSrc, isCustom, uploading, uploadLabel, openCoverSheet } = useMineCover();
 const { items: ongoing, load: loadOngoing } = useOngoingTasks();
 const isLoggedIn = userStore.isLoggedIn;
 const user = computed(() => userStore.state.user);
@@ -118,7 +118,7 @@ useLiveUpdates((event) => {
         <view class="hero-wash" />
         <view class="status-bar" :style="{ height: statusBarHeight + 'px' }" />
         <view class="nav-title">我的</view>
-        <view class="cover-btn" :style="{ top: statusBarHeight + 8 + 'px' }" @click.stop="openCoverSheet">{{ uploading ? "上传中" : "更换背景" }}</view>
+        <view class="cover-btn" :style="{ top: statusBarHeight + 8 + 'px' }" @click.stop="openCoverSheet">{{ uploading ? uploadLabel || "上传中" : "更换背景" }}</view>
         <view class="profile-row">
           <image v-if="avatarSrc" class="avatar" :src="avatarSrc" mode="aspectFill" />
           <view v-else class="avatar avatar-text">{{ avatarText }}</view>
