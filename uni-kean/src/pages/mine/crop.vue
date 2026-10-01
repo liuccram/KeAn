@@ -101,9 +101,22 @@ function loadImage(path: string) {
   uni.getImageInfo({
     src: path,
     success: (info) => {
-      nw.value = Math.max(1, info.width || 1);
-      nh.value = Math.max(1, info.height || 1);
-      src.value = path;
+      const localPath = (info as { path?: string }).path;
+      const width = Number(info.width) || 0;
+      const height = Number(info.height) || 0;
+      if (width <= 0 || height <= 0) {
+        // 旧写法是 Math.max(1, info.width || 1)：宽高读不出来时会被静默变成 1x1，
+        // 最终把 1 个像素拉成整张图 —— 若那个像素偏暗，看起来就是"全黑"。
+        console.warn("[crop] getImageInfo 返回 0 宽高，拒绝裁剪", info);
+        uni.showToast({ title: "无法读取图片尺寸", icon: "none" });
+        goBack();
+        return;
+      }
+      nw.value = width;
+      nh.value = height;
+      // getImageInfo 返回的 path 是本地（应用沙箱内）路径，优先用它。
+      // 原因：<image> 渲染在 WebView 里，读不到沙箱外的 file:// 路径（Android 会 404）。
+      src.value = localPath && localPath !== path ? localPath : path;
       ready.value = true;
       fitImage();
     },
@@ -284,6 +297,38 @@ function exportUni() {
   });
 }
 
+/**
+ * Android 上 chooseImage 可能返回【应用沙箱外】的 file:// 路径
+ * （例如 /storage/emulated/0/Pictures/抖音目录/xxx.png），而 <image> 渲染在 WebView 里，
+ * 读不到沙箱外路径 —— 报 "GET file:///... 404 (Not Found)"，页面就只剩背景色。
+ * 这类文件还常常是 HEIF 却被存成 .png/.jpg，WebView 同样不解码。
+ *
+ * 兜底：用 compressImage 把图落进应用沙箱并完成格式转码，再重新加载一次。
+ * compressImage 走原生解码，能读到沙箱外路径（这也是裁剪导出一直正常的原因）。
+ */
+const reMaterializing = ref(false);
+
+function onImageError() {
+  if (reMaterializing.value) {
+    uni.showToast({ title: "图片无法显示", icon: "none" });
+    return;
+  }
+  reMaterializing.value = true;
+  console.warn("[crop] <image> 渲染失败，改用 compressImage 转存到应用沙箱后重试");
+  uni.compressImage({
+    src: src.value,
+    quality: 100,
+    success: (res) => {
+      // 重新走一次 loadImage：compressImage 可能改变尺寸，而 nw/nh 同时决定
+      // 显示比例和裁剪矩形，必须重新读取而不是只换路径。
+      loadImage(res.tempFilePath);
+    },
+    fail: () => {
+      uni.showToast({ title: "图片无法显示", icon: "none" });
+    }
+  });
+}
+
 function goBack() {
   const pages = getCurrentPages();
   if (pages.length > 1) {
@@ -331,7 +376,14 @@ async function onConfirm() {
       @mouseleave="onTouchEnd"
       @wheel.prevent="onWheel"
     >
-      <image v-if="src" class="photo" :src="src" :style="imageStyle" mode="scaleToFill" />
+      <image
+        v-if="src"
+        class="photo"
+        :src="src"
+        :style="imageStyle"
+        mode="scaleToFill"
+        @error="onImageError"
+      />
       <view class="frame" :class="{ round: mode === 'avatar' }" :style="frameStyle" />
     </view>
     <view class="hint">{{ mode === "avatar" ? "拖动或缩放，选择头像展示区域" : "拖动或缩放，选择背景对外展示的部分" }}</view>
@@ -358,10 +410,13 @@ async function onConfirm() {
   width: 100vw;
   height: calc(100vh - 168px);
   overflow: hidden;
-  background: #000;
+  /* 原来 #000：导致"图没渲染出来"与"图本身是黑的"外观完全一致，无法排查 */
+  background: #2a2a2e;
 }
 .photo {
   position: absolute;
+  /* 图尚未绘制时的可见占位，避免误判为全黑 */
+  background: #3d3d42;
 }
 .frame {
   position: absolute;
