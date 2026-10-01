@@ -10,6 +10,7 @@ const userStore = useUserStore();
 const { prefs, reload } = useDisplayPrefs();
 
 const copy = computed(() => ({
+  theme: t("theme", prefs.lang),
   font: t("font", prefs.lang),
   lang: t("lang", prefs.lang),
   wallpaper: t("wallpaper", prefs.lang),
@@ -18,6 +19,21 @@ const copy = computed(() => ({
 
 const coverLabel = computed(() =>
   userStore.state.user?.coverUrl ? t("customCover", prefs.lang) : t("defaultCover", prefs.lang)
+);
+
+// 深浅色 / 字体大小 / 语言都是"点击后下滑选择"的内联 picker，不跳子页面。
+const themeColumns = computed(() =>
+  prefs.lang === "en"
+    ? [
+        { label: "Light", value: "light" },
+        { label: "Dark", value: "dark" },
+        { label: "Follow system", value: "system" }
+      ]
+    : [
+        { label: "浅色", value: "light" },
+        { label: "深色", value: "dark" },
+        { label: "跟随系统", value: "system" }
+      ]
 );
 
 const fontColumns = computed(() =>
@@ -52,6 +68,7 @@ function open(path: string) {
 <template>
   <view class="page">
     <wd-cell-group border>
+      <wd-picker v-model="prefs.theme" :label="copy.theme" :columns="themeColumns" />
       <wd-picker v-model="prefs.fontSize" :label="copy.font" :columns="fontColumns" />
       <wd-picker v-model="prefs.lang" :label="copy.lang" :columns="langColumns" />
       <wd-cell :title="copy.wallpaper" :value="wallpaperLabel(prefs.wallpaper, prefs.lang)" is-link @click="open('wallpaper')" />

@@ -213,7 +213,9 @@ export function applyDisplayAppearance(wallpaper?: WallpaperId) {
   const prefs = loadDisplayPrefs();
   const id = wallpaper ?? prefs.wallpaper;
   const meteor = isMeteorWallpaper(id);
-  const dark = false;
+  // 深浅色此前被硬编码为 false：设置页能存、display-appearance.css 里 html.kean-dark
+  // 的规则也写全了，但这个 class 永远不会被加上，于是"深色模式"点了没有任何反应。
+  const dark = resolveTheme(prefs.theme) === "dark";
   const fontSize = prefs.fontSize === "s" ? "14px" : prefs.fontSize === "l" ? "18px" : "16px";
 
   if (typeof document !== "undefined") {

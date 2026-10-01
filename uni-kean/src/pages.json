@@ -166,24 +166,6 @@
       }
     },
     {
-      "path": "pages/mine/display/theme",
-      "style": {
-        "navigationBarTitleText": "深浅色模式"
-      }
-    },
-    {
-      "path": "pages/mine/display/font",
-      "style": {
-        "navigationBarTitleText": "字体大小"
-      }
-    },
-    {
-      "path": "pages/mine/display/lang",
-      "style": {
-        "navigationBarTitleText": "语言"
-      }
-    },
-    {
       "path": "pages/mine/display/cover",
       "style": {
         "navigationBarTitleText": "我的页背景"
