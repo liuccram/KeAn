@@ -16,6 +16,19 @@
 
 前端 Vite 模式：`development` / `test` / `production`，对应各端的 `.env.development`、`.env.test`、`.env.production`，填写 `VITE_API_BASE_URL`。
 
+### 数据库归属
+
+两套库用途不同，别混：
+
+| 库 | 位置 | 用途 |
+|---|---|---|
+| `kean` | 生产服务器 | 生产数据 |
+| `KeBang` | 内网开发机的 MySQL | 本地开发 |
+
+生产服务器上只有 `kean` 一个业务库；`KeBang` 只存在于开发机（那台机器上另有几个与本项目无关的库）。**`KeBang` 里不是生产数据。**
+
+一个容易忽略的点：服务器 MySQL 的 `lower_case_table_names=1`，库名实际以小写 `kean` 存储，因此 `.env.prod` 里写 `Kean` 也能连上。若将来迁到该配置为 `0` 的实例（Linux 默认值），`Kean` 与 `kean` 会被当成两个库 —— 建议把 `MYSQL_DATABASE` 统一写成小写 `kean`。
+
 ## 启动
 
 后端（默认开发环境）：
