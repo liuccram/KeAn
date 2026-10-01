@@ -4,7 +4,12 @@
 import { onHide, onLaunch, onShow } from "@dcloudio/uni-app";
 import { heartbeat } from "@/api/auth";
 import { useUserStore } from "@/store/user";
-import { markGestureLocked, shouldShowGestureLock } from "@/utils/gesture";
+import {
+  beginLockRoute,
+  endLockRoute,
+  markGestureLocked,
+  shouldShowGestureLock
+} from "@/utils/gesture";
 import { refreshMessageBadge } from "@/utils/messageBadge";
 import { applyDisplayAppearance } from "@/utils/prefs";
 import { startRealtime, stopRealtime } from "@/utils/realtime";
@@ -12,6 +17,8 @@ import { startRealtime, stopRealtime } from "@/utils/realtime";
 const userStore = useUserStore();
 const LOCK_PAGE = "/pages/lock/index";
 let timer: ReturnType<typeof setInterval> | null = null;
+/** 冷启动、以及每次从后台回到前台，都需要重新判断一次是否上锁 */
+let needCheckLock = true;
 
 function ping() {
   if (!userStore.isLoggedIn.value) {
@@ -38,29 +45,54 @@ function stopHeartbeat() {
 }
 
 /**
- * 需要上锁就跳到锁屏页。
+ * 打开锁屏页。
  *
- * 这里只用了 App.vue 的应用生命周期（全平台有效），不再依赖 App.vue 的模板 ——
+ * 用 navigateTo 而不是 reLaunch：reLaunch 会清空整个页面栈，在 Android 上「从后台快速
+ * 切回」时容易撞上 WebView 的恢复过程而白屏；navigateTo 保留原页面，解锁后还能回到原来
+ * 那一页。冷启动时页面栈可能还没就绪导致失败，重试两次，最后用 reLaunch 兜底。
+ */
+function enterLock(attempt = 0) {
+  if (!beginLockRoute()) {
+    return;
+  }
+  uni.navigateTo({
+    url: LOCK_PAGE,
+    fail: () => {
+      endLockRoute();
+      if (attempt < 2) {
+        setTimeout(() => enterLock(attempt + 1), 300);
+        return;
+      }
+      uni.reLaunch({ url: LOCK_PAGE, fail: () => undefined });
+    }
+  });
+}
+
+/**
+ * 需要上锁就进入锁屏页。
+ *
+ * 只用了 App.vue 的应用生命周期（全平台有效），不依赖 App.vue 的模板 ——
  * 模板在 App / 小程序 上根本不会渲染，这正是之前「开了手势锁但锁屏不出现」的原因。
- * 已在锁屏页时不重复跳转，避免把锁屏页重置掉。
  */
 function syncLock() {
-  if (!shouldShowGestureLock(userStore.isLoggedIn.value)) {
+  if (!needCheckLock) {
     return;
   }
-  const pages = getCurrentPages();
-  const current = pages.length ? `/${pages[pages.length - 1].route}` : "";
-  if (current === LOCK_PAGE) {
-    return;
+  needCheckLock = false;
+  try {
+    if (!shouldShowGestureLock(userStore.isLoggedIn.value)) {
+      return;
+    }
+    // 延后一点再跳，等应用真正恢复到前台，避免 Android 上出现白屏
+    setTimeout(() => enterLock(), 300);
+  } catch {
+    // 判断过程出任何问题都不能让 onShow 抛错，否则会整页白屏
   }
-  // 延迟一拍再跳：冷启动时页面栈可能还没就绪
-  setTimeout(() => {
-    uni.reLaunch({ url: LOCK_PAGE });
-  }, 0);
 }
 
 onLaunch(() => {
   applyDisplayAppearance();
+  needCheckLock = true;
   // 冷启动也要求手势：进程若是在前台被强杀，onHide 不会触发，标记可能没写上。
   // markGestureLocked 内部自带「已开启且有手势」的判断，未开启时是空操作。
   markGestureLocked();
@@ -76,6 +108,7 @@ onShow(() => {
 onHide(() => {
   stopHeartbeat();
   stopRealtime();
+  needCheckLock = true;
   if (userStore.isLoggedIn.value) {
     markGestureLocked();
   }
