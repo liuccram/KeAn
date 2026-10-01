@@ -7,7 +7,7 @@ import { useToast } from "wot-design-uni";
 import { onMounted, reactive, ref } from "vue";
 
 const props = defineProps<{ taskId?: number }>();
-const emit = defineEmits<{ success: [id: number] }>();
+const emit = defineEmits<{ success: [id: number]; reset: [] }>();
 
 const toast = useToast();
 const userStore = useUserStore();
@@ -90,6 +90,23 @@ async function copyLast() {
   }
   fillFromTask(last);
   toast.success("已填入上次发布内容");
+}
+
+/**
+ * 发布页会保留上次填写的内容（切 Tab / 返回不再清空），因此需要一个明确的清空入口。
+ * 清空交给外层重建组件：初始值只在下面 model 的声明处定义一份，不会漏字段。
+ */
+function clearForm() {
+  uni.showModal({
+    title: "清空已填内容？",
+    content: "表单里填写的内容会被全部清空。",
+    confirmText: "清空",
+    success: (res) => {
+      if (res.confirm) {
+        emit("reset");
+      }
+    }
+  });
 }
 
 function buildPayload(): TaskPayload {
@@ -298,6 +315,7 @@ onMounted(async () => {
     </wd-cell-group>
     <view class="footer">
       <wd-button v-if="!taskId" plain size="large" block :disabled="loading" @click="copyLast">填入上次发布</wd-button>
+      <wd-button v-if="!taskId" plain size="large" block :disabled="loading" @click="clearForm">清空</wd-button>
       <wd-button type="primary" size="large" block :loading="loading" @click="handleSubmit">
         {{ taskId ? "保存修改" : "发布代课" }}
       </wd-button>

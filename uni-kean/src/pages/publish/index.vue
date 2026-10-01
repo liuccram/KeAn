@@ -38,6 +38,11 @@ function onSuccess(id: number) {
   formKey.value += 1;
   uni.navigateTo({ url: `/pages/task/detail?id=${id}` });
 }
+
+function onReset() {
+  // 重建 TaskForm 即回到初始状态：默认值只在组件内 model 声明处定义一份，不会漏字段
+  formKey.value += 1;
+}
 </script>
 
 <template>
@@ -50,7 +55,7 @@ function onSuccess(id: number) {
     <view v-else-if="publishBlock" class="guest">
       <wd-status-tip image="content" :tip="publishBlock" />
     </view>
-    <TaskForm v-else :key="formKey" @success="onSuccess" />
+    <TaskForm v-else :key="formKey" @success="onSuccess" @reset="onReset" />
     <wd-toast />
   </view>
 </template>
