@@ -30,6 +30,12 @@ spring:
       mail.smtp.timeout: 10000
       mail.smtp.writetimeout: 10000
 
+logging:
+  pattern:
+    # 只往 Spring Boot 默认的输出格式里追加请求追踪 ID，不覆盖它的整体格式。
+    # traceId 由 TraceIdFilter 写入 MDC，缺省时显示为 -。
+    level: "%5p [%X{traceId:-}]"
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
