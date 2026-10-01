@@ -177,13 +177,13 @@ async function confirmDeleteAccount() {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-top: 12px;
   padding-bottom: 32px;
 }
 .tip {
   padding: 12px 16px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -196,7 +196,7 @@ async function confirmDeleteAccount() {
 }
 .danger-tip {
   padding: 12px 16px 0;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -204,7 +204,7 @@ async function confirmDeleteAccount() {
   padding: 20px 16px 24px;
 }
 .del-title {
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 16px;
   font-weight: 600;
 }

@@ -538,7 +538,7 @@ onReachBottom(() => {
 .page {
   position: relative;
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   overflow-x: hidden;
   max-width: 100%;
 }
@@ -554,7 +554,7 @@ onReachBottom(() => {
 }
 .tabs-bar {
   padding: 10px 12px 0;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   position: relative;
   z-index: 20;
 }
@@ -577,31 +577,31 @@ onReachBottom(() => {
   justify-content: center;
   gap: 4px;
   height: 36px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
   border-radius: 8px;
 }
 .tab.on {
-  color: #3d6fe8;
+  color: var(--kean-primary-active);
   font-weight: 600;
-  background: #fff;
+  background: var(--kean-card);
 }
 .page.skinned .tabs {
   background: #111113;
-  border: 1px solid #4d80f0;
+  border: 1px solid var(--kean-primary);
 }
 .page.skinned .tab {
-  color: #4d80f0;
+  color: var(--kean-primary);
 }
 .page.skinned .tab.on {
-  color: #4d80f0;
+  color: var(--kean-primary);
   background: rgba(77, 128, 240, 0.2);
 }
 .tab .dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #f53f3f;
+  background: var(--kean-danger);
 }
 .kind-bar {
   display: flex;
@@ -619,36 +619,36 @@ onReachBottom(() => {
   height: 30px;
   padding: 0 4px;
   border-radius: 15px;
-  background: #fff;
-  color: #4e5969;
+  background: var(--kean-card);
+  color: var(--kean-sub);
   font-size: 13px;
   min-width: 0;
 }
 .kind.on {
-  background: #3d6fe8;
-  color: #fff;
+  background: var(--kean-primary-active);
+  color: var(--kean-card);
   font-weight: 600;
 }
 .kind-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #f53f3f;
+  background: var(--kean-danger);
 }
 .kind.on .kind-dot {
-  background: #fff;
+  background: var(--kean-card);
 }
 .page.skinned .kind {
   background: rgba(28, 28, 30, 0.86);
   color: #dce6ff;
 }
 .page.skinned .kind.on {
-  background: #4d80f0;
-  color: #fff;
+  background: var(--kean-primary);
+  color: var(--kean-card);
 }
 .section {
   margin-top: 8px;
-  background: #fff;
+  background: var(--kean-card);
 }
 .section-head {
   display: flex;
@@ -657,17 +657,17 @@ onReachBottom(() => {
   gap: 8px;
   padding: 12px 16px 8px;
   background: #f8fafc;
-  border-bottom: 1px solid #f2f3f5;
+  border-bottom: 1px solid var(--kean-line);
   min-width: 0;
 }
 .section-label {
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 13px;
   font-weight: 700;
   flex-shrink: 0;
 }
 .section-hint {
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 11px;
   min-width: 0;
   text-align: right;
@@ -677,7 +677,7 @@ onReachBottom(() => {
   background: rgba(28, 28, 30, 0.72);
 }
 .page.skinned .section-label {
-  color: #fff;
+  color: var(--kean-card);
 }
 .page.skinned .section-hint {
   color: #9aa4b2;
@@ -689,11 +689,11 @@ onReachBottom(() => {
   padding: 10px 16px 0;
 }
 .hint {
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
 }
 .link {
-  color: #3d6fe8;
+  color: var(--kean-primary-active);
   font-size: 13px;
 }
 .list {
@@ -703,12 +703,12 @@ onReachBottom(() => {
   display: flex;
   gap: 10px;
   padding: 12px 16px;
-  background: #fff;
-  border-bottom: 1px solid #f2f3f5;
+  background: var(--kean-card);
+  border-bottom: 1px solid var(--kean-line);
   border-left: 3px solid transparent;
 }
 .row.apply {
-  border-left-color: #3d6fe8;
+  border-left-color: var(--kean-primary-active);
 }
 .row.fulfill {
   border-left-color: #14b8a6;
@@ -731,7 +731,7 @@ onReachBottom(() => {
   flex-shrink: 0;
 }
 .row.unread .mark {
-  background: #f53f3f;
+  background: var(--kean-danger);
 }
 .main {
   flex: 1;
@@ -744,14 +744,14 @@ onReachBottom(() => {
   gap: 8px;
 }
 .title {
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 15px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .title.alert {
-  color: #f53f3f;
+  color: var(--kean-danger);
   font-weight: 700;
 }
 .time {
@@ -761,7 +761,7 @@ onReachBottom(() => {
 }
 .content {
   margin-top: 4px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
   line-height: 1.45;
   overflow: hidden;
@@ -783,28 +783,28 @@ onReachBottom(() => {
 .result-line {
   display: block;
   margin-top: 6px;
-  color: #f53f3f;
+  color: var(--kean-danger);
   font-weight: 700;
   font-size: 14px;
   line-height: 1.5;
 }
 .chat-list {
   margin-top: 8px;
-  background: #fff;
+  background: var(--kean-card);
 }
 .chat-row {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid #f2f3f5;
+  border-bottom: 1px solid var(--kean-line);
 }
 .avatar {
   width: 44px;
   height: 44px;
   border-radius: 6px;
-  background: #dbe7ff;
-  color: #3d6fe8;
+  background: var(--kean-primary-soft);
+  color: var(--kean-primary-active);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -835,7 +835,7 @@ onReachBottom(() => {
   padding: 1px 6px;
 }
 .muted-tag.banned {
-  color: #f53f3f;
+  color: var(--kean-danger);
   background: #fff1f0;
 }
 .preview-row {
@@ -847,7 +847,7 @@ onReachBottom(() => {
 }
 .preview {
   flex: 1;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -858,21 +858,21 @@ onReachBottom(() => {
   height: 16px;
   padding: 0 5px;
   border-radius: 8px;
-  background: #f53f3f;
-  color: #fff;
+  background: var(--kean-danger);
+  color: var(--kean-card);
   font-size: 10px;
   line-height: 16px;
   text-align: center;
 }
 .end {
   text-align: center;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   padding: 12px 0;
 }
 .detail-hint {
   margin-top: 4px;
-  color: #3d6fe8;
+  color: var(--kean-primary-active);
   font-size: 12px;
 }
 .notice-sheet {
@@ -887,14 +887,14 @@ onReachBottom(() => {
 }
 .notice-title {
   flex: 1;
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 17px;
   font-weight: 700;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .notice-title.alert {
-  color: #f53f3f;
+  color: var(--kean-danger);
 }
 .notice-time {
   flex-shrink: 0;
@@ -905,7 +905,7 @@ onReachBottom(() => {
   margin-top: 10px;
   max-height: 52vh;
   overflow-y: auto;
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 14px;
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -920,7 +920,7 @@ onReachBottom(() => {
   z-index: 999;
 }
 .page.skinned .detail-hint {
-  color: #4d80f0;
+  color: var(--kean-primary);
 }
 .page.skinned .notice-title {
   color: #f4f7ff;

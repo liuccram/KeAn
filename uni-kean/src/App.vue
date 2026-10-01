@@ -52,6 +52,7 @@ onHide(() => {
 </script>
 
 <style>
+@import "./styles/theme-vars.css";
 @import "./styles/wot-theme.css";
 @import "./styles/wallpaper-skin.css";
 @import "./styles/display-appearance.css";

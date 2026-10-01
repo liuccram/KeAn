@@ -20,7 +20,7 @@ function openAdvice() {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-top: 12px;
 }
 </style>

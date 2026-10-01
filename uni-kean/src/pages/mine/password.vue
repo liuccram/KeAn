@@ -151,12 +151,12 @@ function handleSubmit() {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-top: 12px;
 }
 .hint {
   padding: 12px 16px 0;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -166,7 +166,7 @@ function handleSubmit() {
 .code-block {
   margin: 12px 16px 0;
   padding: 14px 16px 16px;
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 8px;
 }
 .code-head {
@@ -174,7 +174,7 @@ function handleSubmit() {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 14px;
 }
 </style>

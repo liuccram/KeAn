@@ -64,7 +64,7 @@ function onReset() {
 .page {
   position: relative;
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
 }
 .page.skinned {
   background: transparent;

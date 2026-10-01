@@ -336,7 +336,7 @@ onReachBottom(() => {
 .announce-window {
   width: 86%;
   max-width: 320px;
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 16px;
   padding: 20px 18px 16px;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
@@ -350,7 +350,7 @@ onReachBottom(() => {
   margin-top: 8px;
   font-size: 17px;
   font-weight: 700;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .announce-body {
   margin-top: 12px;
@@ -359,7 +359,7 @@ onReachBottom(() => {
 .announce-text {
   font-size: 14px;
   line-height: 1.7;
-  color: #4e5969;
+  color: var(--kean-sub);
   white-space: pre-wrap;
 }
 .announce-ok {
@@ -367,7 +367,7 @@ onReachBottom(() => {
   height: 40px;
   border-radius: 10px;
   background: #3b82f6;
-  color: #fff;
+  color: var(--kean-card);
   font-size: 15px;
   font-weight: 600;
   display: flex;
@@ -377,7 +377,7 @@ onReachBottom(() => {
 .page {
   position: relative;
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
 }
 .page.skinned {
   background: transparent;
@@ -385,7 +385,7 @@ onReachBottom(() => {
 .home-filters {
   position: relative;
   z-index: 20;
-  background: #fff;
+  background: var(--kean-card);
 }
 .page.skinned .home-filters {
   background: rgba(12, 14, 18, 0.88) !important;
@@ -404,11 +404,11 @@ onReachBottom(() => {
 .page.skinned .home-filters :deep(.wd-cell__title),
 .page.skinned .home-filters :deep(.wd-cell__value),
 .page.skinned .home-filters :deep(.wd-cell__placeholder) {
-  color: #fff !important;
+  color: var(--kean-card) !important;
   text-shadow: none !important;
 }
 .search {
-  background: #fff;
+  background: var(--kean-card);
 }
 .quick {
   display: flex;
@@ -421,15 +421,15 @@ onReachBottom(() => {
   height: 28px;
   padding: 0 12px;
   border-radius: 14px;
-  background: #fff;
-  color: #4e5969;
+  background: var(--kean-card);
+  color: var(--kean-sub);
   font-size: 13px;
   display: flex;
   align-items: center;
 }
 .chip.on {
-  background: #3d6fe8;
-  color: #fff;
+  background: var(--kean-primary-active);
+  color: var(--kean-card);
   font-weight: 600;
 }
 .page.skinned .chip {
@@ -437,8 +437,8 @@ onReachBottom(() => {
   color: #dce6ff;
 }
 .page.skinned .chip.on {
-  background: #4d80f0;
-  color: #fff;
+  background: var(--kean-primary);
+  color: var(--kean-card);
 }
 .list {
   padding: 12px 16px 24px;
@@ -449,7 +449,7 @@ onReachBottom(() => {
   font-size: 12px;
 }
 .card {
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 12px;
@@ -462,7 +462,7 @@ onReachBottom(() => {
 .course {
   font-size: 16px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .card-right {
   display: flex;
@@ -470,16 +470,16 @@ onReachBottom(() => {
   gap: 8px;
 }
 .fav {
-  color: #f7ba2a;
+  color: var(--kean-star);
   font-size: 18px;
 }
 .status {
   font-size: 12px;
-  color: #4d80f0;
+  color: var(--kean-primary);
 }
 .meta {
   margin-top: 8px;
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 13px;
 }
 .count {
@@ -492,7 +492,7 @@ onReachBottom(() => {
   margin-top: 12px;
   display: flex;
   justify-content: space-between;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
 }
 .reward {
@@ -501,7 +501,7 @@ onReachBottom(() => {
 }
 .end {
   text-align: center;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   padding: 8px 0 16px;
 }

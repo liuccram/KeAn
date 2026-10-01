@@ -292,7 +292,7 @@ useLiveUpdates((event) => {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-bottom: 112px;
 }
 .page.has-peer-status {
@@ -315,7 +315,7 @@ useLiveUpdates((event) => {
 .peer-status.banned,
 .mute-tip.banned {
   background: #fff1f0;
-  color: #f53f3f;
+  color: var(--kean-danger);
   border-color: #fdcdc5;
 }
 .list {
@@ -340,8 +340,8 @@ useLiveUpdates((event) => {
   width: 36px;
   height: 36px;
   border-radius: 6px;
-  background: #dbe7ff;
-  color: #3d6fe8;
+  background: var(--kean-primary-soft);
+  color: var(--kean-primary-active);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -357,7 +357,7 @@ useLiveUpdates((event) => {
 }
 .bubble {
   max-width: 68%;
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 8px;
   padding: 10px 12px;
 }
@@ -374,7 +374,7 @@ useLiveUpdates((event) => {
   display: block;
 }
 .text {
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 15px;
   line-height: 1.5;
   word-break: break-word;
@@ -390,9 +390,9 @@ useLiveUpdates((event) => {
   display: flex;
   justify-content: space-around;
   padding: 8px 12px;
-  background: #fff;
-  border-top: 1px solid #f2f3f5;
-  color: #4d80f0;
+  background: var(--kean-card);
+  border-top: 1px solid var(--kean-line);
+  color: var(--kean-primary);
   font-size: 13px;
 }
 .composer {
@@ -404,8 +404,8 @@ useLiveUpdates((event) => {
   align-items: center;
   gap: 8px;
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-  background: #fff;
-  border-top: 1px solid #f2f3f5;
+  background: var(--kean-card);
+  border-top: 1px solid var(--kean-line);
 }
 .mute-tip {
   position: fixed;
@@ -422,7 +422,7 @@ useLiveUpdates((event) => {
 .input {
   flex: 1;
   height: 36px;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   border-radius: 18px;
   padding: 0 12px;
   font-size: 14px;

@@ -167,17 +167,17 @@ async function handleSubmit() {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
 }
 .card {
-  background: #fff;
+  background: var(--kean-card);
   margin: 12px 16px;
   border-radius: 12px;
   padding: 14px 16px;
 }
 .title {
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
   margin-bottom: 8px;
 }
 .target {
@@ -185,12 +185,12 @@ async function handleSubmit() {
   padding: 10px 12px;
   background: #f7f8fa;
   border-radius: 8px;
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 14px;
 }
 .limit {
   margin: 8px 0 12px;
-  color: #f53f3f;
+  color: var(--kean-danger);
   font-size: 13px;
 }
 .images {
@@ -204,10 +204,10 @@ async function handleSubmit() {
   width: 72px;
   height: 72px;
   border-radius: 8px;
-  background: #f2f3f5;
+  background: var(--kean-line);
 }
 .add {
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   display: flex;
   align-items: center;

@@ -49,7 +49,7 @@ function select(id: WallpaperId) {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding: 16px 16px 32px;
 }
 .hero {
@@ -68,7 +68,7 @@ function select(id: WallpaperId) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 14px;
 }
 .grid {
@@ -77,13 +77,13 @@ function select(id: WallpaperId) {
 }
 .card {
   flex: 1;
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 12px;
   overflow: hidden;
   border: 2px solid transparent;
 }
 .card.on {
-  border-color: #3d6fe8;
+  border-color: var(--kean-primary-active);
 }
 .thumb {
   width: 100%;
@@ -91,7 +91,7 @@ function select(id: WallpaperId) {
   display: block;
 }
 .thumb.plain {
-  background: #f5f6f8;
+  background: var(--kean-bg);
 }
 .name {
   display: flex;
@@ -99,15 +99,15 @@ function select(id: WallpaperId) {
   justify-content: space-between;
   padding: 8px 10px 10px;
   font-size: 12px;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .mark {
-  color: #3d6fe8;
+  color: var(--kean-primary-active);
   font-weight: 700;
 }
 .tip {
   margin-top: 14px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;
 }

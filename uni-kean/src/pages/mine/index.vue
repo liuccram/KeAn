@@ -235,7 +235,7 @@ useLiveUpdates((event) => {
   text-align: center;
   font-size: 17px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
   padding: 10px 0 8px;
 }
 .hero {
@@ -278,23 +278,23 @@ useLiveUpdates((event) => {
   padding: 4px 10px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.72);
-  color: #3d6fe8;
+  color: var(--kean-primary-active);
   font-size: 12px;
 }
 .hero.custom .cover-btn {
   background: rgba(15, 23, 42, 0.28);
-  color: #fff;
+  color: var(--kean-card);
 }
 .hero.custom .nav-title,
 .hero.custom .nickname,
 .hero.custom .school-line,
 .hero.custom .rate-line,
 .hero.custom .cred-line {
-  color: #fff;
+  color: var(--kean-card);
 }
 .hero.custom .gender-tag {
   background: rgba(255, 255, 255, 0.22);
-  color: #fff;
+  color: var(--kean-card);
 }
 .hero.custom .limit-line {
   color: #ffd666;
@@ -309,7 +309,7 @@ useLiveUpdates((event) => {
   width: 88px;
   height: 88px;
   border-radius: 50%;
-  background: #dbe7ff;
+  background: var(--kean-primary-soft);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -325,7 +325,7 @@ useLiveUpdates((event) => {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--kean-card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -336,11 +336,11 @@ useLiveUpdates((event) => {
   margin-top: 18px;
   font-size: 20px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .guest-sub {
   margin-top: 8px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
 }
 .login-wrap {
@@ -348,13 +348,13 @@ useLiveUpdates((event) => {
   width: 220px;
 }
 .nickname {
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 20px;
   font-weight: 600;
 }
 .gender-tag {
   background: rgba(77, 128, 240, 0.12);
-  color: #3d6fe8;
+  color: var(--kean-primary-active);
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 10px;
@@ -369,7 +369,7 @@ useLiveUpdates((event) => {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 12px;
 }
 .rate-line + .rate-line {
@@ -378,7 +378,7 @@ useLiveUpdates((event) => {
 .limit-line,
 .cred-line {
   margin-top: 6px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 11px;
 }
 .limit-line {
@@ -393,12 +393,12 @@ useLiveUpdates((event) => {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: #dbe7ff;
+  background: var(--kean-primary-soft);
   margin-right: 14px;
   flex-shrink: 0;
 }
 .avatar-text {
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 24px;
   font-weight: 600;
   display: flex;
@@ -416,7 +416,7 @@ useLiveUpdates((event) => {
 }
 .stats {
   margin: -28px 16px 0;
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 16px;
   display: flex;
   padding: 16px 0;
@@ -442,12 +442,12 @@ useLiveUpdates((event) => {
 .num {
   font-size: 22px;
   font-weight: 700;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .label {
   margin-top: 4px;
   font-size: 12px;
-  color: #86909c;
+  color: var(--kean-muted);
 }
 .section {
   margin-top: 16px;
@@ -463,7 +463,7 @@ useLiveUpdates((event) => {
 }
 .section-title {
   font-size: 13px;
-  color: #86909c;
+  color: var(--kean-muted);
   margin: 0 4px 8px;
 }
 .cell-icon {

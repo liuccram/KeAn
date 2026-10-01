@@ -179,11 +179,11 @@ onLoad((query) => {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding: 24px 16px;
 }
 .card {
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 16px;
   padding: 28px 20px;
   display: flex;
@@ -194,27 +194,27 @@ onLoad((query) => {
 .course {
   font-size: 18px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .peer-name {
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 14px;
 }
 .peer-meta {
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
 }
 .done {
   text-align: center;
 }
 .stars {
-  color: #f7ba2a;
+  color: var(--kean-star);
   font-size: 22px;
   letter-spacing: 4px;
 }
 .hint {
   margin-top: 8px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   text-align: center;
   line-height: 1.5;
@@ -226,7 +226,7 @@ onLoad((query) => {
   width: 100%;
 }
 .tag-title {
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   margin-bottom: 8px;
 }
@@ -236,8 +236,8 @@ onLoad((query) => {
   gap: 8px;
 }
 .tag {
-  background: #f2f3f5;
-  color: #4e5969;
+  background: var(--kean-line);
+  color: var(--kean-sub);
   font-size: 12px;
   padding: 6px 12px;
   border-radius: 16px;

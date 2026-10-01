@@ -83,13 +83,13 @@ onShow(() => {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
 }
 .list {
   padding: 12px 16px;
 }
 .card {
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 12px;
@@ -102,17 +102,17 @@ onShow(() => {
   font-weight: 600;
 }
 .status {
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 12px;
 }
 .meta {
   margin-top: 8px;
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 13px;
 }
 .unfav {
   margin-top: 10px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
 }
 </style>

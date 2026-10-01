@@ -76,8 +76,8 @@ function onInput(event: unknown) {
   height: 44px;
   border-radius: 8px;
   border: 1px solid #d9e1ec;
-  background: #fff;
-  color: #1d2129;
+  background: var(--kean-card);
+  color: var(--kean-text);
   font-size: 20px;
   font-weight: 650;
   display: flex;
@@ -85,10 +85,10 @@ function onInput(event: unknown) {
   justify-content: center;
 }
 .box.filled {
-  border-color: #4d80f0;
+  border-color: var(--kean-primary);
 }
 .box.active {
-  border-color: #4d80f0;
+  border-color: var(--kean-primary);
   box-shadow: 0 0 0 2px rgba(77, 128, 240, 0.16);
 }
 .ghost {

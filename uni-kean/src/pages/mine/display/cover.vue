@@ -23,7 +23,7 @@ const { heroSrc, isCustom, uploading, uploadLabel, chooseCover, resetCover } = u
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-top: 12px;
 }
 .preview {
@@ -45,12 +45,12 @@ const { heroSrc, isCustom, uploading, uploadLabel, chooseCover, resetCover } = u
   bottom: 0;
   padding: 8px 12px;
   font-size: 12px;
-  color: #fff;
+  color: var(--kean-card);
   background: linear-gradient(180deg, transparent, rgba(15, 23, 42, 0.45));
 }
 .tip {
   padding: 12px 16px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;
 }

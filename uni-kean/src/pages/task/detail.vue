@@ -870,7 +870,7 @@ useLiveUpdates((event) => {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-bottom: 108px;
 }
 .count {
@@ -885,32 +885,32 @@ useLiveUpdates((event) => {
 .apply-box,
 .photo-box {
   margin: 12px 16px 0;
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 12px;
   padding: 12px 16px;
 }
 .guide {
-  border-left: 3px solid #4d80f0;
+  border-left: 3px solid var(--kean-primary);
 }
 .guide-title {
   font-size: 14px;
   font-weight: 700;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .guide-text {
   margin-top: 4px;
   font-size: 13px;
-  color: #4e5969;
+  color: var(--kean-sub);
   line-height: 1.5;
 }
 .trust-title {
   font-size: 13px;
-  color: #86909c;
+  color: var(--kean-muted);
   margin-bottom: 6px;
 }
 .trust-line {
   font-size: 13px;
-  color: #1d2129;
+  color: var(--kean-text);
   line-height: 1.5;
 }
 .hero {
@@ -925,17 +925,17 @@ useLiveUpdates((event) => {
 .title {
   font-size: 22px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
   flex: 1;
 }
 .fav {
-  color: #f7ba2a;
+  color: var(--kean-star);
   font-size: 13px;
   flex-shrink: 0;
 }
 .status {
   margin-top: 6px;
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 13px;
 }
 .fulfill {
@@ -945,17 +945,17 @@ useLiveUpdates((event) => {
 }
 .apps-title {
   font-size: 14px;
-  color: #86909c;
+  color: var(--kean-muted);
   margin-bottom: 8px;
 }
 .limit-tip {
-  color: #f53f3f;
+  color: var(--kean-danger);
   font-size: 13px;
   line-height: 1.6;
 }
 .app-card {
   padding: 10px 0;
-  border-bottom: 1px solid #f2f3f5;
+  border-bottom: 1px solid var(--kean-line);
 }
 .app-card:last-child {
   border-bottom: none;
@@ -969,17 +969,17 @@ useLiveUpdates((event) => {
 }
 .app-card .trust-line {
   margin-top: 6px;
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 12px;
   font-weight: 400;
 }
 .app-status {
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 12px;
 }
 .msg {
   margin-top: 6px;
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 13px;
 }
 .app-actions {
@@ -993,12 +993,12 @@ useLiveUpdates((event) => {
   right: 0;
   bottom: 0;
   z-index: 20;
-  background: #fff;
-  border-top: 1px solid #f2f3f5;
+  background: var(--kean-card);
+  border-top: 1px solid var(--kean-line);
   padding: 10px 16px 10px;
 }
 .bar-hint {
-  color: #f53f3f;
+  color: var(--kean-danger);
   font-size: 12px;
   line-height: 1.5;
   margin-bottom: 8px;

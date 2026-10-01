@@ -154,10 +154,10 @@ onShow(() => {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
 }
 .score-card {
-  background: #fff;
+  background: var(--kean-card);
   margin: 12px 16px;
   border-radius: 16px;
   padding: 20px 8px;
@@ -170,26 +170,26 @@ onShow(() => {
   text-align: center;
 }
 .score-col + .score-col {
-  border-left: 1px solid #f2f3f5;
+  border-left: 1px solid var(--kean-line);
 }
 .label {
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
 }
 .score {
   font-size: 32px;
   font-weight: 700;
-  color: #1d2129;
+  color: var(--kean-text);
   margin-top: 6px;
 }
 .stars {
   margin-top: 8px;
-  color: #f7ba2a;
+  color: var(--kean-star);
   letter-spacing: 4px;
 }
 .from {
   margin-top: 8px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 11px;
   padding: 0 8px;
   line-height: 1.4;
@@ -201,18 +201,18 @@ onShow(() => {
   font-size: 12px;
 }
 .role {
-  color: #86909c;
+  color: var(--kean-muted);
 }
 .list-title {
   padding: 8px 20px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
 }
 .list {
   padding: 0 16px 24px;
 }
 .card {
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 12px;
   padding: 14px 16px;
   margin-bottom: 12px;
@@ -234,23 +234,23 @@ onShow(() => {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #dbe7ff;
+  background: var(--kean-primary-soft);
 }
 .name {
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .rate {
-  color: #f7ba2a;
+  color: var(--kean-star);
   font-size: 13px;
 }
 .go {
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 13px;
 }
 .course {
   margin-top: 6px;
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 12px;
 }
 .tags {
@@ -260,15 +260,15 @@ onShow(() => {
   gap: 6px;
 }
 .tag {
-  background: #f2f3f5;
-  color: #4e5969;
+  background: var(--kean-line);
+  color: var(--kean-sub);
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 10px;
 }
 .content {
   margin-top: 8px;
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 13px;
   line-height: 1.5;
 }

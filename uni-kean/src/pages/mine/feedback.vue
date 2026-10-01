@@ -272,7 +272,7 @@ useLiveUpdates((event) => {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-bottom: 24px;
 }
 .tabs {
@@ -289,20 +289,20 @@ useLiveUpdates((event) => {
   align-items: center;
   justify-content: center;
   height: 36px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
   border-radius: 8px;
 }
 .tab.on {
-  color: #3d6fe8;
+  color: var(--kean-primary-active);
   font-weight: 600;
-  background: #fff;
+  background: var(--kean-card);
 }
 .list {
   padding-bottom: 8px;
 }
 .card {
-  background: #fff;
+  background: var(--kean-card);
   margin: 12px 16px;
   border-radius: 12px;
   padding: 14px 16px;
@@ -315,7 +315,7 @@ useLiveUpdates((event) => {
   font-weight: 600;
 }
 .status {
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 12px;
 }
 .meta,
@@ -323,12 +323,12 @@ useLiveUpdates((event) => {
 .time,
 .result {
   margin-top: 6px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
 }
 .desc,
 .result {
-  color: #4e5969;
+  color: var(--kean-sub);
 }
 .appeal-box {
   margin-top: 10px;
@@ -344,10 +344,10 @@ useLiveUpdates((event) => {
   width: 64px;
   height: 64px;
   border-radius: 8px;
-  background: #f2f3f5;
+  background: var(--kean-line);
 }
 .add {
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   display: flex;
   align-items: center;

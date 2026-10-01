@@ -46,12 +46,12 @@ async function toggle(value: boolean | { value?: boolean }) {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-top: 12px;
 }
 .tip {
   padding: 12px 16px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;
 }

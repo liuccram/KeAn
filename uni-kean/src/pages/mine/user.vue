@@ -146,11 +146,11 @@ onLoad((query) => {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding: 12px 16px 24px;
 }
 .card {
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 12px;
   padding: 16px;
 }
@@ -163,14 +163,14 @@ onLoad((query) => {
   width: 64px;
   height: 64px;
   border-radius: 8px;
-  background: #dbe7ff;
+  background: var(--kean-primary-soft);
   flex-shrink: 0;
 }
 .avatar.text {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #3d6fe8;
+  color: var(--kean-primary-active);
   font-size: 24px;
   font-weight: 600;
 }
@@ -180,13 +180,13 @@ onLoad((query) => {
 .name {
   font-size: 18px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .tag {
   margin-left: 6px;
   font-size: 11px;
   font-weight: 400;
-  color: #3d6fe8;
+  color: var(--kean-primary-active);
   background: #eef3ff;
   padding: 1px 6px;
   border-radius: 4px;
@@ -194,30 +194,30 @@ onLoad((query) => {
 .school,
 .rate {
   margin-top: 4px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
 }
 .lock {
   margin: 12px 0;
   padding: 10px 12px;
   background: #f7f8fa;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
   border-radius: 8px;
 }
 .block-title {
   margin: 16px 4px 8px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
 }
 .reviews {
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 12px;
   overflow: hidden;
 }
 .review {
   padding: 12px 16px;
-  border-bottom: 1px solid #f2f3f5;
+  border-bottom: 1px solid var(--kean-line);
 }
 .review-top {
   display: flex;
@@ -225,20 +225,20 @@ onLoad((query) => {
 }
 .from {
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .stars {
-  color: #f7ba2a;
+  color: var(--kean-star);
   font-size: 12px;
 }
 .course {
   margin-top: 4px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
 }
 .body {
   margin-top: 6px;
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 14px;
   line-height: 1.5;
 }

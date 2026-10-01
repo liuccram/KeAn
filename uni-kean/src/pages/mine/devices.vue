@@ -107,7 +107,7 @@ async function kick(item: LoginDevice) {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-top: 12px;
   padding-bottom: 32px;
 }
@@ -118,7 +118,7 @@ async function kick(item: LoginDevice) {
 }
 .tag {
   font-size: 12px;
-  color: #4d80f0;
+  color: var(--kean-primary);
 }
 .kick {
   font-size: 13px;

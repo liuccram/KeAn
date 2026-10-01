@@ -1,0 +1,44 @@
+/**
+ * 主题色变量 —— 深色模式的地基。
+ *
+ * 为什么要有这个文件：此前的深色模式是「逐个类名列举」的写法
+ * （`html.kean-dark .page .card, .search, .wd-cell-group…`），
+ * 每新增一个页面或组件就得补一条，所以永远是漏的。
+ * 改成变量之后，页面里只写 `var(--kean-xxx)`，深色只需在这里覆盖一次。
+ *
+ * ⚠️ 浅色的取值必须与替换前的硬编码颜色完全一致，否则浅色观感会变。
+ * ⚠️ 语义色（主色 / 危险 / 星级黄）在深色下只做轻微调整 —— 全刷成白色会让按钮、
+ *    链接、告警、星级都失去语义甚至不可读。
+ */
+
+page {
+  --kean-bg: #f5f6f8;
+  --kean-page-bg: #f5f6f8;
+  --kean-card: #ffffff;
+  --kean-text: #1d2129;
+  --kean-sub: #4e5969;
+  --kean-muted: #86909c;
+  --kean-line: #f2f3f5;
+  --kean-primary: #4d80f0;
+  --kean-primary-active: #3d6fe8;
+  --kean-primary-soft: #dbe7ff;
+  --kean-danger: #f53f3f;
+  --kean-star: #f7ba2a;
+}
+
+/* 深色：黑底 + 浅字；语义色保留（只提亮，不改语义） */
+html.kean-dark page,
+html.kean-dark .page {
+  --kean-bg: #000000;
+  --kean-page-bg: #000000;
+  --kean-card: #1c1c1e;
+  --kean-text: #ffffff;
+  --kean-sub: #c9cdd4;
+  --kean-muted: #8a8f99;
+  --kean-line: #2b2b2e;
+  --kean-primary: #6e9bff;
+  --kean-primary-active: #4d80f0;
+  --kean-primary-soft: #21304d;
+  --kean-danger: #ff7b7b;
+  --kean-star: #f7ba2a;
+}

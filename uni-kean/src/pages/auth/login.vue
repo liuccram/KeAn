@@ -156,7 +156,7 @@ function handleLogin() {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
 }
 .hero {
   padding: 48px 24px 24px;
@@ -164,11 +164,11 @@ function handleLogin() {
 .title {
   font-size: 28px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .sub {
   margin-top: 8px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 14px;
 }
 .footer {
@@ -182,7 +182,7 @@ function handleLogin() {
   padding: 0 4px;
 }
 .link {
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 14px;
 }
 .captcha-hint {

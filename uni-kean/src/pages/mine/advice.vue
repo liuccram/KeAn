@@ -190,29 +190,29 @@ useLiveUpdates((event) => {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-bottom: 24px;
 }
 .card {
-  background: #fff;
+  background: var(--kean-card);
   margin: 12px 16px;
   border-radius: 12px;
   padding: 14px 16px;
 }
 .title {
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .hint {
   margin: 6px 0 12px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.5;
 }
 .section {
   margin: 8px 16px 0;
   font-size: 13px;
-  color: #86909c;
+  color: var(--kean-muted);
 }
 .images {
   display: flex;
@@ -225,10 +225,10 @@ useLiveUpdates((event) => {
   width: 72px;
   height: 72px;
   border-radius: 8px;
-  background: #f2f3f5;
+  background: var(--kean-line);
 }
 .add {
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   display: flex;
   align-items: center;
@@ -249,16 +249,16 @@ useLiveUpdates((event) => {
   font-weight: 600;
 }
 .status {
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 12px;
 }
 .desc,
 .time {
   margin-top: 6px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
 }
 .desc {
-  color: #4e5969;
+  color: var(--kean-sub);
 }
 </style>

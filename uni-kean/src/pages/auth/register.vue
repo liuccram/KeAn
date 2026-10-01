@@ -338,7 +338,7 @@ function handleRegister() {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
 }
 .hero {
   padding: 32px 24px 16px;
@@ -346,11 +346,11 @@ function handleRegister() {
 .title {
   font-size: 24px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .sub {
   margin-top: 8px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 14px;
 }
 .footer {
@@ -359,7 +359,7 @@ function handleRegister() {
 .code-block {
   margin: 12px 16px 0;
   padding: 14px 16px 16px;
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 8px;
 }
 .code-head {
@@ -367,7 +367,7 @@ function handleRegister() {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 14px;
 }
 .captcha-hint {
@@ -379,11 +379,11 @@ function handleRegister() {
   padding: 16px 16px 0;
 }
 .agree-text {
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
 }
 .agree-link {
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 13px;
 }
 </style>

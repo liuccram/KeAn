@@ -71,12 +71,12 @@ const state = computed(() => {
   gap: 12px;
 }
 .title {
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 15px;
   font-weight: 600;
 }
 .text {
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 13px;
   line-height: 1.6;
   text-align: center;

@@ -353,10 +353,10 @@ function handleSave() {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
 }
 .head {
-  background: #fff;
+  background: var(--kean-card);
   padding: 28px 16px 20px;
   display: flex;
   flex-direction: column;
@@ -382,12 +382,12 @@ function handleSave() {
 }
 .hint-avatar {
   margin-top: 8px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
 }
 .hint {
   padding: 12px 16px 0;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -397,7 +397,7 @@ function handleSave() {
 .code-block {
   margin: 12px 16px 0;
   padding: 14px 16px 16px;
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 8px;
 }
 .code-head {
@@ -405,7 +405,7 @@ function handleSave() {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 14px;
 }
 </style>

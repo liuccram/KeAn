@@ -33,7 +33,7 @@ const features: { title: string; desc: string }[] = [
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
   padding-bottom: 32px;
 }
 .hero {
@@ -41,7 +41,7 @@ const features: { title: string; desc: string }[] = [
   flex-direction: column;
   align-items: center;
   padding: 36px 16px 28px;
-  background: #fff;
+  background: var(--kean-card);
 }
 .logo {
   width: 72px;
@@ -51,21 +51,21 @@ const features: { title: string; desc: string }[] = [
   margin-top: 12px;
   font-size: 20px;
   font-weight: 700;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .version {
   margin-top: 4px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
 }
 .slogan {
   margin-top: 8px;
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 14px;
 }
 .tip {
   padding: 16px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;
 }

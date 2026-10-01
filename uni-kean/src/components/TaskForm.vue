@@ -332,7 +332,7 @@ onMounted(async () => {
 }
 .hint {
   padding: 8px 16px 0;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;
 }

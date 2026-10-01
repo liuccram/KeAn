@@ -445,7 +445,7 @@ async function onConfirm() {
   height: 36px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  color: var(--kean-card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -457,7 +457,7 @@ async function onConfirm() {
   padding: 16px 24px 28px;
 }
 .bar-btn {
-  color: #fff;
+  color: var(--kean-card);
   font-size: 16px;
   padding: 8px 12px;
 }

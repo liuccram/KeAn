@@ -98,7 +98,7 @@ onShow(async () => {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--kean-bg);
 }
 .search {
   padding: 12px 12px 0;
@@ -115,7 +115,7 @@ onShow(async () => {
   padding: 12px 16px;
 }
 .row {
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 12px;
   padding: 12px 16px;
   margin-bottom: 10px;
@@ -127,8 +127,8 @@ onShow(async () => {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #dbe7ff;
-  color: #4d80f0;
+  background: var(--kean-primary-soft);
+  color: var(--kean-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -144,15 +144,15 @@ onShow(async () => {
 }
 .name {
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
 }
 .campus {
   margin-top: 4px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-size: 12px;
 }
 .go {
-  color: #4d80f0;
+  color: var(--kean-primary);
   font-size: 13px;
 }
 </style>

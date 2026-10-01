@@ -74,24 +74,24 @@ function goAll() {
 }
 .title {
   font-size: 13px;
-  color: #86909c;
+  color: var(--kean-muted);
   font-weight: 600;
 }
 .more {
   font-size: 12px;
-  color: #4d80f0;
+  color: var(--kean-primary);
 }
 .card {
-  background: #fff;
+  background: var(--kean-card);
   border-radius: 12px;
   padding: 14px 16px;
   margin-bottom: 10px;
-  border-left: 3px solid #4d80f0;
+  border-left: 3px solid var(--kean-primary);
 }
 .name {
   font-size: 15px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--kean-text);
   flex: 1;
 }
 .top {
@@ -102,17 +102,17 @@ function goAll() {
 }
 .status {
   font-size: 12px;
-  color: #4d80f0;
+  color: var(--kean-primary);
   flex-shrink: 0;
 }
 .meta {
   margin-top: 6px;
-  color: #4e5969;
+  color: var(--kean-sub);
   font-size: 12px;
 }
 .party {
   margin-top: 6px;
-  color: #1d2129;
+  color: var(--kean-text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -124,7 +124,7 @@ function goAll() {
 }
 .step {
   margin-top: 8px;
-  color: #3d6fe8;
+  color: var(--kean-primary-active);
   font-size: 13px;
   font-weight: 600;
 }
