@@ -41,6 +41,12 @@ function syncLock() {
   showLock.value = shouldShowGestureLock(userStore.isLoggedIn.value);
 }
 
+/** 锁屏上选择"忘记手势"：手势与登录态已在组件内清掉，这里收掉锁屏并回到登录页 */
+function onEscaped() {
+  showLock.value = false;
+  uni.reLaunch({ url: "/pages/auth/login" });
+}
+
 onLaunch(() => {
   applyDisplayAppearance();
 });
@@ -60,7 +66,7 @@ onHide(() => {
 </script>
 
 <template>
-  <GestureLock v-if="showLock" @unlocked="showLock = false" />
+  <GestureLock v-if="showLock" @unlocked="showLock = false" @escaped="onEscaped" />
 </template>
 
 <style>

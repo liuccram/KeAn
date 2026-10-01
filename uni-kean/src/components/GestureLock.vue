@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { logout } from "@/api/auth";
 import GesturePad from "@/components/GesturePad.vue";
-import { clearGestureLock, encodePattern, getGesturePattern } from "@/utils/gesture";
+import { useUserStore } from "@/store/user";
+import { clearGestureLock, encodePattern, getGesturePattern, setGestureEnabled } from "@/utils/gesture";
+import { clearAuth } from "@/utils/storage";
 import { ref } from "vue";
 
-const emit = defineEmits<{ unlocked: [] }>();
+const emit = defineEmits<{ unlocked: []; escaped: [] }>();
 const tip = ref("请绘制解锁手势");
 const error = ref("");
 
@@ -17,6 +20,34 @@ function onComplete(points: number[]) {
   }
   error.value = "手势错误，请重试";
 }
+
+/**
+ * 忘记手势的出路：清掉本机手势 + 退出登录，再由外层跳登录页。
+ * 这里绝不放行进入 App —— 手势被清除后用户必须用账号密码重新登录。
+ */
+function onForgot() {
+  uni.showModal({
+    title: "忘记手势？",
+    content: "将清除本机手势并退出登录，需要用账号密码重新登录。",
+    confirmText: "重新登录",
+    cancelText: "取消",
+    success: (res) => {
+      if (!res.confirm) {
+        return;
+      }
+      // 尽力通知服务端注销（离线或 token 失效时失败也无妨），随后清本地凭证
+      logout().catch(() => undefined);
+      setGestureEnabled(false);
+      clearGestureLock();
+      try {
+        useUserStore().logoutLocal();
+      } catch {
+        clearAuth();
+      }
+      emit("escaped");
+    }
+  });
+}
 </script>
 
 <template>
@@ -25,6 +56,7 @@ function onComplete(points: number[]) {
     <view class="tip">{{ tip }}</view>
     <view v-if="error" class="err">{{ error }}</view>
     <GesturePad @complete="onComplete" />
+    <view class="forgot" @click="onForgot">忘记手势？重新登录</view>
   </view>
 </template>
 
@@ -52,5 +84,11 @@ function onComplete(points: number[]) {
 }
 .err {
   color: #ff8b8b;
+}
+.forgot {
+  margin-top: 24px;
+  padding: 8px 16px;
+  font-size: 14px;
+  color: #8ab4ff;
 }
 </style>
