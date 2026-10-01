@@ -27,7 +27,6 @@ onShow(async () => {
   } catch {
     // 使用本地缓存
   }
-  formKey.value += 1;
 });
 
 function goLogin() {
@@ -35,6 +34,8 @@ function goLogin() {
 }
 
 function onSuccess(id: number) {
+  // 仅在发布成功后重建表单：下次进入发布页是干净表单，而切 Tab / 返回时未提交内容得以保留
+  formKey.value += 1;
   uni.navigateTo({ url: `/pages/task/detail?id=${id}` });
 }
 </script>
