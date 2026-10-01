@@ -134,7 +134,7 @@ public class AuthServiceImpl implements AuthService {
         user.setForbidApply(0);
         user.setMuted(0);
         sysUserMapper.insert(user);
-        log.info("新注册用户：{}，邮箱：{}，学校id:{}", user.getUsername(), user.getEmail(), user.getSchoolId());
+        log.info("新注册用户：{}，学校id:{}", user.getUsername(), user.getSchoolId());
         return toUserVo(user);
     }
 
@@ -401,7 +401,8 @@ public class AuthServiceImpl implements AuthService {
                 campusName = campus.getName();
             }
         }
-        return UserConverter.toVo(user, schoolName, campusName);
+        // 当前用户自己的资料：保留 phone / email 完整值（mine/profile.vue 与 mine/password.vue 依赖 email）
+        return UserConverter.toVo(user, schoolName, campusName, false, true);
     }
 
     private void assertSchoolAndCampus(Long schoolId, Long campusId) {

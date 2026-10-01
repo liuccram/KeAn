@@ -18,12 +18,20 @@ public final class UserConverter {
     }
 
     public static UserVO toVo(SysUser user, String schoolName, String campusName, boolean online) {
+        return toVo(user, schoolName, campusName, online, false);
+    }
+
+    /**
+     * @param includeSensitive 是否输出 phone / email。默认 false（置 null），
+     *                         仅"当前用户查看自己"与"管理端查看用户"显式传 true。
+     */
+    public static UserVO toVo(SysUser user, String schoolName, String campusName, boolean online, boolean includeSensitive) {
         return new UserVO(
                 user.getId(),
                 user.getRole(),
                 user.getUsername(),
-                user.getPhone(),
-                user.getEmail(),
+                includeSensitive ? user.getPhone() : null,
+                includeSensitive ? user.getEmail() : null,
                 user.getNickname(),
                 user.getGender(),
                 user.getAvatarUrl() == null ? null : FileUrls.of(user.getAvatarUrl()),

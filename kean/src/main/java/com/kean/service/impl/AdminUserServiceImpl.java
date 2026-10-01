@@ -415,7 +415,11 @@ public class AdminUserServiceImpl implements AdminUserService {
                 campusName = campus.getName();
             }
         }
-        return UserConverter.toVo(user, schoolName, campusName, online);
+        // 管理端不再下发 phone / email：管理端界面并不展示这两个字段，而按邮箱/手机号搜索
+        // 是本类里用 SQL 完成的（服务端过滤），所以收敛掉不影响任何功能，
+        // 同时让敏感信息不再出现在管理端浏览器的响应里。
+        // 将来管理端若要展示，应改成 true 并在此处脱敏（例如 abc***@qq.com），而不是直接给明文。
+        return UserConverter.toVo(user, schoolName, campusName, online, false);
     }
 
     private List<AdminTaskItemVO> toTaskItems(List<SubstituteTask> tasks) {
