@@ -39,6 +39,9 @@ const finished = ref(false);
 const page = ref(1);
 const dots = ref({ system: 0, task: 0, chat: 0 });
 const noticeScope = computed(() => (tab.value === "system" ? "SYSTEM" : "TASK") as "SYSTEM" | "TASK");
+// 系统通知（没有可跳转的任务/会话）点开后，在原地用弹层展示完整内容
+const activeNotice = ref<NotificationItem | null>(null);
+const noticeOpen = ref(false);
 
 const TASK_KINDS: { key: TaskKind; label: string; hint: string }[] = [
   { key: "apply", label: "申请", hint: "谁来申请、接没接上" },
@@ -122,6 +125,20 @@ function isAlertTitle(item: NotificationItem) {
   return title === "有人申请了你的代课"
     || title === "申请已被接受"
     || title.includes("取消代课");
+}
+
+// 这里就是改动前 openItem 里的跳转判断，一字未改地抽出来：
+// 只有能落到具体任务/会话上的通知（申请、履约、评价类）才跳走，其余（系统通知、举报处理结果）不跳。
+function canOpenTask(item: NotificationItem): item is NotificationItem & { bizId: number } {
+  if (!item.bizId || item.bizType === "REPORT") {
+    return false;
+  }
+  return item.bizType === "TASK" || item.bizType === "REVIEW";
+}
+
+// 列表里的可点暗示：会跳走的通知本来就能点进任务，举报结果在列表里已经完整展示，都不需要「查看详情」
+function showsDetailHint(item: NotificationItem) {
+  return !canOpenTask(item) && !isHandleNotice(item);
 }
 
 function goLogin() {
@@ -266,14 +283,14 @@ async function openItem(item: NotificationItem) {
       // 仍允许进入详情
     }
   }
-  if (!item.bizId || item.bizType === "REPORT") {
+  if (canOpenTask(item)) {
+    const focus = noticeFocus(item);
+    uni.navigateTo({ url: taskDetailUrl(item.bizId, focus) });
     return;
   }
-  if (item.bizType !== "TASK" && item.bizType !== "REVIEW") {
-    return;
-  }
-  const focus = noticeFocus(item);
-  uni.navigateTo({ url: taskDetailUrl(item.bizId, focus) });
+  // 系统通知等没有可跳转的任务/会话：弹层展示完整标题、正文和时间
+  activeNotice.value = item;
+  noticeOpen.value = true;
 }
 
 function openChat(item: ChatSessionItem) {
@@ -436,6 +453,7 @@ onReachBottom(() => {
                   </template>
                   <template v-else>{{ item.content }}</template>
                 </view>
+                <view v-if="showsDetailHint(item)" class="detail-hint">查看详情 ›</view>
               </view>
             </view>
             <view class="end">{{ finished ? "没有更多了" : "上拉加载更多" }}</view>
@@ -483,6 +501,35 @@ onReachBottom(() => {
         </ListState>
       </template>
     </template>
+    <!-- 系统通知详情：接口没有「按 id 查单条」，直接用列表里已有的这条数据展示完整内容 -->
+    <wd-popup
+      v-model="noticeOpen"
+      position="bottom"
+      safe-area-inset-bottom
+      :z-index="999"
+      custom-style="border-radius:16px 16px 0 0"
+    >
+      <view v-if="activeNotice" class="notice-sheet">
+        <view class="notice-head">
+          <text class="notice-title" :class="{ alert: isAlertTitle(activeNotice) }">{{ activeNotice.title }}</text>
+          <text class="notice-time">{{ parseDateTime(activeNotice.createdAt) }}</text>
+        </view>
+        <view class="notice-body">
+          <template v-if="isHandleNotice(activeNotice)">
+            <view class="lead">{{ splitNotice(activeNotice.content).lead }}</view>
+            <view
+              v-for="(line, index) in splitNotice(activeNotice.content).highlights"
+              :key="index"
+              class="result-line"
+            >{{ line }}</view>
+          </template>
+          <template v-else>{{ activeNotice.content }}</template>
+        </view>
+        <view class="notice-foot">
+          <wd-button type="primary" block @click="noticeOpen = false">知道了</wd-button>
+        </view>
+      </view>
+    </wd-popup>
     <wd-toast />
   </view>
 </template>
@@ -822,5 +869,69 @@ onReachBottom(() => {
   color: #86909c;
   font-size: 12px;
   padding: 12px 0;
+}
+.detail-hint {
+  margin-top: 4px;
+  color: #3d6fe8;
+  font-size: 12px;
+}
+.notice-sheet {
+  padding: 16px 16px 12px;
+}
+.notice-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.notice-title {
+  flex: 1;
+  color: #1d2129;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.notice-title.alert {
+  color: #f53f3f;
+}
+.notice-time {
+  flex-shrink: 0;
+  color: #c9cdd4;
+  font-size: 12px;
+}
+.notice-body {
+  margin-top: 10px;
+  max-height: 52vh;
+  overflow-y: auto;
+  color: #4e5969;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.notice-foot {
+  margin-top: 16px;
+}
+/* 开壁纸时 wallpaper-skin.css 会给 .page 的每个直接子元素加 z-index:1 的层叠上下文，
+   弹层会被压在 H5 导航栏/标签栏（z-index:998）下面，这里抬到同一层级之上 */
+.page.skinned :deep(.wd-popup-wrapper) {
+  z-index: 999;
+}
+.page.skinned .detail-hint {
+  color: #4d80f0;
+}
+.page.skinned .notice-title {
+  color: #f4f7ff;
+}
+.page.skinned .notice-title.alert {
+  color: #ff4d4f;
+}
+.page.skinned .notice-time {
+  color: rgba(235, 244, 255, 0.6);
+}
+.page.skinned .notice-body {
+  color: rgba(235, 244, 255, 0.88);
 }
 </style>
