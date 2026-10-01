@@ -9,14 +9,22 @@ spring:
   flyway:
     clean-disabled: true
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:}?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    url: jdbc:mysql://${MYSQL_HOST:}:${MYSQL_PORT:13306}/${MYSQL_DATABASE:}?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&socketTimeout=60000&connectTimeout=30000&allowPublicKeyRetrieval=true&useSSL=false
     username: ${MYSQL_USERNAME:}
     password: ${MYSQL_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 核心：连接最大生命周期，必须小于MySQL的wait_timeout（默认MySQL是8小时=28800秒）
+      max-lifetime: 28700000 # 单位毫秒，约7h46m，一定要比mysql小一点
+      # 空闲连接超时
+      idle-timeout: 600000
+      # 每一次从池拿连接前做一次校验
+      test-on-borrow: true
+      validation-query: SELECT 1
   data:
     redis:
       host: ${REDIS_HOST:}
-      port: ${REDIS_PORT:6379}
+      port: ${REDIS_PORT:26739}
       password: ${REDIS_PASSWORD:}
   mail:
     host: ${MAIL_HOST:smtp.qq.com}
@@ -49,10 +57,12 @@ kean:
     from: ${MAIL_FROM:${MAIL_USERNAME:}}
     from-name: ${MAIL_FROM_NAME:课安}
   minio:
-    endpoint: ${MINIO_ENDPOINT:}
-    access-key: ${MINIO_ACCESS_KEY:}
-    secret-key: ${MINIO_SECRET_KEY:}
-    bucket: ${MINIO_BUCKET:kean}
+    # 前缀仍叫 minio（minio-java 客户端层），服务端是 RustFS。
+    # env三项必填，缺失时 MinioConfig 启动即抛异常（fail-fast）。
+    endpoint: ${STORAGE_ENDPOINT:}
+    access-key: ${STORAGE_ACCESS_KEY:}
+    secret-key: ${STORAGE_SECRET_KEY:}
+    bucket: ${STORAGE_BUCKET:kean}
   turnstile:
     enabled: ${TURNSTILE_ENABLED:true}
     site-key: ${TURNSTILE_SITE_KEY:}

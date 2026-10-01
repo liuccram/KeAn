@@ -1,3 +1,23 @@
+# 本地开发依赖栈：MySQL + Redis + RustFS（S3 兼容对象存储）。
+#
+# 为什么不再用 MinIO：
+#   MinIO 官方镜像已从 Docker Hub 下架（minio/minio 404），仓库进入归档、社区版控制台被删，
+#   旧镜像不再有安全更新。取舍与风险见 docs/ops/rustfs.md。
+#
+# 敏感信息不写在本文件里：
+#   STORAGE_ACCESS_KEY / STORAGE_SECRET_KEY / STORAGE_BUCKET 从仓库根目录 .env 读取，
+#   键名清单见 .env.dev.example。变量缺失或为空时 compose 直接报错退出。
+#
+# 端口：
+#   9000 = S3 API（后端 KEAN 连这个）
+#   9001 = Web 控制台（浏览器打开，用于看桶和数据）
+#
+# 常用命令：
+#   启动    docker compose -f docker-compose.dev.yml up -d
+#   看状态  docker compose -f docker-compose.dev.yml ps
+#   停止    docker compose -f docker-compose.dev.yml down
+#   清数据  docker compose -f docker-compose.dev.yml down -v   # 会连对象和数据库一起删
+
 services:
   mysql:
     image: mysql:8.0
@@ -24,6 +44,71 @@ services:
     volumes:
       - kean-redis-data:/data
 
+  rustfs:
+    # 固定版本，不要用 latest：1.0.0 GA 发布于 2026-09-16，仍在快速修复期，
+    # 升级要人工确认。想更严可以用 digest：rustfs/rustfs@sha256:<digest>
+    image: rustfs/rustfs:1.0.0
+    container_name: kean-rustfs
+    restart: unless-stopped
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      # 非默认凭据。RustFS 自身也不允许继续用 rustfsadmin。
+      RUSTFS_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?请在仓库根目录 .env 中设置 STORAGE_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${STORAGE_SECRET_KEY:?请在仓库根目录 .env 中设置 STORAGE_SECRET_KEY}
+      # 关键加固，别删：单节点必须 strict。
+      # 1.0.0/1.0.1-preview 曾把新建桶默认置为 relaxed，官方文档写明 relaxed 不可用于单节点；
+      # 实测断电后 xl.meta 变 0 字节，被覆盖对象的全部历史版本一起丢（rustfs/rustfs#8236）。
+      RUSTFS_DURABILITY_MODE: strict
+      RUSTFS_NEW_BUCKET_DURABILITY_MODE: strict
+      # 故意不设置 RUSTFS_REGION：留空时服务端按 us-east-1 应答，与 minio-java 客户端
+      # 的默认区域一致，能避开 SignatureDoesNotMatch。要改就得客户端一起改。
+      RUSTFS_OBS_LOGGER_LEVEL: error
+    ports:
+      - "${STORAGE_PORT:-9000}:9000"
+      - "${STORAGE_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - kean-rustfs-data:/data
+    # 不加 healthcheck：镜像里不一定有 curl/wget，写错会让容器永远显示 unhealthy。
+    # 健康端点 /health 与 /health/ready 免鉴权，需要探活时从外部探测即可。
+
+  rustfs-init:
+    # 一次性任务：等 RustFS 就绪后建桶。
+    # 后端不自动建桶（MinioConfig 只探测桶是否存在并记日志），少了这步上传会一直失败。
+    image: amazon/aws-cli:latest
+    container_name: kean-rustfs-init
+    depends_on:
+      - rustfs
+    environment:
+      AWS_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY:?请在仓库根目录 .env 中设置 STORAGE_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${STORAGE_SECRET_KEY:?请在仓库根目录 .env 中设置 STORAGE_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-kean}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        endpoint="http://rustfs:9000"
+        i=0
+        while [ "$$i" -lt 60 ]; do
+          if aws --endpoint-url "$$endpoint" s3api head-bucket --bucket "$$STORAGE_BUCKET" >/dev/null 2>&1; then
+            echo "[rustfs-init] 存储桶 $$STORAGE_BUCKET 已存在"
+            exit 0
+          fi
+          if aws --endpoint-url "$$endpoint" s3api create-bucket --bucket "$$STORAGE_BUCKET" >/dev/null 2>&1; then
+            echo "[rustfs-init] 已创建存储桶 $$STORAGE_BUCKET"
+            exit 0
+          fi
+          i=$$((i + 1))
+          echo "[rustfs-init] 等待 RustFS 就绪（$$i/60）..."
+          sleep 3
+        done
+        echo "[rustfs-init] 等不到 RustFS 或建桶失败，请查看 kean-rustfs 容器日志" >&2
+        exit 1
+
 volumes:
   kean-mysql-data:
   kean-redis-data:
+  kean-rustfs-data:

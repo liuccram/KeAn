@@ -1,0 +1,129 @@
+# 生产环境依赖栈基线：MySQL + Redis + RustFS（S3 兼容对象存储）。
+#
+# 定位：这是一份可直接改用的基线，不是唯一正确答案。请按你的服务器调整：
+#   - 若生产机的 MySQL / Redis 不由 compose 管理（比如已经有独立的实例或托管服务），
+#     直接删掉对应 service 段落，只保留 rustfs 与 rustfs-init。
+#   - 后端应用本身没有 Dockerfile，按现状是在宿主机上跑 jar，
+#     因此这里把 MySQL / Redis / RustFS 都只绑定到 127.0.0.1，不暴露到公网。
+#
+# 敏感信息全部来自仓库根目录 .env.prod（键名见 .env.prod.example），本文件不写任何口令。
+#
+# 启动： docker compose -f docker-compose.prod.yml up -d
+# 升级 RustFS 前请先读 docs/ops/rustfs.md 的"升级与回滚"。
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: kean-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:?请在 .env.prod 中设置 MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?请在 .env.prod 中设置 MYSQL_DATABASE}
+    # 只给宿主机上的后端用，不对外开放
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - kean-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: kean-redis
+    restart: unless-stopped
+    # 生产必须带口令：REDIS_PASSWORD 同时给后端和 redis-server 使用
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?请在 .env.prod 中设置 REDIS_PASSWORD}"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - kean-redis-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  rustfs:
+    # 固定版本。RustFS 1.0.0 GA 发布于 2026-09-16，仍处快速修复期，
+    # 绝不要在无人值守的情况下用 latest 自动升级。建议改成 digest 锁定。
+    image: rustfs/rustfs:1.0.0
+    container_name: kean-rustfs
+    restart: unless-stopped
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?请在 .env.prod 中设置 STORAGE_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${STORAGE_SECRET_KEY:?请在 .env.prod 中设置 STORAGE_SECRET_KEY}
+      # 单节点必须 strict（见 rustfs/rustfs#8236）：
+      # relaxed 模式下断电会让被覆盖对象的 xl.meta 变成 0 字节，
+      # 且版本桶里连历史版本一起丢，客户端只看到 NoSuchKey。
+      RUSTFS_DURABILITY_MODE: strict
+      RUSTFS_NEW_BUCKET_DURABILITY_MODE: strict
+      # 不设置 RUSTFS_REGION：留空按 us-east-1 应答，与客户端默认区域一致。
+      RUSTFS_OBS_LOGGER_LEVEL: error
+      # 单节点单盘场景下扫描器与前台负载重叠会持续涨内存（rustfs/rustfs#8121，仍未关闭）。
+      # 放慢扫描节奏降低峰值；数据量小的时候没有副作用。要恢复默认改成 default。
+      RUSTFS_SCANNER_SPEED: slow
+    # 只给宿主机上的后端用；控制台走 SSH 隧道访问，不暴露到公网
+    ports:
+      - "127.0.0.1:${STORAGE_PORT:-9000}:9000"
+      - "127.0.0.1:${STORAGE_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - kean-rustfs-data:/data
+    # 内存上限把 #8121 的失败模式从"宿主机被拖垮"收敛成"容器重启一次"。
+    # 若对象数量增长，先看 docker stats 再上调。
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  rustfs-init:
+    # 一次性任务：建桶（后端不自动建桶）。重复执行是幂等的。
+    image: amazon/aws-cli:latest
+    container_name: kean-rustfs-init
+    depends_on:
+      - rustfs
+    environment:
+      AWS_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY:?请在 .env.prod 中设置 STORAGE_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${STORAGE_SECRET_KEY:?请在 .env.prod 中设置 STORAGE_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+      STORAGE_BUCKET: ${STORAGE_BUCKET:?请在 .env.prod 中设置 STORAGE_BUCKET}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        endpoint="http://rustfs:9000"
+        i=0
+        while [ "$$i" -lt 60 ]; do
+          if aws --endpoint-url "$$endpoint" s3api head-bucket --bucket "$$STORAGE_BUCKET" >/dev/null 2>&1; then
+            echo "[rustfs-init] 存储桶 $$STORAGE_BUCKET 已存在"
+            exit 0
+          fi
+          if aws --endpoint-url "$$endpoint" s3api create-bucket --bucket "$$STORAGE_BUCKET" >/dev/null 2>&1; then
+            echo "[rustfs-init] 已创建存储桶 $$STORAGE_BUCKET"
+            exit 0
+          fi
+          i=$$((i + 1))
+          echo "[rustfs-init] 等待 RustFS 就绪（$$i/60）..."
+          sleep 3
+        done
+        echo "[rustfs-init] 等不到 RustFS 或建桶失败，请查看 kean-rustfs 容器日志" >&2
+        exit 1
+
+volumes:
+  kean-mysql-data:
+  kean-redis-data:
+  kean-rustfs-data:
