@@ -990,4 +990,10 @@ useLiveUpdates((event) => {
   flex: 1;
   min-width: 0;
 }
+/* 分组标题居中。wd-cell-group 的标题是 display:flex + justify-content:space-between，
+   所以要改 justify-content，光写 text-align 是不生效的；这些分组都只传了 title、
+   没有右侧 value，因此居中后正好。 */
+:deep(.wd-cell-group__title) {
+  justify-content: center;
+}
 </style>
