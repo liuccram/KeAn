@@ -1,6 +1,9 @@
 package com.kean.security;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Ticker;
 import com.kean.entity.ChatMessage;
 import com.kean.entity.ChatSession;
 import com.kean.entity.SubstituteApplication;
@@ -9,13 +12,16 @@ import com.kean.mapper.ChatMessageMapper;
 import com.kean.mapper.ChatSessionMapper;
 import com.kean.mapper.SubstituteApplicationMapper;
 import com.kean.mapper.SubstituteTaskMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 /**
  * 文件读取的归属校验。
@@ -31,21 +37,60 @@ public class FileAccessGuard {
 
     /** 头像与封面按设计公开，无需凭证。 */
     private static final Set<String> PUBLIC_FOLDERS = Set.of("avatar", "cover");
+
+    /**
+     * chat / fulfill 的归属判定需要反查数据库，而同一张图在一次页面渲染中可能被请求多次，
+     * 因此加一层短 TTL 缓存。
+     *
+     * <p>允许与拒绝都缓存 —— 拒绝同样值得省下一次查询，否则"猜 key"的请求会每次都打库。
+     * TTL 取 45 秒：足够吸收一次渲染内的重复请求，又短到"新被接受的申请人""新建的会话"
+     * 能在可接受的时间内生效。</p>
+     */
+    private static final Duration RELATION_CACHE_TTL = Duration.ofSeconds(45);
+    private static final long RELATION_CACHE_MAX_SIZE = 10_000;
+
     private final ChatMessageMapper chatMessageMapper;
     private final ChatSessionMapper chatSessionMapper;
     private final SubstituteTaskMapper substituteTaskMapper;
     private final SubstituteApplicationMapper substituteApplicationMapper;
+    private final Cache<String, Boolean> relationCache;
 
+    /**
+     * Spring 注入用的构造器。
+     *
+     * <p>必须显式标注 {@code @Autowired}：本类还有下面的测试用构造器，而 Spring 只在
+     * "有且仅有一个构造器"时才自动选择它；构造器多于一个且都没标注时，它会退回无参构造器，
+     * 于是报 {@code No default constructor found} 导致整个上下文启动失败。
+     * 回归保护见 {@code FileAccessGuardWiringTest}。</p>
+     */
+    @Autowired
     public FileAccessGuard(
             ChatMessageMapper chatMessageMapper,
             ChatSessionMapper chatSessionMapper,
             SubstituteTaskMapper substituteTaskMapper,
             SubstituteApplicationMapper substituteApplicationMapper
     ) {
+        this(chatMessageMapper, chatSessionMapper, substituteTaskMapper, substituteApplicationMapper,
+                Ticker.systemTicker());
+    }
+
+    /** 供测试注入可控时钟，用于验证 TTL 过期行为。 */
+    FileAccessGuard(
+            ChatMessageMapper chatMessageMapper,
+            ChatSessionMapper chatSessionMapper,
+            SubstituteTaskMapper substituteTaskMapper,
+            SubstituteApplicationMapper substituteApplicationMapper,
+            Ticker ticker
+    ) {
         this.chatMessageMapper = chatMessageMapper;
         this.chatSessionMapper = chatSessionMapper;
         this.substituteTaskMapper = substituteTaskMapper;
         this.substituteApplicationMapper = substituteApplicationMapper;
+        this.relationCache = Caffeine.newBuilder()
+                .maximumSize(RELATION_CACHE_MAX_SIZE)
+                .expireAfterWrite(RELATION_CACHE_TTL)
+                .ticker(ticker)
+                .build();
     }
 
     /**
@@ -78,10 +123,19 @@ public class FileAccessGuard {
         }
         return switch (folder) {
             case "report", "appeal" -> Objects.equals(userId, ownerIdOf(objectKey));
-            case "chat" -> isChatParticipant(objectKey, userId);
-            case "fulfill" -> isTaskParty(objectKey, userId);
+            case "chat" -> cachedRelation(objectKey, userId, () -> isChatParticipant(objectKey, userId));
+            case "fulfill" -> cachedRelation(objectKey, userId, () -> isTaskParty(objectKey, userId));
             default -> false;
         };
+    }
+
+    /**
+     * 只有需要查库的判定走缓存；report / appeal 是纯字符串比较，缓存没有收益。
+     * 缓存键用「用户 + 对象键」—— 两者缺一都无法决定结果。
+     */
+    private boolean cachedRelation(String objectKey, Long userId, BooleanSupplier compute) {
+        Boolean cached = relationCache.get(userId + "|" + objectKey, key -> compute.getAsBoolean());
+        return Boolean.TRUE.equals(cached);
     }
 
     /** 聊天图片：请求者必须是包含该图片的会话参与者（发送方或接收方）。 */
