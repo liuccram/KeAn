@@ -28,6 +28,41 @@ function currentRoute() {
   }
 }
 
+let handlingSessionEnded = false;
+
+/**
+ * 登录态被服务端主动终止（被其他设备顶下线、凭证被批量作废）。
+ * 与普通未登录区分：这里要明确告诉用户原因，再回登录页。
+ * 多个并发请求同时失败时只处理一次（handlingSessionEnded 守卫）。
+ */
+export function handleSessionEnded(message?: string) {
+  if (handlingSessionEnded) {
+    return;
+  }
+  handlingSessionEnded = true;
+  try {
+    useUserStore().logoutLocal();
+  } catch {
+    clearAuth();
+  }
+  const content = message || "你的账号已在其他设备登录，请重新登录。";
+  const goLogin = () => {
+    handlingSessionEnded = false;
+    if (currentRoute().includes("auth/login")) {
+      return;
+    }
+    uni.reLaunch({ url: "/pages/auth/login" });
+  };
+  uni.showModal({
+    title: "已退出登录",
+    content,
+    showCancel: false,
+    confirmText: "重新登录",
+    success: goLogin,
+    fail: goLogin
+  });
+}
+
 export function handleAccountBanned(message?: string) {
   if (handlingBan) {
     return;
@@ -181,6 +216,11 @@ function uploadOnce(
       timeout: UPLOAD_TIMEOUT_MS,
       success: (res) => {
         const body = parseBody<UploadedFile>(res.data);
+        if (body?.code === 40102) {
+          handleSessionEnded(body.message);
+          reject(uploadFailure(body?.message || "登录状态已失效，请重新登录", false));
+          return;
+        }
         if (res.statusCode === 401 || body?.code === 40100) {
           clearAuth();
           reject(uploadFailure(body?.message || "未登录或登录已失效", false));
@@ -298,6 +338,11 @@ export function request<T>(options: RequestOptions): Promise<T> {
         if (body?.code === 40301) {
           handleAccountBanned(body.message);
           reject(new Error(body.message || "账号已被封禁"));
+          return;
+        }
+        if (body?.code === 40102) {
+          handleSessionEnded(body.message);
+          reject(new Error(body.message || "登录状态已失效，请重新登录"));
           return;
         }
         if (res.statusCode === 401 || body?.code === 40100) {

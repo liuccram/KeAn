@@ -90,7 +90,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     filterChain.doFilter(request, response);
                     return;
                 }
-                writeUnauthorized(response);
+                writeSessionEnded(response, "你的账号已在其他设备退出登录，请重新登录");
                 return;
             }
             Long userId = Long.valueOf(claims.getSubject());
@@ -103,7 +103,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     filterChain.doFilter(request, response);
                     return;
                 }
-                writeUnauthorized(response);
+                writeSessionEnded(response, "登录状态已失效，请重新登录");
                 return;
             }
             String username = claims.get("username", String.class);
@@ -169,5 +169,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 ? ErrorCode.ACCOUNT_BANNED.getMessage()
                 : message;
         objectMapper.writeValue(response.getWriter(), Result.fail(ErrorCode.ACCOUNT_BANNED, text));
+    }
+
+    /**
+     * 登录态被主动终止：被其他设备顶下线、或凭证被批量作废（如改密）。
+     *
+     * 单独给一个业务码（40102）而不是复用通用 401：客户端据此明确告知用户原因并回到登录页，
+     * 否则用户只会看到自己莫名其妙被登出。写法与上面的 writeBanned 保持一致。
+     */
+    private void writeSessionEnded(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(ErrorCode.SESSION_ENDED.getHttpStatus().value());
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        String text = message == null || message.isBlank()
+                ? ErrorCode.SESSION_ENDED.getMessage()
+                : message;
+        objectMapper.writeValue(response.getWriter(), Result.fail(ErrorCode.SESSION_ENDED, text));
     }
 }

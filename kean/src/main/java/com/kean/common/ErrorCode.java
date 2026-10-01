@@ -32,6 +32,9 @@ public enum ErrorCode {
     IMAGE_DIMENSION_TOO_LARGE(40026, "图片像素过大，请压缩后重新上传", HttpStatus.BAD_REQUEST),
     UNAUTHORIZED(40100, "未登录或登录已失效", HttpStatus.UNAUTHORIZED),
     LOGIN_FAILED(40101, "用户名或密码错误", HttpStatus.UNAUTHORIZED),
+    // 登录态被主动终止：被其他设备顶下线、凭证被批量作废（如改密）。
+    // 与普通 40100 区分开，客户端才能明确告知用户原因，而不是静默清掉登录态。
+    SESSION_ENDED(40102, "登录状态已失效，请重新登录", HttpStatus.UNAUTHORIZED),
     LOGIN_LOCKED(42901, "登录失败次数过多，请15分钟后再试", HttpStatus.TOO_MANY_REQUESTS),
     FILE_RATE_LIMITED(42902, "文件访问过于频繁，请稍后再试", HttpStatus.TOO_MANY_REQUESTS),
     FORBIDDEN(40300, "没有权限", HttpStatus.FORBIDDEN),
