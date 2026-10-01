@@ -22,6 +22,17 @@ public interface LoginDeviceService {
      */
     void enforceSingleDevice(Long userId, String keepJti);
 
+    /**
+     * 注销账号专用：把该用户<b>全部</b>登录设备（<b>含当前这一台</b>）的 jti 拉黑，
+     * 并把对应的 {@code login_device} 行软删（{@code deleted = 1}）。
+     *
+     * <p>与 {@link #enforceSingleDevice(Long, String)} 是同一套动作，唯一区别是不保留任何设备
+     * —— 注销后整个账号都不该再登录，没有「当前设备」需要留下。TTL 同样复用
+     * {@code LoginDeviceServiceImpl.blacklistJti}（按 device 行的 {@code expire_at} 计算，
+     * 为空兜底 7 天、下限 60 秒），保证「同一件事只有一套算法」。
+     */
+    void revokeAll(Long userId);
+
     void touchCurrent(HttpServletRequest request);
 
     void removeCurrent();

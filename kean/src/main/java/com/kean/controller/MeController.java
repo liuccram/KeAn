@@ -3,6 +3,7 @@ package com.kean.controller;
 import com.kean.common.PageResult;
 import com.kean.common.Result;
 import com.kean.dto.ChangeEmailRequest;
+import com.kean.dto.DeleteAccountRequest;
 import com.kean.dto.UpdateAvatarRequest;
 import com.kean.dto.UpdateCoverRequest;
 import com.kean.dto.UpdatePrivacyRequest;
@@ -101,6 +102,17 @@ public class MeController {
     @PutMapping("/single-device")
     public Result<UserVO> updateSingleDevice(@Valid @RequestBody UpdateSingleDeviceRequest request) {
         return Result.ok(authService.updateSingleDevice(request.singleDevice()));
+    }
+
+    /**
+     * 注销账号（不可逆）。必须提交当前密码，服务端用 PasswordEncoder 校验。
+     * 成功后该账号被匿名化 + 逻辑删除（deleted = 1），全部设备登录态立刻失效。
+     * 完整语义与执行顺序见 docs/api/auth.md 与本文件对应的接口文档。
+     */
+    @PostMapping("/delete-account")
+    public Result<Void> deleteAccount(@Valid @RequestBody DeleteAccountRequest request) {
+        authService.deleteAccount(request);
+        return Result.ok();
     }
 
     @GetMapping("/published")

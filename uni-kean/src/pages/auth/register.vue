@@ -27,6 +27,8 @@ const model = reactive({
   schoolId: "" as number | string,
   campusId: "" as number | string
 });
+/** 隐私政策同意勾选。未勾选不允许提交（见 handleRegister 的最后一关）。 */
+const agreed = ref(false);
 const captcha = reactive({
   enabled: true,
   siteKey: "",
@@ -134,6 +136,11 @@ function requireCaptcha(): boolean {
   return true;
 }
 
+/** 《隐私政策》在 App 内打开（pages/mine/legal 只渲染隐私政策，用户协议不在 App 内） */
+function goPrivacy() {
+  uni.navigateTo({ url: "/pages/mine/legal" });
+}
+
 async function handleSendSms() {
   const email = normalizeQqEmail(model.email);
   if (!email) {
@@ -177,6 +184,11 @@ function handleRegister() {
         return;
       }
       if (!requireCaptcha()) {
+        return;
+      }
+      // 最后一关：必须已阅读并同意《隐私政策》。未勾选不提交，提示风格与本页其它校验一致。
+      if (!agreed.value) {
+        toast.error("请先阅读并同意《隐私政策》");
         return;
       }
       loading.value = true;
@@ -306,6 +318,13 @@ function handleRegister() {
           :rules="[{ required: true, message: '请选择校区' }]"
         />
       </wd-cell-group>
+      <view class="agree">
+        <wd-checkbox v-model="agreed" shape="circle">
+          <text class="agree-text">我已阅读并同意</text>
+          <!-- 链接放在勾选框内，点它在跳转前先阻止冒泡，避免顺手把勾选状态也切了 -->
+          <text class="agree-link" @click.stop="goPrivacy">《隐私政策》</text>
+        </wd-checkbox>
+      </view>
       <view class="footer">
         <wd-button type="primary" size="large" block :loading="loading" @click="handleRegister">
           注册
@@ -354,6 +373,17 @@ function handleRegister() {
 .captcha-hint {
   padding: 12px 16px 0;
   color: #ef4444;
+  font-size: 13px;
+}
+.agree {
+  padding: 16px 16px 0;
+}
+.agree-text {
+  color: #86909c;
+  font-size: 13px;
+}
+.agree-link {
+  color: #4d80f0;
   font-size: 13px;
 }
 </style>

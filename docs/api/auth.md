@@ -274,6 +274,69 @@ Authorization: Bearer <token>
 
 ---
 
+## POST /api/me/delete-account
+
+需登录。**注销账号，不可逆。** 必须提交当前密码，服务端用 `PasswordEncoder` 校验，
+密码不对直接失败且不做任何修改。
+
+请求：
+
+```json
+{ "password": "当前登录密码" }
+```
+
+成功 `200`，`data` 为空。**执行顺序（固定）：**
+
+1. **校验当前密码。** 失败返回 `400 / 40000` + `当前密码不正确`，一个字节都不改。
+   （刻意不用 `40101`：客户端把 401 当登录态失效，会让「密码填错」触发登出流程。）
+2. **拉黑该用户全部登录设备的 `jti`**，并把这些 `login_device` 行软删（`deleted = 1`）。
+   含当前请求所在的这台设备 —— 注销后没有任何设备该留下。被拉黑的设备下次请求收到 `40102`。
+   TTL 与 `DELETE /api/me/devices/{id}`、`PUT /api/me/single-device` 同一套算法
+   （按 device 行 `expire_at` 计算，为空兜底 7 天、下限 60 秒）。
+   同时用 `TokenRevokeService.revoke(userId)` 把该用户此前签发的**所有** Token 整体作废
+   （与封禁、管理员改密同一套机制）—— 只靠 jti 黑名单会漏掉「设备行早已软删、Redis 黑名单键
+   又被淘汰」的旧 Token，这一层兜底把这个口子堵上。
+3. **匿名化 `sys_user` 行：**
+
+   | 列 | 注销后 |
+   |---|---|
+   | `email` | `NULL`（唯一索引 `uk_sys_user_email` 允许多个 NULL，不会冲突；也把邮箱释放出来可以再次注册） |
+   | `phone` | `NULL`（同上，`uk_sys_user_phone`） |
+   | `nickname` | `已注销用户` |
+   | `avatar_url` | `NULL` |
+   | `cover_url` | `NULL` |
+   | `password_hash` | 随机 UUID 的 BCrypt 哈希（原文不落库，**原密码不可能再登录**） |
+   | `username` | `deleted-user-{id}`（不含原邮箱；前缀 + 主键全局唯一；含 `-`，而注册/建管理员的用户名校验只允许 `[a-zA-Z0-9_]`，所以谁都注册不出来重名） |
+
+   其余列（学校、校区、各项统计、`status` 等）不动。
+4. **逻辑删除**：`deleted = 1`。**不做物理删除。**
+5. **清理只属于本人、不影响他人的数据**：`notification`（本人通知）、`user_favorite`（本人收藏）、
+   `user_blacklist` 中 `user_id = 本人` 的行（本人拉黑别人的记录）。
+   `login_device` 已在第 2 步处理。
+
+**刻意保留（一行都不删）：** `substitute_task`、`chat_message`、`review`、`report`。
+对方的任务记录、聊天记录与信用评价都依赖它们，隐私政策六（信息保留期限）也写明
+「与交易对方或平台信用体系相关的记录，注销后可能以去标识化方式保留」。
+作者本人已按第 3 步匿名化。`user_blacklist` 中 `blocked_user_id = 本人` 的行属于**别人**的黑名单，
+同样不动。
+
+**副作用（已确认不会崩，但表现会降级）：** 第 4 步的 `deleted = 1` 是 MyBatis-Plus 的
+`@TableLogic`，所以此后 `sysUserMapper.selectById(...)` 查不到这个用户：
+任务详情里的发布者信息、聊天会话里的对方昵称、评价里的来源昵称都会走各自既有的
+「用户不存在」兜底（`null` / `同学` / `发布者`），不会抛异常；已注销用户的主页
+`GET /api/users/{id}` 返回 `404 / 40408`。
+
+失败：
+
+| HTTP | code | 含义 |
+|---|---|---|
+| 400 | 40000 | 参数校验失败，或 `当前密码不正确` |
+| 401 | 40100 | 未登录 |
+| 401 | 40102 | 登录态已被终止（例如已在其他设备退出） |
+| 403 | 40301 | 账号已被封禁 |
+
+---
+
 ## POST /api/auth/logout
 
 需登录。将当前 Token 的 `jti` 写入 Redis 黑名单，TTL 为 Token 剩余有效期。

@@ -212,6 +212,28 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
         }
     }
 
+    /**
+     * 注销账号：把该用户全部登录设备（含当前这台）的 jti 拉黑，并软删 device 行。
+     *
+     * <p>与 {@link #enforceSingleDevice(Long, String)} 逐行同构，只是没有 {@code keepJti}
+     * —— 账号都要注销了，没有任何设备需要留下。这里<b>不做 try/catch</b>：
+     * 调用方是注销流程，Redis 拉黑失败必须让整个注销事务回滚（什么都不改），
+     * 否则会出现「账号已匿名化但其他设备还活着」的中间态。
+     */
+    @Override
+    public void revokeAll(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        List<LoginDevice> devices = loginDeviceMapper.selectList(
+                new LambdaQueryWrapper<LoginDevice>().eq(LoginDevice::getUserId, userId)
+        );
+        for (LoginDevice device : devices) {
+            blacklistJti(device.getJti(), device.getExpireAt());
+            loginDeviceMapper.deleteById(device.getId());
+        }
+    }
+
     @Override
     public void touchCurrent(HttpServletRequest request) {
         LoginUser user = SecurityUtils.currentUserOrNull();

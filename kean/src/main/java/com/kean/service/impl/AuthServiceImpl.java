@@ -5,24 +5,32 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.kean.common.ErrorCode;
 import com.kean.dto.ChangeEmailRequest;
 import com.kean.dto.ChangePasswordRequest;
+import com.kean.dto.DeleteAccountRequest;
 import com.kean.dto.LoginRequest;
 import com.kean.dto.RegisterRequest;
 import com.kean.dto.ResetPasswordRequest;
 import com.kean.dto.SendSmsRequest;
 import com.kean.dto.UpdateProfileRequest;
 import com.kean.entity.Campus;
+import com.kean.entity.Notification;
 import com.kean.entity.School;
 import com.kean.entity.SysUser;
+import com.kean.entity.UserBlacklist;
+import com.kean.entity.UserFavorite;
 import com.kean.enums.UserRole;
 import com.kean.enums.UserStatus;
 import com.kean.exception.BizException;
 import com.kean.mapper.CampusMapper;
+import com.kean.mapper.NotificationMapper;
 import com.kean.mapper.SchoolMapper;
 import com.kean.mapper.SysUserMapper;
+import com.kean.mapper.UserBlacklistMapper;
+import com.kean.mapper.UserFavoriteMapper;
 import com.kean.security.JwtService;
 import com.kean.security.LoginUser;
 import com.kean.security.SecurityUtils;
 import com.kean.security.TokenBlacklistService;
+import com.kean.security.TokenRevokeService;
 import com.kean.service.AuthRateLimitService;
 import com.kean.service.AuthService;
 import com.kean.service.LoginDeviceService;
@@ -49,6 +57,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -57,12 +66,19 @@ public class AuthServiceImpl implements AuthService {
     private static final int ENABLED = 1;
     private static final int MAX_SCHOOL_CHANGES = 3;
 
+    /** 注销后对外显示的昵称。 */
+    private static final String DELETED_NICKNAME = "已注销用户";
+
     private final SysUserMapper sysUserMapper;
     private final SchoolMapper schoolMapper;
     private final CampusMapper campusMapper;
+    private final NotificationMapper notificationMapper;
+    private final UserFavoriteMapper favoriteMapper;
+    private final UserBlacklistMapper blacklistMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final TokenBlacklistService tokenBlacklistService;
+    private final TokenRevokeService tokenRevokeService;
     private final SmsService smsService;
     private final SysConfigService sysConfigService;
     private final PresenceService presenceService;
@@ -74,9 +90,13 @@ public class AuthServiceImpl implements AuthService {
             SysUserMapper sysUserMapper,
             SchoolMapper schoolMapper,
             CampusMapper campusMapper,
+            NotificationMapper notificationMapper,
+            UserFavoriteMapper favoriteMapper,
+            UserBlacklistMapper blacklistMapper,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             TokenBlacklistService tokenBlacklistService,
+            TokenRevokeService tokenRevokeService,
             SmsService smsService,
             SysConfigService sysConfigService,
             PresenceService presenceService,
@@ -87,9 +107,13 @@ public class AuthServiceImpl implements AuthService {
         this.sysUserMapper = sysUserMapper;
         this.schoolMapper = schoolMapper;
         this.campusMapper = campusMapper;
+        this.notificationMapper = notificationMapper;
+        this.favoriteMapper = favoriteMapper;
+        this.blacklistMapper = blacklistMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.tokenBlacklistService = tokenBlacklistService;
+        this.tokenRevokeService = tokenRevokeService;
         this.smsService = smsService;
         this.sysConfigService = sysConfigService;
         this.presenceService = presenceService;
@@ -307,6 +331,108 @@ public class AuthServiceImpl implements AuthService {
             }
         }
         return toUserVo(user);
+    }
+
+    /**
+     * 注销账号（不可逆）。<b>执行顺序是设计的一部分，不要调整</b>：
+     *
+     * <ol>
+     *   <li><b>校验密码</b>：{@code PasswordEncoder#matches} 失败直接抛错，
+     *       此时一个字节都不改（后面的步骤全都不执行）。</li>
+     *   <li><b>拉黑全部登录设备的 jti</b>：{@link LoginDeviceService#revokeAll(Long)}
+     *       复用 {@code kick}/{@code enforceSingleDevice} 那套拉黑逻辑，并顺手软删
+     *       {@code login_device} 行，所以所有设备立刻失效。</li>
+     *   <li><b>匿名化 {@code sys_user} 行</b>（逐列见下）。
+     *       {@code email}/{@code phone} 必须真正置为 NULL：两个列都是唯一索引，
+     *       MySQL 允许多个 NULL，所以不会冲突；反之如果留原值，这个邮箱/手机号
+     *       就永远不能再被注册。</li>
+     *   <li><b>逻辑删除</b>：{@code deleted = 1}（本项目统一逻辑删除，绝不物理删除）。</li>
+     *   <li><b>清理只属于本人、不影响他人的数据</b>：站内通知、收藏、本人发起的黑名单
+     *       （{@code login_device} 已在第 2 步处理）。</li>
+     * </ol>
+     *
+     * <p><b>刻意不动的数据</b>：{@code substitute_task}、{@code chat_message}、{@code review}、
+     * {@code report} 一行都不删 —— 对方的任务记录、聊天记录与信用评价都依赖它们，
+     * 隐私政策也写明「与交易对方或信用体系相关的记录，注销后以去标识化方式保留」。
+     * 作者本人已在第 3 步匿名化，这就足够了。
+     *
+     * <p>第 2 步不吞异常：Redis 拉黑失败会让整个事务回滚（什么都不改），
+     * 避免出现「账号已匿名化但其他设备还能继续用」的中间态。
+     */
+    @Override
+    @Transactional
+    public void deleteAccount(DeleteAccountRequest request) {
+        SysUser user = sysUserMapper.selectById(SecurityUtils.currentUserId());
+        if (user == null) {
+            throw new BizException(ErrorCode.UNAUTHORIZED);
+        }
+        if (UserStatus.BANNED.name().equals(user.getStatus())) {
+            throw new BizException(ErrorCode.ACCOUNT_BANNED);
+        }
+        // 只允许普通学生自助注销；管理员账号走后台管理流程。
+        // （SecurityConfig 里 /api/me/** 只要求 authenticated，所以必须在这里挡。）
+        // 角色判断沿用本类 login() 的既有写法，不另造常量。
+        if (!UserRole.USER.name().equals(user.getRole())) {
+            throw new BizException(ErrorCode.FORBIDDEN, "管理员账号不能自助注销");
+        }
+
+        // 1. 校验当前密码。错误码风格与 AdminSystemServiceImpl.changeOwnPassword 的「原密码不正确」一致：
+        //    用 40000 业务码而不是 40101，客户端才不会把「密码填错」当成登录态失效。
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "当前密码不正确");
+        }
+
+        // 2. 全部设备立刻失效（拉黑 jti + 软删 login_device 行）。
+        loginDeviceService.revokeAll(user.getId());
+        // 2.1 兜底：额外把「该用户此前签发的所有 Token」整体作废（TokenRevokeService，
+        //     与封禁/管理员改密同一套机制，JwtAuthFilter 每个请求都会查）。
+        //     只靠 jti 黑名单会漏掉一种情况：某台设备早先被踢下线时 device 行已软删，
+        //     之后 Redis 里的黑名单键被清掉/淘汰 —— 那个 Token 就既不在 login_device 里，
+        //     也没人知道它的 jti，注销后仍能通过鉴权。这一行把口子彻底堵上，
+        //     对即将注销的账号没有任何副作用（该账号此后不可能再登录）。
+        tokenRevokeService.revoke(user.getId());
+
+        // 3. 匿名化。null 列必须用 UpdateWrapper 显式 set：updateById 默认 NOT_NULL 策略会跳过 null，
+        //    清不掉 email/phone/avatar_url/cover_url（updateCover 清封面用的也是这个写法）。
+        //    password_hash 写成一个「随机且不可用」的值：随机 UUID 的 BCrypt 哈希，
+        //    原文不落库、谁也拿不到，所以原密码不可能再登录。
+        sysUserMapper.update(null, new LambdaUpdateWrapper<SysUser>()
+                .eq(SysUser::getId, user.getId())
+                .set(SysUser::getEmail, null)
+                .set(SysUser::getPhone, null)
+                .set(SysUser::getNickname, DELETED_NICKNAME)
+                .set(SysUser::getAvatarUrl, null)
+                .set(SysUser::getCoverUrl, null)
+                .set(SysUser::getPasswordHash, passwordEncoder.encode(UUID.randomUUID().toString()))
+                .set(SysUser::getUsername, anonymizedUsername(user.getId())));
+
+        // 4. 逻辑删除（@TableLogic 的 deleteById 即 deleted = 1），不做物理删除。
+        sysUserMapper.deleteById(user.getId());
+
+        // 5. 只清理「只属于他」的数据。三个 mapper 对应的表都没有 deleted 列，
+        //    照 FavoriteServiceImpl/BlacklistServiceImpl 的写法直接物理删除自己的行。
+        notificationMapper.delete(new LambdaQueryWrapper<Notification>()
+                .eq(Notification::getUserId, user.getId()));
+        favoriteMapper.delete(new LambdaQueryWrapper<UserFavorite>()
+                .eq(UserFavorite::getUserId, user.getId()));
+        // 只删「我拉黑别人」的行。「别人拉黑我」的行属于对方的黑名单数据，
+        // 按设计不动（BlacklistServiceImpl.listMine 对已注销用户本就回退显示「同学」）。
+        blacklistMapper.delete(new LambdaQueryWrapper<UserBlacklist>()
+                .eq(UserBlacklist::getUserId, user.getId()));
+
+        log.info("用户注销完成：id={}", user.getId());
+    }
+
+    /**
+     * 注销后的用户名占位值：必须不含原邮箱、且全局唯一。
+     *
+     * <p>前缀 + 主键保证唯一（主键最长 19 位，13 + 19 = 32，正好不超 {@code username VARCHAR(32)}）。
+     * 特意带一个 {@code '-'}：注册与建管理员的校验都是 {@code ^[a-zA-Z0-9_]+$}，
+     * 所以这个值不可能被任何人再注册成功，也就不会撞上唯一索引
+     * （逻辑删除行不参与应用层的重名校验，但数据库唯一索引仍然会拦）。
+     */
+    private String anonymizedUsername(Long userId) {
+        return "deleted-user-" + userId;
     }
 
     @Override

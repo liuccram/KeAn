@@ -98,6 +98,24 @@ export function changeEmail(payload: { email: string; smsCode: string }) {
   });
 }
 
+export interface DeleteAccountPayload {
+  /** 当前登录密码，服务端用 PasswordEncoder 校验，错误时不做任何修改 */
+  password: string;
+}
+
+/**
+ * 注销账号（不可逆）。必须带当前密码；成功后服务端会：拉黑全部设备登录态 →
+ * 匿名化并逻辑删除账号 → 清理只属于本人的数据。
+ * 调用成功后客户端要清掉本地登录态并回登录页（见 pages/mine/security.vue）。
+ */
+export function deleteAccount(payload: DeleteAccountPayload) {
+  return request<null>({
+    url: "/api/me/delete-account",
+    method: "POST",
+    data: payload
+  });
+}
+
 export function logout() {
   return request<null>({
     url: "/api/auth/logout",
