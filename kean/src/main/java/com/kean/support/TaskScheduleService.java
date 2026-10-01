@@ -12,6 +12,7 @@ import com.kean.mapper.SubstituteTaskMapper;
 import com.kean.mapper.SysUserMapper;
 import com.kean.service.NotificationService;
 import com.kean.service.TaskStatusService;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
@@ -50,7 +51,16 @@ public class TaskScheduleService {
         this.notificationService = notificationService;
     }
 
+    /**
+     * 多实例部署时，同一个 {@code @Scheduled} 会在每个实例上各跑一遍 —— 重复发通知、
+     * completedCount 重复累加。{@code @SchedulerLock} 保证同一时刻只有一个实例真正执行，
+     * 拿不到锁的实例直接跳过本轮、下一轮再来。
+     *
+     * <p>{@code lockAtMostFor} 是持有上限：实例崩溃时超过它即可被其它实例接管，
+     * 避免永久死锁。任务本身只跑几秒，2 分钟足够宽裕。
+     */
     @Scheduled(fixedDelay = 30000)
+    @SchedulerLock(name = "task.refreshStatuses", lockAtMostFor = "PT2M")
     public void refreshStatuses() {
         expireRestrictions();
         LocalDateTime now = LocalDateTime.now();
