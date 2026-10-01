@@ -32,8 +32,8 @@ async function handleLogout() {
       <wd-cell title="账号与安全" is-link @click="uni.navigateTo({ url: '/pages/mine/security' })" />
       <wd-cell title="更多" is-link @click="uni.navigateTo({ url: '/pages/mine/more' })" />
       <wd-cell title="通知设置" is-link @click="comingSoon" />
-      <wd-cell title="关于课安" is-link @click="comingSoon" />
-      <wd-cell title="隐私政策" is-link @click="comingSoon" />
+      <wd-cell title="关于课安" is-link @click="uni.navigateTo({ url: '/pages/mine/about' })" />
+      <wd-cell title="隐私政策" is-link @click="uni.navigateTo({ url: '/pages/mine/legal' })" />
       <wd-cell title="用户协议" is-link @click="comingSoon" />
     </wd-cell-group>
     <view class="action">

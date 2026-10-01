@@ -14,12 +14,6 @@
       }
     },
     {
-      "path": "pages/lock/index",
-      "style": {
-        "navigationStyle": "custom"
-      }
-    },
-    {
       "path": "pages/publish/index",
       "style": {
         "navigationBarTitleText": "发布"
@@ -139,6 +133,18 @@
       "path": "pages/mine/security",
       "style": {
         "navigationBarTitleText": "账号与安全"
+      }
+    },
+    {
+      "path": "pages/mine/about",
+      "style": {
+        "navigationBarTitleText": "关于课安"
+      }
+    },
+    {
+      "path": "pages/mine/legal",
+      "style": {
+        "navigationBarTitleText": "隐私政策"
       }
     },
     {
