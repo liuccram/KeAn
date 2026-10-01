@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { createReview } from "@/api/review";
+import { createReview, listReviewTags } from "@/api/review";
 import { getTask, type TaskItem } from "@/api/task";
 import { useUserStore } from "@/store/user";
 import { genderLabel, starText } from "@/utils/format";
@@ -7,12 +7,20 @@ import { onLoad } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
 import { computed, ref } from "vue";
 
+// 与服务端 CreateReviewRequest 的约束保持一致：tags 最多 5 个、content 最多 500 字
+const MAX_TAGS = 5;
+const MAX_CONTENT = 500;
+
 const toast = useToast();
 const userStore = useUserStore();
 const id = ref(0);
 const loading = ref(true);
 const submitting = ref(false);
-const rating = ref(5);
+// 不再默认预选 5 星：不动就发出 5 星会把可信度冲成一片满分，这里是刻意要求用户主动选
+const rating = ref(0);
+const tags = ref<string[]>([]);
+const availableTags = ref<string[]>([]);
+const content = ref("");
 const task = ref<TaskItem | null>(null);
 
 const peer = computed(() => {
@@ -31,6 +39,29 @@ const rateHint = computed(() =>
 
 const alreadyRated = computed(() => Boolean(task.value?.myReviewRating));
 
+async function loadTags() {
+  if (availableTags.value.length) {
+    return;
+  }
+  try {
+    availableTags.value = await listReviewTags();
+  } catch {
+    // 标签是加分项，取不到就只填文字，不阻塞打星
+  }
+}
+
+function toggleTag(tag: string) {
+  if (tags.value.includes(tag)) {
+    tags.value = tags.value.filter((item) => item !== tag);
+    return;
+  }
+  if (tags.value.length >= MAX_TAGS) {
+    toast.info(`最多选择 ${MAX_TAGS} 个标签`);
+    return;
+  }
+  tags.value = tags.value.concat(tag);
+}
+
 async function load() {
   if (!id.value) {
     return;
@@ -40,6 +71,8 @@ async function load() {
     task.value = await getTask(id.value);
     if (task.value.myReviewRating) {
       rating.value = task.value.myReviewRating;
+    } else {
+      loadTags();
     }
   } catch (error) {
     toast.error((error as Error).message || "加载失败");
@@ -57,12 +90,14 @@ async function handleSubmit() {
   try {
     await createReview({
       taskId: id.value,
-      rating: rating.value
+      rating: rating.value,
+      tags: tags.value.length ? tags.value : undefined,
+      content: content.value.trim() || undefined
     });
-    toast.success("已打星");
+    toast.success("评价已提交");
     await load();
   } catch (error) {
-    toast.error((error as Error).message || "打星失败");
+    toast.error((error as Error).message || "评价失败");
   } finally {
     submitting.value = false;
   }
@@ -96,8 +131,21 @@ onLoad((query) => {
       </view>
       <template v-else>
         <wd-rate v-model="rating" size="28" />
+        <view v-if="availableTags.length" class="tag-block">
+          <view class="tag-title">补充标签（选填，最多 {{ MAX_TAGS }} 个）</view>
+          <view class="tag-list">
+            <text
+              v-for="tag in availableTags"
+              :key="tag"
+              class="tag"
+              :class="{ on: tags.includes(tag) }"
+              @click="toggleTag(tag)"
+            >{{ tag }}</text>
+          </view>
+        </view>
+        <wd-textarea v-model="content" :maxlength="MAX_CONTENT" placeholder="再说一句，选填" />
         <view class="hint">{{ rateHint }}</view>
-        <wd-button type="primary" block :loading="submitting" @click="handleSubmit">提交打星</wd-button>
+        <wd-button type="primary" block :loading="submitting" @click="handleSubmit">提交评价</wd-button>
       </template>
     </view>
     <wd-status-tip v-else-if="!loading" image="content" tip="任务不存在" />
@@ -148,5 +196,32 @@ onLoad((query) => {
   text-align: center;
   line-height: 1.5;
   padding: 0 8px;
+}
+/* 标签与输入框要撑满卡片（卡片本身是 align-items: center） */
+.tag-block,
+.tag-list {
+  width: 100%;
+}
+.tag-title {
+  color: #86909c;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tag {
+  background: #f2f3f5;
+  color: #4e5969;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 16px;
+}
+.tag.on {
+  background: #e8f1ff;
+  color: #3b82f6;
+  font-weight: 600;
 }
 </style>
