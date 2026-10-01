@@ -33,7 +33,9 @@ export function loadDisplayPrefs(): DisplayPrefs {
       return { ...DEFAULT_PREFS };
     }
     return {
-      theme: raw.theme === "dark" || raw.theme === "system" ? raw.theme : "light",
+      // 深色已整体关闭：历史存过 dark / system 的用户一律读成浅色（自动回到浅色）。
+      // 恢复深色时改回 `raw.theme === "dark" || raw.theme === "system" ? raw.theme : "light"`。
+      theme: "light",
       fontSize: raw.fontSize === "s" || raw.fontSize === "l" ? raw.fontSize : "m",
       lang: raw.lang === "en" ? "en" : "zh",
       wallpaper: parseWallpaper(raw.wallpaper)
@@ -44,20 +46,21 @@ export function loadDisplayPrefs(): DisplayPrefs {
 }
 
 export function saveDisplayPrefs(prefs: DisplayPrefs) {
-  uni.setStorageSync(PREFS_KEY, prefs);
+  // 深色已整体关闭：这里强制写 light，保证存储里不可能再出现 dark，
+  // 也让历史 dark 值在下一次任意偏好变更时被就地抹掉。
+  // 理由：选"写成 light"而不是"忽略 theme 字段"，是为了让存储结构保持完整、
+  // 恢复功能时无需额外迁移；字号 / 语言 / 壁纸原样透传，不做任何改动。
+  uni.setStorageSync(PREFS_KEY, { ...prefs, theme: "light" as ThemeMode });
 }
 
-export function resolveTheme(mode: ThemeMode): "light" | "dark" {
-  if (mode === "light" || mode === "dark") {
-    return mode;
-  }
-  try {
-    const info = uni.getSystemInfoSync() as { theme?: string; osTheme?: string };
-    const system = (info.theme || info.osTheme || "").toLowerCase();
-    return system === "dark" ? "dark" : "light";
-  } catch {
-    return "light";
-  }
+/**
+ * 深色模式暂整体关闭：代码保留以便将来恢复，因此函数签名（ThemeMode 入参）不变，
+ * 但恒返回 "light"，调用方拿到的永远是浅色。
+ * 浅色取值来自 styles/theme-vars.css（--kean-* 变量），深色覆盖规则仍留在
+ * styles/display-appearance.css / styles/theme-vars.css 里，恢复时只需还原本函数。
+ */
+export function resolveTheme(_mode: ThemeMode): "light" | "dark" {
+  return "light";
 }
 
 export function themeLabel(theme: ThemeMode, lang: Lang = "zh") {
@@ -213,8 +216,9 @@ export function applyDisplayAppearance(wallpaper?: WallpaperId) {
   const prefs = loadDisplayPrefs();
   const id = wallpaper ?? prefs.wallpaper;
   const meteor = isMeteorWallpaper(id);
-  // 深浅色此前被硬编码为 false：设置页能存、display-appearance.css 里 html.kean-dark
-  // 的规则也写全了，但这个 class 永远不会被加上，于是"深色模式"点了没有任何反应。
+  // 深色模式已整体关闭：resolveTheme 恒返回 "light"，所以 dark 恒为 false，
+  // "kean-dark" 这个 class 永远只会被【移除】、不会再被加上（全项目仅此一处设置它）。
+  // 保留 toggle 写法是为了将来恢复时只改 resolveTheme 一处即可生效。
   const dark = resolveTheme(prefs.theme) === "dark";
   const fontSize = prefs.fontSize === "s" ? "14px" : prefs.fontSize === "l" ? "18px" : "16px";
 
