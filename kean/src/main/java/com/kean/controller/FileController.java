@@ -7,10 +7,15 @@ import com.kean.security.FileAccessGuard;
 import com.kean.security.FileUrlSigner;
 import com.kean.security.LoginUser;
 import com.kean.security.SecurityUtils;
+import com.kean.service.FileRateLimitService;
 import com.kean.service.StorageService;
 import com.kean.utils.FileUrls;
+import com.kean.utils.IpUtils;
 import com.kean.vo.FileVO;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.util.StreamUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,14 +34,24 @@ import java.nio.charset.StandardCharsets;
 @RequestMapping("/api/files")
 public class FileController {
 
+    /** 独立日志名，可用 logging.level.kean.file.audit 单独控制级别。 */
+    private static final Logger auditLog = LoggerFactory.getLogger("kean.file.audit");
+
     private final StorageService storageService;
     private final FileUrlSigner fileUrlSigner;
     private final FileAccessGuard fileAccessGuard;
+    private final FileRateLimitService fileRateLimitService;
 
-    public FileController(StorageService storageService, FileUrlSigner fileUrlSigner, FileAccessGuard fileAccessGuard) {
+    public FileController(
+            StorageService storageService,
+            FileUrlSigner fileUrlSigner,
+            FileAccessGuard fileAccessGuard,
+            FileRateLimitService fileRateLimitService
+    ) {
         this.storageService = storageService;
         this.fileUrlSigner = fileUrlSigner;
         this.fileAccessGuard = fileAccessGuard;
+        this.fileRateLimitService = fileRateLimitService;
     }
 
     @PostMapping
@@ -52,30 +67,47 @@ public class FileController {
             @PathVariable("objectKey") String objectKey,
             @RequestParam(value = "exp", required = false) String exp,
             @RequestParam(value = "sig", required = false) String sig,
+            HttpServletRequest request,
             HttpServletResponse response
     ) throws java.io.IOException {
         String key = FileUrls.objectKey(URLDecoder.decode(objectKey == null ? "" : objectKey, StandardCharsets.UTF_8));
+        String ip = IpUtils.clientIp(request);
+        LoginUser loginUser = SecurityUtils.currentUserOrNull();
+        Long userId = loginUser == null ? null : loginUser.userId();
+
         if (!FileUrls.safeKey(key)) {
+            auditLog.warn("拒绝文件读取：非法对象键 ip={} userId={} raw={}", ip, userId, objectKey);
             writeError(response, ErrorCode.FILE_NOT_FOUND);
             return;
         }
-        LoginUser loginUser = SecurityUtils.currentUserOrNull();
+
+        boolean sensitive = fileUrlSigner.isSensitive(key);
+        if (sensitive && !fileRateLimitService.allowSensitiveRead(userId, ip)) {
+            auditLog.warn("拒绝文件读取：超出频率限制 ip={} userId={} key={}", ip, userId, key);
+            writeError(response, ErrorCode.FILE_RATE_LIMITED);
+            return;
+        }
+
         boolean allowed = fileUrlSigner.verify(key, exp, sig)
-                || fileAccessGuard.canRead(key, loginUser == null ? null : loginUser.userId(), isAdmin(loginUser));
+                || fileAccessGuard.canRead(key, userId, isAdmin(loginUser));
         if (!allowed) {
+            auditLog.warn("拒绝文件读取：无权限 ip={} userId={} 已登录={} key={}", ip, userId, loginUser != null, key);
             writeError(response, ErrorCode.FORBIDDEN);
             return;
         }
+
         try (InputStream input = storageService.open(key)) {
             response.setStatus(200);
             response.setContentType(storageService.contentType(key));
-            if (fileUrlSigner.isSensitive(key)) {
+            if (sensitive) {
                 response.setHeader("Cache-Control", "private, max-age=300");
+                auditLog.info("读取敏感文件 ip={} userId={} key={}", ip, userId, key);
             } else {
                 response.setHeader("Cache-Control", "public, max-age=86400");
             }
             StreamUtils.copy(input, response.getOutputStream());
         } catch (Exception ex) {
+            auditLog.warn("文件读取失败 ip={} userId={} key={} 原因={}", ip, userId, key, ex.getMessage());
             writeError(response, ErrorCode.FILE_NOT_FOUND);
         }
     }
