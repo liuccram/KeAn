@@ -783,6 +783,7 @@ useLiveUpdates((event) => {
         <wd-cell title="是否拍照" :value="task.requirePhoto === 1 ? '是' : '否'" />
         <wd-cell title="性别要求" :value="genderRequirementLabel(task.genderRequirement)" />
         <wd-cell title="酬谢" :value="formatReward(task.reward)" />
+        <wd-cell title="结算说明" value="可私信自行结算" />
         <wd-cell title="申请人数" :value="`${task.applyCount} 人`" />
         <wd-cell title="发布时间" :value="parseDateTime(task.createdAt)" />
       </wd-cell-group>
