@@ -49,8 +49,10 @@ onUnload(() => {
   endLockRoute();
 });
 
-// 锁屏页不允许用 Android 返回键绕过（返回 true 表示拦截默认行为）
-onBackPress(() => true);
+// 锁屏页不允许用硬件 / 导航栏返回键绕过。
+// 但必须放行 from === 'navigateBack' —— 那是程序自己调用的返回（解锁后回上一页）。
+// 一刀切返回 true 会把解锁后的 navigateBack 也拦掉，导致画对正确手势也出不去。
+onBackPress((options) => options?.from !== "navigateBack");
 </script>
 
 <template>
