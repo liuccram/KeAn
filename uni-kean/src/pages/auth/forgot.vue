@@ -12,7 +12,7 @@ const loading = ref(false);
 const sending = ref(false);
 const countdown = ref(0);
 const formRef = ref();
-const turnstileRef = ref<{ reset: () => void } | null>(null);
+const turnstileRef = ref<{ reset: () => void; request: () => boolean } | null>(null);
 let timer: ReturnType<typeof setInterval> | null = null;
 const model = reactive({
   email: "",
@@ -62,6 +62,10 @@ function startCountdown() {
 
 function requireCaptcha(): boolean {
   if (captcha.enabled && !model.turnstileToken) {
+    // 非 H5：自动进入真人验证页（不再需要先点一个自绘按钮）；H5 返回 false，走下面的原有提示
+    if (turnstileRef.value?.request()) {
+      return false;
+    }
     toast.error(captcha.siteKey ? "请完成真人验证" : "人机验证未配置");
     return false;
   }
