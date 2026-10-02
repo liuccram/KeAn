@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.kean.support.FieldCipherTypeHandler;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -14,7 +15,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Data
-@TableName("substitute_task")
+@TableName(value = "substitute_task", autoResultMap = true)
 public class SubstituteTask {
 
     @TableId(type = IdType.AUTO)
@@ -52,10 +53,16 @@ public class SubstituteTask {
 
     private BigDecimal reward;
 
+    /** 代课原因：敏感文本，落库加密。不要在任何 wrapper 里按它检索/排序。 */
+    @TableField(typeHandler = FieldCipherTypeHandler.class)
     private String reason;
 
+    /** 对代课者的要求：敏感文本，落库加密。不要在任何 wrapper 里按它检索/排序。 */
+    @TableField(typeHandler = FieldCipherTypeHandler.class)
     private String requirement;
 
+    /** 备注：敏感文本，落库加密。不要在任何 wrapper 里按它检索/排序。 */
+    @TableField(typeHandler = FieldCipherTypeHandler.class)
     private String remark;
 
     private String status;

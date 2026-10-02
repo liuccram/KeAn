@@ -183,3 +183,27 @@ age -d -i /path/to/key.txt kean-<日期>.sql.gz.enc | gunzip | \
 - [ ] `https://<域名>/health` 正常，http 自动跳转 https
 
 > 本文档只覆盖**安全加固**。业务合规项（用户协议与隐私政策正文、注册同意勾选、账号注销、内容审核）另行处理。
+
+---
+
+## 7. 敏感文本字段加密（AES-256-GCM）
+
+已对 8 个「只读不查」的文本字段做应用层加密：`substitute_task.reason/requirement/remark`、
+`report.description/handle_remark`、`report_appeal.content/handle_remark`、`review.content`。
+
+### 启用步骤
+1. **确认 V31 迁移已应用**（Flyway 随启动自动执行；它把这些列从 VARCHAR(500) 加宽到 2048 ——
+   Base64 密文最坏 2043 字符，不加宽会报 1406 或被静默截断，后者会导致密文不可逆损坏）
+2. 生成密钥：`openssl rand -base64 32`
+3. 写入 `.env.prod` 的 `DATA_ENC_KEY`，重启后端
+4. 验证：发一条代课任务后 `SELECT reason FROM substitute_task ORDER BY id DESC LIMIT 1;`
+   应看到 `v1:...`；而 `GET /api/tasks/{id}` 必须返回**明文**（证明读取解密生效）
+
+### 行为与边界
+- **未配置密钥 = 不加密**：明文透传 + 启动 WARN，不阻断启动；密钥非法同样透传 + WARN
+- **存量明文无需迁移**：解密时凡是不以 `v1:` 开头的一律原样返回，旧记录会在下次写入时自动变密文
+- **不可在这些字段上检索/排序**：加密后按内容查询会失效。实体字段上已留注释；新增功能时注意
+- **密钥丢失 = 这些字段永久不可读** ⚠️ 密钥必须进备份；轮换时用新的版本前缀分批重加密
+- 尚未加密：`chat_message.content`（图片消息的 content 是对象键，被聊天图片鉴权按等值查询使用，
+  需按「只加密文字消息、图片键保持明文」的方案单独做）与 `chat_session.last_content`（正文预览，
+  会泄露消息内容，需与前者一并处理）
