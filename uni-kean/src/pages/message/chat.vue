@@ -339,7 +339,7 @@ useLiveUpdates((event) => {
 .avatar {
   width: 36px;
   height: 36px;
-  border-radius: 6px;
+  border-radius: 50%;
   background: var(--kean-primary-soft);
   color: var(--kean-primary-active);
   display: flex;
@@ -353,6 +353,7 @@ useLiveUpdates((event) => {
 .avatar-img {
   width: 36px;
   height: 36px;
+  border-radius: 50%;
   display: block;
 }
 .bubble {
