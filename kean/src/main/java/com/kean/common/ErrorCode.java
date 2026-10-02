@@ -29,6 +29,8 @@ public enum ErrorCode {
     TIME_CONFLICT(40020, "该时段已有其他代课", HttpStatus.BAD_REQUEST),
     TURNSTILE_REQUIRED(40024, "请完成真人验证", HttpStatus.BAD_REQUEST),
     TURNSTILE_FAILED(40025, "真人验证失败，请重试", HttpStatus.BAD_REQUEST),
+    // 服务端配置错误（密钥缺失），与"用户验证失败"区分开，便于排查而不是让用户反复重试
+    TURNSTILE_NOT_CONFIGURED(40027, "真人验证未正确配置，请联系管理员", HttpStatus.BAD_REQUEST),
     IMAGE_DIMENSION_TOO_LARGE(40026, "图片像素过大，请压缩后重新上传", HttpStatus.BAD_REQUEST),
     UNAUTHORIZED(40100, "未登录或登录已失效", HttpStatus.UNAUTHORIZED),
     LOGIN_FAILED(40101, "用户名或密码错误", HttpStatus.UNAUTHORIZED),

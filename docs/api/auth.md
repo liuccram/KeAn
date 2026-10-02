@@ -111,7 +111,9 @@ Authorization: Bearer <token>
 }
 ```
 
-`enabled=false` 时后端不校验 token，登录页可不展示组件。密钥未配置时 `enabled=true` 且 `siteKey` 为空，登录会被拒绝。
+`enabled=false` 时后端不校验 token，登录页可不展示组件。密钥未配置时 `enabled=true` 且 `siteKey` 为空，登录会被拒绝。测试密钥（见下）同样按"未配置"返回 `siteKey = null`，前端据此显示"人机验证未配置"。
+`enabled=true` 但 `site-key` 或 `secret` 为空属于服务端配置错误：任何携带/不携带 token 的请求都会被拒，返回 `40027`（与用户验证失败的 `40025` 区分开）。
+Cloudflare 官方测试密钥（`1x`/`2x`/`3x` 开头、后跟一长串 `0` 的 sitekey 或 secret）同样视为服务端配置错误：等于没有防护（测试 secret 只认公开的 dummy token），后端不会再调用 Cloudflare，直接返回 `40027`。本地联调请用 `TURNSTILE_ENABLED=false`，不要填测试密钥。
 
 ---
 
@@ -150,7 +152,8 @@ Authorization: Bearer <token>
 |---|---|---|
 | 400 | 40000 | 参数校验失败 |
 | 400 | 40024 | 未完成真人验证 |
-| 400 | 40025 | 真人验证失败或未配置 |
+| 400 | 40025 | 真人验证失败（含 Cloudflare 校验失败、超时或异常） |
+| 400 | 40027 | 真人验证未正确配置（服务端 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET` 缺失或仍为 Cloudflare 测试密钥），需联系管理员 |
 | 401 | 40101 | 用户名或密码错误 |
 | 403 | 40301 | 账号已被封禁 |
 | 429 | 42901 | 登录失败次数过多（同账号 15 分钟 5 次或同 IP 20 次） |
