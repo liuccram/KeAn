@@ -16,7 +16,7 @@ const features: { title: string; desc: string }[] = [
 <template>
   <view class="page">
     <view class="hero">
-      <image class="logo" src="/static/logo.png" mode="aspectFit" />
+      <image class="logo" src="/static/app-logo.jpg" mode="aspectFit" />
       <view class="name">课安</view>
       <view class="version">v{{ VERSION }}</view>
       <view class="slogan">校园临时代课互助平台</view>
