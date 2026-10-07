@@ -2,7 +2,6 @@ package com.kean.service;
 
 import com.kean.common.PageResult;
 import com.kean.vo.ChatMessageVO;
-import com.kean.vo.ChatPeerVO;
 import com.kean.vo.ChatSessionVO;
 
 import java.util.List;
@@ -22,6 +21,4 @@ public interface ChatService {
     void markRead(Long sessionId);
 
     long unreadCount();
-
-    List<ChatPeerVO> listPeers(String keyword);
 }

@@ -11,18 +11,15 @@ import com.kean.entity.SysUser;
 import com.kean.enums.UserRole;
 import com.kean.enums.UserStatus;
 import com.kean.exception.BizException;
-import com.kean.mapper.CampusMapper;
 import com.kean.mapper.ChatMessageMapper;
 import com.kean.mapper.ChatSessionMapper;
 import com.kean.mapper.SysUserMapper;
 import com.kean.security.SecurityUtils;
 import com.kean.service.BlacklistService;
 import com.kean.service.ChatService;
-import com.kean.utils.CampusNames;
 import com.kean.utils.FileUrls;
 import com.kean.utils.UserRestrictions;
 import com.kean.vo.ChatMessageVO;
-import com.kean.vo.ChatPeerVO;
 import com.kean.vo.ChatSessionVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,12 +28,9 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class ChatServiceImpl implements ChatService {
@@ -44,12 +38,10 @@ public class ChatServiceImpl implements ChatService {
     private static final long DEFAULT_PAGE = 1L;
     private static final long DEFAULT_SIZE = 20L;
     private static final long MAX_SIZE = 50L;
-    private static final int PEER_LIMIT = 30;
 
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
     private final SysUserMapper sysUserMapper;
-    private final CampusMapper campusMapper;
     private final ChatWebSocketHandler chatWebSocketHandler;
     private final BlacklistService blacklistService;
 
@@ -57,14 +49,12 @@ public class ChatServiceImpl implements ChatService {
             ChatSessionMapper chatSessionMapper,
             ChatMessageMapper chatMessageMapper,
             SysUserMapper sysUserMapper,
-            CampusMapper campusMapper,
             ChatWebSocketHandler chatWebSocketHandler,
             BlacklistService blacklistService
     ) {
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
         this.sysUserMapper = sysUserMapper;
-        this.campusMapper = campusMapper;
         this.chatWebSocketHandler = chatWebSocketHandler;
         this.blacklistService = blacklistService;
     }
@@ -210,43 +200,6 @@ public class ChatServiceImpl implements ChatService {
         return total;
     }
 
-    @Override
-    public List<ChatPeerVO> listPeers(String keyword) {
-        SysUser me = requireUser(SecurityUtils.currentUserId());
-        // 可发起私信的人不再限定本校：这里只按角色/封禁/黑名单过滤。
-        // 说明：校区可选后 me.getSchoolId() 可能为空，原实现会直接返回空列表，现已去掉该分支。
-        LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<SysUser>()
-                .eq(SysUser::getRole, UserRole.USER.name())
-                .ne(SysUser::getId, me.getId())
-                .ne(SysUser::getStatus, UserStatus.BANNED.name())
-                .orderByAsc(SysUser::getNickname)
-                .last("LIMIT " + PEER_LIMIT);
-        if (StringUtils.hasText(keyword)) {
-            String like = "%" + keyword.trim() + "%";
-            wrapper.and(w -> w.like(SysUser::getNickname, like).or().like(SysUser::getUsername, like));
-        }
-        List<SysUser> users = sysUserMapper.selectList(wrapper);
-        Set<Long> blocked = blacklistService.relatedUserIds(me.getId());
-        Set<Long> chatting = chattingPeerIds(me.getId());
-        Set<Long> campusIds = users.stream().map(SysUser::getCampusId).filter(Objects::nonNull).collect(Collectors.toSet());
-        Map<Long, String> campusNames = new HashMap<>();
-        if (!campusIds.isEmpty()) {
-            campusMapper.selectByIds(campusIds).forEach(campus -> campusNames.put(campus.getId(), campus.getName()));
-        }
-        return users.stream()
-                .filter(user -> !blocked.contains(user.getId()))
-                .filter(user -> user.getPrivateAccount() == null || user.getPrivateAccount() != 1 || chatting.contains(user.getId()))
-                .map(user -> new ChatPeerVO(
-                        user.getId(),
-                        user.getNickname(),
-                        FileUrls.of(user.getAvatarUrl()),
-                        // 校区改为手输文本：优先文本，旧数据回退到 campus_id 关联出的旧校区名
-                        CampusNames.display(user.getCampusText(),
-                                user.getCampusId() == null ? null : campusNames.get(user.getCampusId()))
-                ))
-                .toList();
-    }
-
     private ChatSession findSession(Long userId, Long peerUserId) {
         long a = Math.min(userId, peerUserId);
         long b = Math.max(userId, peerUserId);
@@ -265,14 +218,6 @@ public class ChatServiceImpl implements ChatService {
         session.setBUnread(0);
         chatSessionMapper.insert(session);
         return session;
-    }
-
-    private Set<Long> chattingPeerIds(Long userId) {
-        List<ChatSession> sessions = chatSessionMapper.selectList(new LambdaQueryWrapper<ChatSession>()
-                .and(w -> w.eq(ChatSession::getUserAId, userId).or().eq(ChatSession::getUserBId, userId)));
-        return sessions.stream()
-                .map(session -> Objects.equals(session.getUserAId(), userId) ? session.getUserBId() : session.getUserAId())
-                .collect(Collectors.toSet());
     }
 
     private ChatSession requireOwnedSession(Long sessionId, Long userId) {

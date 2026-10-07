@@ -6,7 +6,6 @@ import com.kean.dto.CreateChatRequest;
 import com.kean.dto.SendChatMessageRequest;
 import com.kean.service.ChatService;
 import com.kean.vo.ChatMessageVO;
-import com.kean.vo.ChatPeerVO;
 import com.kean.vo.ChatSessionVO;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,11 +41,6 @@ public class ChatController {
     @GetMapping("/unread-count")
     public Result<Long> unreadCount() {
         return Result.ok(chatService.unreadCount());
-    }
-
-    @GetMapping("/peers")
-    public Result<List<ChatPeerVO>> peers(@RequestParam(required = false) String keyword) {
-        return Result.ok(chatService.listPeers(keyword));
     }
 
     @GetMapping("/{id}")
