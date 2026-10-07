@@ -39,6 +39,11 @@ export function taskEndAt(task: Pick<TaskItem, "endAt" | "taskDate" | "endTime">
   return parseTaskMillis(task.endAt) ?? combineDateTime(task.taskDate, task.endTime);
 }
 
+/** 「正在上课」只对已匹配/已确认/上课中成立：WAITING/APPLYING 是还没人接的悬空任务。 */
+export function isLiveTaskStatus(status?: string | null) {
+  return status === "MATCHED" || status === "CONFIRMED" || status === "IN_PROGRESS";
+}
+
 export function classCountdown(task: TaskItem, now = Date.now()) {
   const start = taskStartAt(task);
   const end = taskEndAt(task);
@@ -60,23 +65,31 @@ export function classCountdown(task: TaskItem, now = Date.now()) {
     }
     return "即将上课";
   }
-  const live = task.status === "MATCHED" || task.status === "CONFIRMED" || task.status === "IN_PROGRESS";
+  // 已过上课时间：只有「正在上课」的状态才可能出现「上课中」。
+  // 到点没人接的 WAITING/APPLYING（后端会把它们置 EXPIRED）以及终态
+  // COMPLETED/CANCELLED/EXPIRED 都只按状态展示，不再按时间硬说「上课中」。
+  if (!isLiveTaskStatus(task.status)) {
+    return "";
+  }
   if (end != null && now < end) {
     const minutes = Math.max(1, Math.ceil((end - now) / 60000));
     return `上课中 · 还有 ${minutes} 分钟下课`;
   }
-  if (live) {
-    return "已下课";
-  }
-  return "";
+  return "已下课";
 }
 
-export function isOngoingTask(task: TaskItem) {
+export function isOngoingTask(task: TaskItem, now = Date.now()) {
   const status = task.status;
   if (status === "WAITING" || status === "APPLYING") {
-    return Boolean(task.mine || task.myApplicationStatus === "PENDING");
+    if (!(task.mine || task.myApplicationStatus === "PENDING")) {
+      return false;
+    }
+    // 到上课时间还没人接：后端会把任务置 EXPIRED，但定时扫描约 30 秒才跑一轮，
+    // 只看 status 会让「已到点且无人接单」在这段时间里仍被归到进行中。
+    const start = taskStartAt(task);
+    return start == null || now < start;
   }
-  if (status === "MATCHED" || status === "CONFIRMED" || status === "IN_PROGRESS") {
+  if (isLiveTaskStatus(status)) {
     return Boolean(task.mine || task.matchedApplicant);
   }
   return false;
