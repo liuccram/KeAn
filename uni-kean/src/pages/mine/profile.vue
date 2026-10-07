@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { changeEmail, updateAvatar, updateProfile } from "@/api/auth";
-import { listCampuses, listProvinces, listSchools } from "@/api/catalog";
+import { listProvinces, listSchools } from "@/api/catalog";
 import { sendSms } from "@/api/sms";
 import CodeBoxes from "@/components/CodeBoxes.vue";
 import FallbackImage from "@/components/FallbackImage.vue";
@@ -28,14 +28,13 @@ const model = reactive({
   gender: "" as string,
   provinceId: "" as number | string,
   schoolId: "" as number | string,
-  campusId: "" as number | string,
+  campusText: "",
   email: "",
   smsCode: ""
 });
 
 const provinceColumns = ref<{ label: string; value: number }[]>([]);
 const schoolColumns = ref<{ label: string; value: number }[]>([]);
-const campusColumns = ref<{ label: string; value: number }[]>([]);
 const genderColumns = [
   { label: "男", value: "MALE" },
   { label: "女", value: "FEMALE" }
@@ -62,7 +61,8 @@ function fillModel() {
   model.nickname = current.nickname || "";
   model.gender = current.gender || "";
   model.schoolId = current.schoolId || "";
-  model.campusId = current.campusId || "";
+  // 校区是手输文本：回填展示名（新数据是文本，旧数据是 campus_id 关联出的旧校区名）
+  model.campusText = current.campusName || "";
   model.email = current.email || "";
   model.smsCode = "";
 }
@@ -85,32 +85,12 @@ async function loadSchools() {
   }
 }
 
-async function loadCampuses() {
-  const schoolId = Number(model.schoolId);
-  if (!schoolId) {
-    campusColumns.value = [];
-    return;
-  }
-  const campuses = await listCampuses(schoolId);
-  campusColumns.value = campuses.map((item) => ({ label: item.name, value: item.id }));
-  if (!campuses.some((item) => item.id === Number(model.campusId)) && campuses.length) {
-    model.campusId = campuses[0].id;
-  }
-}
-
 watch(
   () => model.provinceId,
   (value, previous) => {
     if (previous !== undefined && value !== previous) {
       loadSchools().catch(() => undefined);
     }
-  }
-);
-
-watch(
-  () => model.schoolId,
-  () => {
-    loadCampuses().catch(() => undefined);
   }
 );
 
@@ -128,7 +108,6 @@ onMounted(async () => {
       model.provinceId = mine.provinceId;
     }
     await loadSchools();
-    await loadCampuses();
   } catch (error) {
     toast.error((error as Error).message || "加载失败");
   }
@@ -246,7 +225,7 @@ function handleSave() {
           nickname: model.nickname.trim(),
           gender: String(model.gender),
           schoolId: Number(model.schoolId),
-          campusId: Number(model.campusId)
+          campusText: model.campusText.trim() || null
         });
         if (userStore.state.token && latest) {
           userStore.setLogin(userStore.state.token, latest);
@@ -310,13 +289,14 @@ function handleSave() {
           :columns="schoolColumns"
           :rules="[{ required: true, message: '请选择学校' }]"
         />
-        <wd-picker
-          v-model="model.campusId"
+        <wd-input
+          v-model="model.campusText"
           label="校区"
           label-width="80px"
-          prop="campusId"
-          :columns="campusColumns"
-          :rules="[{ required: true, message: '请选择校区' }]"
+          prop="campusText"
+          clearable
+          :maxlength="50"
+          placeholder="选填，例如 西校区"
         />
         <wd-input
           v-model="model.email"

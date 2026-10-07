@@ -20,7 +20,7 @@
 | taskDate | string | 否 | `yyyy-MM-dd` |
 | timeSlot | string | 否 | 上课开始时刻所在点段：`6-8` / `8-10` / `10-12` / `13-15` / `15-17` / `17-20` / `20-22` |
 | courseId | number | 否 | 课程目录 ID |
-| campusId | number | 否 | 校区 ID |
+| campusId | number | 否 | 已废弃：校区不再作为筛选条件，传了也不过滤 |
 | status | string | 否 | 精确状态；不传则为 WAITING+APPLYING |
 | schoolId | number | 否 | 仅未登录生效；已登录强制本校 |
 | page | number | 否 | 默认 1 |
@@ -75,7 +75,7 @@
 
 ## POST /api/tasks
 
-登录用户发布。课程名、教学楼由用户自行填写。校区必须属于本校且启用。`startAt` 必须晚于当前时间，结束时间必须晚于开始时间。
+登录用户发布。课程名、教学楼由用户自行填写。校区选填、由发布者自行填写（1-50 字，服务端去首尾空格），不填也能发布。学校不接受请求传入，一律取发布者资料里的学校；资料里没有学校会被拒绝（`40001`）。`startAt` 必须晚于当前时间，结束时间必须晚于开始时间。
 
 请求：
 
@@ -85,7 +85,7 @@
 | taskDate | string | 是 | `yyyy-MM-dd` |
 | startTime | string | 是 | `HH:mm` |
 | endTime | string | 是 | `HH:mm` |
-| campusId | number | 是 | 校区 ID |
+| campusText | string | 否 | 校区名称，由发布者自行填写，最长 50 字；不填也能发布 |
 | building | string | 是 | 教学楼，最长 64 |
 | classroom | string | 是 | 教室，最长 64 |
 | computerLab | boolean | 是 | 是否上机 |
@@ -104,7 +104,7 @@
   "taskDate": "2026-09-20",
   "startTime": "08:00",
   "endTime": "09:40",
-  "campusId": 1,
+  "campusText": "主校区",
   "building": "教学楼A",
   "classroom": "101",
   "computerLab": false,

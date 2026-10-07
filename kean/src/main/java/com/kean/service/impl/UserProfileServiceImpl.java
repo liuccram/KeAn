@@ -18,6 +18,7 @@ import com.kean.mapper.SubstituteTaskMapper;
 import com.kean.mapper.SysUserMapper;
 import com.kean.security.SecurityUtils;
 import com.kean.service.UserProfileService;
+import com.kean.utils.CampusNames;
 import com.kean.utils.FileUrls;
 import com.kean.vo.PublicProfileVO;
 import com.kean.vo.ReviewItemVO;
@@ -95,7 +96,7 @@ public class UserProfileServiceImpl implements UserProfileService {
                 FileUrls.of(user.getAvatarUrl()),
                 user.getGender(),
                 schoolName,
-                campusName(user.getCampusId()),
+                CampusNames.display(user.getCampusText(), campusName(user.getCampusId())),
                 user.getCompletedCount(),
                 user.getRatingAvg(),
                 user.getRatingCount(),

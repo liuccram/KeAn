@@ -16,7 +16,7 @@ Authorization: Bearer <token>
 
 本阶段仅 Access Token + Redis 黑名单，无 Refresh Token。
 
-演示学校：`schoolId = 1`（演示大学），`campusId = 1`（主校区）。
+演示学校：`schoolId = 1`（演示大学）。校区为选填的手输文本（示例里填「主校区」）。
 
 ---
 
@@ -33,7 +33,7 @@ Authorization: Bearer <token>
 | nickname | string | 是 | 1-32 位 |
 | gender | string | 是 | `MALE` / `FEMALE` |
 | schoolId | number | 是 | 学校 ID |
-| campusId | number | 是 | 校区 ID，须属于该学校 |
+| campusText | string | 否 | 校区名称，由用户自行填写（1-50 字，服务端去首尾空格），不填也能注册 |
 | email | string | 是 | QQ 号 |
 | smsCode | string | 是 | 6 位邮箱验证码 |
 | turnstileToken | string | 开启时必填 | Cloudflare 一次性 token |
@@ -47,7 +47,7 @@ Authorization: Bearer <token>
   "nickname": "小安",
   "gender": "FEMALE",
   "schoolId": 1,
-  "campusId": 1,
+  "campusText": "主校区",
   "email": "123456",
   "smsCode": "123456",
   "turnstileToken": "0.xxxx"
@@ -68,7 +68,7 @@ Authorization: Bearer <token>
     "nickname": "小安",
     "gender": "FEMALE",
     "schoolId": 1,
-    "campusId": 1,
+    "campusId": null,
     "schoolName": "演示大学",
     "campusName": "主校区",
     "completedCount": 0,
@@ -177,9 +177,9 @@ Cloudflare 官方测试密钥（`1x`/`2x`/`3x` 开头、后跟一长串 `0` 的 
 
 ## PUT /api/me/profile
 
-需登录。修改昵称、性别、学校、校区。
+需登录。修改昵称、性别、学校、校区。校区为选填、由用户自行填写（1-50 字，去首尾空格），传空或不传表示清空校区。
 
-学校最多改 3 次（仅学校 ID 变化才计数）；校区可随时改。修改学校后，首页只展示该校各校区发布的代课。
+学校最多改 3 次（仅学校 ID 变化才计数）；校区为选填文本、可随时修改，清空即不再展示。修改学校后，首页只展示该校各校区发布的代课（同校内不再按校区筛选）。
 
 请求：
 
@@ -188,7 +188,7 @@ Cloudflare 官方测试密钥（`1x`/`2x`/`3x` 开头、后跟一长串 `0` 的 
   "nickname": "小安",
   "gender": "FEMALE",
   "schoolId": 2,
-  "campusId": 8
+  "campusText": "西校区"
 }
 ```
 

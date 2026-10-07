@@ -19,10 +19,20 @@ const model = reactive({
   password: "",
   turnstileToken: ""
 });
+/**
+ * 真人验证配置。必须严格区分这几种状态，否则运维会被误导：
+ * - enabled:true  + siteKey     → 正常渲染控件
+ * - enabled:true  + 空 siteKey  → 后端明确开启但没配 siteKey（真·未配置）
+ * - enabled:false + error:false → 后端明确关闭：界面什么都不显示、提交直接放行
+ * - error:true                  → 配置请求本身失败（网络/404/超时）：既不是"已开启"也不是"未配置"
+ * enabled 初始为 false，配置回来前不冒充"已开启"（此时界面不显示任何控件，
+ * 提交也会被"配置读取中，请稍后重试"拦住，不会抢跑放行）。
+ */
 const captcha = reactive({
-  enabled: true,
+  enabled: false,
   siteKey: "",
-  loaded: false
+  loaded: false,
+  error: false
 });
 
 onLoad((query) => {
@@ -32,11 +42,14 @@ onLoad((query) => {
 onMounted(async () => {
   try {
     const data = await fetchTurnstileConfig();
-    captcha.enabled = data.enabled;
+    captcha.enabled = data.enabled === true;
     captcha.siteKey = data.siteKey || "";
+    captcha.error = false;
   } catch {
-    captcha.enabled = true;
+    // 配置没拿到：不能伪装成"验证已开启"，也不能说成"未配置"，单独标记为读取失败。
+    captcha.enabled = false;
     captcha.siteKey = "";
+    captcha.error = true;
   } finally {
     captcha.loaded = true;
   }
@@ -72,6 +85,17 @@ function handleLogin() {
     .validate()
     .then(async ({ valid }: { valid: boolean }) => {
       if (!valid) {
+        return;
+      }
+      // 配置还在请求中：不要抢跑放行（uni.request 有 15s 超时，loaded 必然会在有限时间内变 true）。
+      if (!captcha.loaded) {
+        toast.error("配置读取中，请稍后重试");
+        return;
+      }
+      // 已有 token 直接放行；配置读取失败单独提示；只有确实拿到 enabled:true 才拦住。
+      // enabled:false（后端显式关闭）时两条都不成立 → 直接放行。
+      if (captcha.error && !model.turnstileToken) {
+        toast.error("配置读取失败，请稍后重试");
         return;
       }
       if (captcha.enabled && !model.turnstileToken) {
@@ -138,6 +162,9 @@ function handleLogin() {
         :site-key="captcha.siteKey"
         v-model="model.turnstileToken"
       />
+      <!-- 配置请求失败：单独一行，且绝不在失败时渲染验证控件（H5 与非 H5 都渲染这个普通 view） -->
+      <view v-else-if="captcha.error" class="captcha-hint">真人验证配置读取失败，请稍后重试</view>
+      <!-- 只有后端明确 enabled:true、却没给 siteKey 才是"未配置"；enabled:false 时这里也不显示 -->
       <view v-else-if="captcha.loaded && captcha.enabled" class="captcha-hint">人机验证未配置，暂无法登录</view>
       <view class="footer">
         <wd-button type="primary" size="large" block :loading="loading" @click="handleLogin">

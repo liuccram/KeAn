@@ -35,13 +35,23 @@ public class TaskController {
             @RequestParam(required = false) String taskDate,
             @RequestParam(required = false) String timeSlot,
             @RequestParam(required = false) Long courseId,
-            @RequestParam(required = false) Long campusId,
+            // 已废弃的校区筛选：刻意用 String 接收并丢弃，不再做 Long 绑定（原因见方法开头注释）。
+            @RequestParam(required = false) String campusId,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long schoolId,
             @RequestParam(required = false) Long page,
             @RequestParam(required = false) Long size
     ) {
-        return Result.ok(taskService.list(new TaskQuery(keyword, taskDate, timeSlot, courseId, campusId, status, schoolId, page, size)));
+        // campusId 一律传 null：TaskServiceImpl.list() 本来就不读它（校区不再是筛选条件），
+        // 这与 docs/api/tasks.md 里「campusId 已废弃：传了也不过滤」的约定一致。
+        //
+        // 之所以把入参声明从 Long 改成 String：本轮改动把校区从「目录 ID」降级成发布者手输文本，
+        // 旧客户端 / 缓存包 / 第三方调用只要把校区文本（或空串）塞进 campusId，Long 绑定就会抛
+        // MethodArgumentTypeMismatchException，被 GlobalExceptionHandler 统一映射成
+        // HTTP 400 / code 40000 —— 请求在进入本方法前就失败，整条列表请求直接挂掉
+        // （首页任务列表因此完全加载不出来）。改成 String 后收下任意内容但不使用：
+        // 传什么都不会再参与过滤，也不会再把列表请求打成 400。
+        return Result.ok(taskService.list(new TaskQuery(keyword, taskDate, timeSlot, courseId, null, status, schoolId, page, size)));
     }
 
     @GetMapping("/{id}")

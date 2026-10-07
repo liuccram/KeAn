@@ -24,7 +24,8 @@ public record CreateTaskRequest(
         @NotNull(message = "请选择结束时间")
         @JsonFormat(pattern = "HH:mm")
         LocalTime endTime,
-        @NotNull(message = "请选择校区") Long campusId,
+        // 校区改为用户手输文本（选填）：空值 = 没填；限长 50，服务端去首尾空格
+        @Size(max = 50, message = "校区名称最长 50 个字") String campusText,
         @NotBlank(message = "请填写教学楼") @Size(max = 64) String building,
         @NotBlank(message = "请填写教室") @Size(max = 64) String classroom,
         @NotNull(message = "请选择是否上机")

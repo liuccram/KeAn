@@ -37,6 +37,7 @@ import com.kean.service.LoginDeviceService;
 import com.kean.service.PresenceService;
 import com.kean.service.SmsService;
 import com.kean.service.TurnstileService;
+import com.kean.utils.CampusNames;
 import com.kean.utils.QqEmails;
 import com.kean.service.SysConfigService;
 import com.kean.utils.FileUrls;
@@ -130,7 +131,7 @@ public class AuthServiceImpl implements AuthService {
         if (!sysConfigService.registerEnabled()) {
             throw new BizException(ErrorCode.REGISTER_CLOSED);
         }
-        assertSchoolAndCampus(request.schoolId(), request.campusId());
+        assertSchoolEnabled(request.schoolId());
         if (existsUsername(request.username())) {
             throw new BizException(ErrorCode.USERNAME_EXISTS);
         }
@@ -148,7 +149,8 @@ public class AuthServiceImpl implements AuthService {
         user.setNickname(request.nickname());
         user.setGender(request.gender());
         user.setSchoolId(request.schoolId());
-        user.setCampusId(request.campusId());
+        // 校区改为用户手输文本（选填）：空值 = 没填，不再写 campus_id
+        user.setCampusText(CampusNames.normalize(request.campusText()));
         user.setSchoolChangeCount(0);
         user.setCompletedCount(0);
         user.setRatingCount(0);
@@ -486,7 +488,7 @@ public class AuthServiceImpl implements AuthService {
         if (UserStatus.BANNED.name().equals(user.getStatus())) {
             throw new BizException(ErrorCode.ACCOUNT_BANNED);
         }
-        assertSchoolAndCampus(request.schoolId(), request.campusId());
+        assertSchoolEnabled(request.schoolId());
         boolean schoolChanged = !Objects.equals(user.getSchoolId(), request.schoolId());
         if (schoolChanged) {
             int used = user.getSchoolChangeCount() == null ? 0 : user.getSchoolChangeCount();
@@ -495,11 +497,19 @@ public class AuthServiceImpl implements AuthService {
             }
             user.setSchoolChangeCount(used + 1);
         }
+        String campusText = CampusNames.normalize(request.campusText());
         user.setNickname(request.nickname().trim());
         user.setGender(request.gender());
         user.setSchoolId(request.schoolId());
-        user.setCampusId(request.campusId());
+        user.setCampusText(campusText);
         sysUserMapper.updateById(user);
+        // 校区是手输文本又是可选项：清空时必须显式写 NULL（文本列 + 旧 campus_id），否则 MyBatis-Plus 会跳过 null 字段、旧校区被保留。
+        if (campusText == null) {
+            sysUserMapper.update(null, new LambdaUpdateWrapper<SysUser>()
+                    .eq(SysUser::getId, user.getId())
+                    .set(SysUser::getCampusText, null)
+                    .set(SysUser::getCampusId, null));
+        }
         return toUserVo(user);
     }
 
@@ -575,19 +585,19 @@ public class AuthServiceImpl implements AuthService {
                 campusName = campus.getName();
             }
         }
+        // 校区改为手输文本：优先文本，旧数据回退到上面的 campus_id 旧校区名
+        campusName = CampusNames.display(user.getCampusText(), campusName);
         // 当前用户自己的资料：保留 phone / email 完整值（mine/profile.vue 与 mine/password.vue 依赖 email）
         return UserConverter.toVo(user, schoolName, campusName, false, true);
     }
 
-    private void assertSchoolAndCampus(Long schoolId, Long campusId) {
+    /**
+     * 学校仍必填：必须存在且启用。
+     * 校区已改为用户手输文本（选填），不再需要校验校区 id，也不写 campus_id。
+     */
+    private void assertSchoolEnabled(Long schoolId) {
         School school = schoolMapper.selectById(schoolId);
-        Campus campus = campusMapper.selectById(campusId);
-        if (school == null || campus == null) {
-            throw new BizException(ErrorCode.SCHOOL_INVALID);
-        }
-        if (school.getStatus() == null || school.getStatus() != ENABLED
-                || campus.getStatus() == null || campus.getStatus() != ENABLED
-                || !schoolId.equals(campus.getSchoolId())) {
+        if (school == null || school.getStatus() == null || school.getStatus() != ENABLED) {
             throw new BizException(ErrorCode.SCHOOL_INVALID);
         }
     }

@@ -463,7 +463,7 @@ onReachBottom(() => {
 
       <template v-else>
         <view class="toolbar">
-          <text class="hint">本校同学可发起私信</text>
+          <text class="hint">可向任意同学发起私信</text>
           <text class="link" @click="goPeers">发起私信</text>
         </view>
         <ListState

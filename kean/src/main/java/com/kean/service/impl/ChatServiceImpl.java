@@ -18,6 +18,7 @@ import com.kean.mapper.SysUserMapper;
 import com.kean.security.SecurityUtils;
 import com.kean.service.BlacklistService;
 import com.kean.service.ChatService;
+import com.kean.utils.CampusNames;
 import com.kean.utils.FileUrls;
 import com.kean.utils.UserRestrictions;
 import com.kean.vo.ChatMessageVO;
@@ -94,9 +95,8 @@ public class ChatServiceImpl implements ChatService {
         }
         SysUser me = requireUser(userId);
         SysUser peer = requirePeer(peerUserId);
-        if (!Objects.equals(me.getSchoolId(), peer.getSchoolId())) {
-            throw new BizException(ErrorCode.FORBIDDEN, "只能与本校同学私聊");
-        }
+        // 发起私信不再限制学校/校区：任何人都可以发起。已有的会话依旧走下面的 findSession 复用逻辑，
+        // 会话列表、收发消息、未读、WebSocket 链路都没有学校判断。
         blacklistService.assertCanInteract(userId, peerUserId);
         ChatSession existed = findSession(userId, peerUserId);
         if (existed == null && peer.getPrivateAccount() != null && peer.getPrivateAccount() == 1) {
@@ -213,11 +213,9 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public List<ChatPeerVO> listPeers(String keyword) {
         SysUser me = requireUser(SecurityUtils.currentUserId());
-        if (me.getSchoolId() == null) {
-            return List.of();
-        }
+        // 可发起私信的人不再限定本校：这里只按角色/封禁/黑名单过滤。
+        // 说明：校区可选后 me.getSchoolId() 可能为空，原实现会直接返回空列表，现已去掉该分支。
         LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<SysUser>()
-                .eq(SysUser::getSchoolId, me.getSchoolId())
                 .eq(SysUser::getRole, UserRole.USER.name())
                 .ne(SysUser::getId, me.getId())
                 .ne(SysUser::getStatus, UserStatus.BANNED.name())
@@ -242,7 +240,9 @@ public class ChatServiceImpl implements ChatService {
                         user.getId(),
                         user.getNickname(),
                         FileUrls.of(user.getAvatarUrl()),
-                        campusNames.get(user.getCampusId())
+                        // 校区改为手输文本：优先文本，旧数据回退到 campus_id 关联出的旧校区名
+                        CampusNames.display(user.getCampusText(),
+                                user.getCampusId() == null ? null : campusNames.get(user.getCampusId()))
                 ))
                 .toList();
     }

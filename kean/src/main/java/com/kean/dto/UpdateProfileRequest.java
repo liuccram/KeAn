@@ -17,7 +17,8 @@ public record UpdateProfileRequest(
         @NotNull(message = "学校不能为空")
         Long schoolId,
 
-        @NotNull(message = "校区不能为空")
-        Long campusId
+        // 校区改为用户手输文本（选填）：不填（null/空白）也能保存；学校仍必填。
+        @Size(max = 50, message = "校区名称最长 50 个字")
+        String campusText
 ) {
 }

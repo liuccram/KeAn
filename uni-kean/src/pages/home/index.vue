@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { addFavorite, removeFavorite } from "@/api/favorite";
 import { listActiveAnnouncements, type ActiveAnnouncement } from "@/api/announcement";
-import { listCampuses } from "@/api/catalog";
 import { listTasks, TASK_STATUS_TEXT, type TaskItem } from "@/api/task";
+import CampusHighlight from "@/components/CampusHighlight.vue";
 import ListState from "@/components/ListState.vue";
 import OngoingTasks from "@/components/OngoingTasks.vue";
 import PageBackdrop from "@/components/PageBackdrop.vue";
@@ -30,7 +30,6 @@ const finished = ref(false);
 const list = ref<TaskItem[]>([]);
 const keyword = ref("");
 const filter = reactive({
-  campusId: 0 as number,
   status: "OPEN",
   timeSlot: "ALL"
 });
@@ -41,7 +40,6 @@ const total = ref(0);
 const announcement = ref<ActiveAnnouncement | null>(null);
 const DISMISS_KEY = "kean_dismissed_announcements";
 
-const campusOptions = ref([{ label: t("allCampuses"), value: 0 }]);
 const statusOptions = computed(() => [
   { label: t("allStatus", prefs.lang), value: "ALL" },
   { label: t("openStatus", prefs.lang), value: "OPEN" },
@@ -118,15 +116,6 @@ async function toggleFavorite(item: TaskItem) {
   }
 }
 
-async function loadCatalog() {
-  const schoolId = userStore.state.user?.schoolId;
-  const campuses = await listCampuses(schoolId || undefined);
-  campusOptions.value = [{ label: t("allCampuses", prefs.lang), value: 0 }, ...campuses.map((item) => ({ label: item.name, value: item.id }))];
-  if (filter.campusId && !campuses.some((item) => item.id === Number(filter.campusId))) {
-    filter.campusId = 0;
-  }
-}
-
 async function loadList(reset = false) {
   if (loading.value) {
     return;
@@ -141,7 +130,6 @@ async function loadList(reset = false) {
   try {
     const data = await listTasks({
       keyword: keyword.value.trim() || undefined,
-      campusId: Number(filter.campusId) || undefined,
       schoolId: Number(userStore.state.user?.schoolId) || undefined,
       status: filter.status,
       taskDate: selectedDate.value || undefined,
@@ -211,11 +199,7 @@ function countdownOf(item: TaskItem) {
 }
 
 onShow(() => {
-  loadCatalog()
-    .catch(() => undefined)
-    .finally(() => {
-      loadList(true);
-    });
+  loadList(true);
   loadOngoing();
   refreshMessageBadge();
   loadAnnouncement();
@@ -233,11 +217,7 @@ useLiveUpdates((event) => {
 }, 0);
 
 onPullDownRefresh(() => {
-  loadCatalog()
-    .catch(() => undefined)
-    .finally(() => {
-      loadList(true);
-    });
+  loadList(true);
   loadOngoing();
 });
 
@@ -268,7 +248,6 @@ onReachBottom(() => {
     </view>
     <view class="home-filters">
       <wd-drop-menu>
-        <wd-drop-menu-item v-model="filter.campusId" :options="campusOptions" @change="onFilterChange" />
         <wd-drop-menu-item v-model="filter.status" :options="statusOptions" @change="onFilterChange" />
         <wd-drop-menu-item v-model="filter.timeSlot" :options="timeOptions" @change="onFilterChange" />
       </wd-drop-menu>
@@ -309,7 +288,9 @@ onReachBottom(() => {
           </view>
           <view class="meta">{{ item.taskDate }} {{ item.startTime }}-{{ item.endTime }}</view>
           <view v-if="countdownOf(item)" class="count">{{ countdownOf(item) }}</view>
-          <view class="meta">{{ item.campusName }} · {{ item.building }} {{ item.classroom }}</view>
+          <view class="meta">
+            <CampusHighlight :name="item.campusName" /><text>{{ item.building }} {{ item.classroom }}</text>
+          </view>
           <view class="card-bottom">
             <text class="reward">{{ formatReward(item.reward) }}</text>
             <text class="count-app">{{ item.applyCount }} 人申请</text>

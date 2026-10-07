@@ -29,7 +29,8 @@ export interface TaskItem {
   startAt?: string;
   endAt?: string;
   schoolId: number;
-  campusId: number;
+  /** 仅历史数据用：校区改为用户手输文本后不再写入 campusId，展示以 campusName 为准 */
+  campusId?: number | null;
   campusName?: string | null;
   building: string;
   classroom: string;
@@ -73,6 +74,7 @@ export interface TaskQuery {
   keyword?: string;
   taskDate?: string;
   courseId?: number;
+  /** 已废弃：校区不再作为筛选条件（首页已去掉校区筛选，服务端也不再用它过滤） */
   campusId?: number;
   timeSlot?: string;
   schoolId?: number;
@@ -86,7 +88,8 @@ export interface TaskPayload {
   taskDate: string;
   startTime: string;
   endTime: string;
-  campusId: number;
+  /** 校区选填，由用户手输（1-50 字）；不填时传 null */
+  campusText?: string | null;
   building: string;
   classroom: string;
   computerLab: boolean;

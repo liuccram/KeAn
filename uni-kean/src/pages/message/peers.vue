@@ -17,7 +17,7 @@ const list = ref<ChatPeerItem[]>([]);
 const loading = ref(false);
 const error = ref("");
 const chatBlock = computed(() => actionBlockReason(userStore.state.user, "chat"));
-// 有搜索词时的空结果和「本校没有可聊的人」不是一回事，文案要分开
+// 有搜索词时的空结果和「暂无可聊同学」不是一回事，文案要分开
 const emptyText = computed(() => (keyword.value.trim() ? "没有找到相关同学" : "暂无可聊同学"));
 
 async function load() {
@@ -70,7 +70,7 @@ onShow(async () => {
   <view class="page">
     <view v-if="chatBlock" class="mute-tip">{{ chatBlock }}</view>
     <view class="search">
-      <wd-search v-model="keyword" placeholder="搜索本校同学昵称" hide-cancel @search="load" @clear="load" />
+      <wd-search v-model="keyword" placeholder="搜索同学昵称" hide-cancel @search="load" @clear="load" />
     </view>
     <ListState
       :loading="loading"
@@ -85,7 +85,7 @@ onShow(async () => {
           <view v-else class="avatar">{{ (item.nickname || "同").slice(0, 1) }}</view>
           <view class="info">
             <view class="name">{{ item.nickname }}</view>
-            <view class="campus">{{ item.campusName || "本校同学" }}</view>
+            <view class="campus">{{ item.campusName || "未填写校区" }}</view>
           </view>
           <text class="go">私信</text>
         </view>

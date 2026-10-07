@@ -40,6 +40,9 @@ public class SysUser {
 
     private Long campusId;
 
+    /** 用户手输校区（选填，最长 50 字）。展示优先用它，为空才回退到 campusId 关联出的旧校区名。 */
+    private String campusText;
+
     private Integer schoolChangeCount;
 
     private Integer completedCount;

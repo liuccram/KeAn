@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { TASK_STATUS_TEXT, type TaskItem } from "@/api/task";
+import CampusHighlight from "@/components/CampusHighlight.vue";
 import { useNowTick } from "@/composables/useNowTick";
 import { classCountdown, formatClockLabel, nextTaskStep, taskDetailUrl } from "@/utils/taskAction";
 import { computed } from "vue";
@@ -54,7 +55,9 @@ function goAll() {
         <text class="name">{{ item.courseName }}</text>
         <text class="status">{{ TASK_STATUS_TEXT[item.status] || item.status }}</text>
       </view>
-      <view class="meta">{{ formatClockLabel(item) }} · {{ item.campusName || "" }} {{ item.building }} {{ item.classroom }}</view>
+      <view class="meta">
+        <text>{{ formatClockLabel(item) }} · </text><CampusHighlight :name="item.campusName" /><text>{{ item.building }} {{ item.classroom }}</text>
+      </view>
       <view v-if="partyLine(item)" class="party">{{ partyLine(item) }}</view>
       <view v-if="countdownOf(item)" class="count">{{ countdownOf(item) }}</view>
       <view class="step">{{ stepOf(item).label }}</view>

@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { listCampuses } from "@/api/catalog";
 import { createTask, getTask, listMyPublished, updateTask, type TaskItem, type TaskPayload } from "@/api/task";
-import { useUserStore } from "@/store/user";
+import CampusHighlight from "@/components/CampusHighlight.vue";
 import { formatDate, locationLockReason, tomorrowAt } from "@/utils/format";
 import { useToast } from "wot-design-uni";
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 
 const props = defineProps<{ taskId?: number }>();
 const emit = defineEmits<{ success: [id: number]; reset: [] }>();
 
 const toast = useToast();
-const userStore = useUserStore();
 const formRef = ref();
 const loading = ref(false);
 const lockCore = ref(false);
@@ -18,7 +16,7 @@ const lockLocation = ref(false);
 
 const model = reactive({
   courseName: "",
-  campusId: "" as number | string,
+  campusText: "",
   taskDate: tomorrowAt(8, 0),
   startTime: "08:00",
   endTime: "09:40",
@@ -34,7 +32,8 @@ const model = reactive({
 });
 
 const minDate = Date.now();
-const campusColumns = ref<{ label: string; value: number }[]>([]);
+// 校区可选、由用户手输文本：填了就用统一的红色高亮标签显示一遍（让该校同学一眼看到），没填不显示
+const selectedCampusName = computed(() => model.campusText.trim());
 const computerLabColumns = [
   { label: "否", value: "0" },
   { label: "是", value: "1" }
@@ -45,18 +44,10 @@ const genderRequirementColumns = [
   { label: "仅限女生", value: "FEMALE" }
 ];
 
-async function loadCatalog() {
-  const schoolId = userStore.state.user?.schoolId || 1;
-  const campusList = await listCampuses(schoolId);
-  campusColumns.value = campusList.map((item) => ({ label: item.name, value: item.id }));
-  if (!model.campusId && campusList.length) {
-    model.campusId = campusList[0].id;
-  }
-}
-
 function fillFromTask(task: TaskItem) {
   model.courseName = task.courseName;
-  model.campusId = task.campusId;
+  // 校区是手输文本：回填服务端算好的展示名（新数据是文本，旧数据是 campus_id 关联出的旧校区名）
+  model.campusText = task.campusName || "";
   model.taskDate = new Date(`${task.taskDate}T00:00:00`).getTime();
   model.startTime = task.startTime;
   model.endTime = task.endTime;
@@ -112,7 +103,7 @@ function clearForm() {
 function buildPayload(): TaskPayload {
   return {
     courseName: model.courseName.trim(),
-    campusId: Number(model.campusId),
+    campusText: model.campusText.trim() || null,
     taskDate: formatDate(Number(model.taskDate)),
     startTime: String(model.startTime).slice(0, 5),
     endTime: String(model.endTime).slice(0, 5),
@@ -152,6 +143,12 @@ function onStartConfirm() {
 }
 
 function handleSubmit() {
+  // 先把必填文本框按 payload 的口径去掉首尾空格：表单的 required 规则判定的是原值，
+  // 而 buildPayload() 发出去的是 trim 后的值 —— 纯空格能通过前端校验，却会被服务端
+  // @NotBlank 拒绝（400 / 40000，且服务端不打日志）。统一口径后前端会先给出「请填写…」。
+  model.courseName = model.courseName.trim();
+  model.building = model.building.trim();
+  model.classroom = model.classroom.trim();
   formRef.value
     .validate()
     .then(async ({ valid }: { valid: boolean }) => {
@@ -160,6 +157,14 @@ function handleSubmit() {
       }
       if (toMinutes(model.endTime) <= toMinutes(model.startTime)) {
         toast.error("下课时间不得早于上课时间");
+        return;
+      }
+      // reward 在 payload 里是 Number(model.reward || 0)：非数字会得到 NaN，
+      // JSON.stringify 会把它写成 null，服务端 @NotNull 直接判 400（也不打日志）；
+      // 负数则会撞 @DecimalMin("0.00")。这里提前拦掉，给出明确提示。
+      const reward = Number(model.reward || 0);
+      if (!Number.isFinite(reward) || reward < 0) {
+        toast.error("酬谢金额请填写不小于 0 的数字");
         return;
       }
       loading.value = true;
@@ -186,7 +191,6 @@ function handleSubmit() {
 
 onMounted(async () => {
   try {
-    await loadCatalog();
     await loadDetail();
   } catch (error) {
     toast.error((error as Error).message || "加载失败");
@@ -242,15 +246,19 @@ onMounted(async () => {
           }
         ]"
       />
-      <wd-picker
-        v-model="model.campusId"
+      <wd-input
+        v-model="model.campusText"
         label="校区"
         label-width="80px"
-        prop="campusId"
-        :columns="campusColumns"
+        prop="campusText"
+        clearable
+        :maxlength="50"
+        placeholder="选填，例如 西校区"
         :disabled="lockLocation"
-        :rules="[{ required: true, message: '请选择校区' }]"
       />
+      <view v-if="selectedCampusName" class="campus-tip">
+        <text class="campus-tip-label">本单校区：</text><CampusHighlight :name="selectedCampusName" />
+      </view>
       <wd-input
         v-model="model.building"
         label="教学楼"
@@ -335,5 +343,12 @@ onMounted(async () => {
   color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;
+}
+.campus-tip {
+  padding: 8px 16px 0;
+  font-size: 12px;
+}
+.campus-tip-label {
+  color: var(--kean-sub);
 }
 </style>

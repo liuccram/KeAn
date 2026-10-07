@@ -30,6 +30,7 @@ import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { useNowTick } from "@/composables/useNowTick";
 import { useUploadProgress } from "@/composables/useUploadProgress";
 import FallbackImage from "@/components/FallbackImage.vue";
+import CampusHighlight from "@/components/CampusHighlight.vue";
 import ListState from "@/components/ListState.vue";
 import { useToast } from "wot-design-uni";
 import { computed, nextTick, ref } from "vue";
@@ -777,7 +778,10 @@ useLiveUpdates((event) => {
       <wd-cell-group border title="上课信息">
         <wd-cell title="日期" :value="task.taskDate" />
         <wd-cell title="时间" :value="`${task.startTime} - ${task.endTime}`" />
-        <wd-cell title="校区" :value="task.campusName || '-'" />
+        <wd-cell title="校区">
+          <CampusHighlight v-if="task.campusName" :name="task.campusName" />
+          <text v-else>-</text>
+        </wd-cell>
         <wd-cell title="地点" :value="`${task.building} ${task.classroom}`" />
         <wd-cell title="是否上机" :value="task.computerLab === 1 ? '是' : '否'" />
         <wd-cell title="是否拍照" :value="task.requirePhoto === 1 ? '是' : '否'" />

@@ -18,7 +18,8 @@ export interface RegisterPayload {
   nickname: string;
   gender: string;
   schoolId: number;
-  campusId: number;
+  /** 校区选填，由用户手输（1-50 字）；不填时不传或传 null */
+  campusText?: string | null;
   email: string;
   smsCode: string;
   turnstileToken?: string;
@@ -63,7 +64,8 @@ export interface UpdateProfilePayload {
   nickname: string;
   gender: string;
   schoolId: number;
-  campusId: number;
+  /** 校区选填，由用户手输（1-50 字）；传 null 或不传表示清空校区 */
+  campusText?: string | null;
 }
 
 export function updateProfile(payload: UpdateProfilePayload) {

@@ -11,6 +11,7 @@ import com.kean.mapper.SysUserMapper;
 import com.kean.mapper.UserBlacklistMapper;
 import com.kean.security.SecurityUtils;
 import com.kean.service.BlacklistService;
+import com.kean.utils.CampusNames;
 import com.kean.utils.FileUrls;
 import com.kean.vo.BlacklistItemVO;
 import org.springframework.stereotype.Service;
@@ -68,7 +69,8 @@ public class BlacklistServiceImpl implements BlacklistService {
                     row.getBlockedUserId(),
                     user == null ? "同学" : user.getNickname(),
                     user == null ? null : FileUrls.of(user.getAvatarUrl()),
-                    user == null ? null : campusNames.get(user.getCampusId()),
+                    user == null ? null : CampusNames.display(user.getCampusText(),
+                            user.getCampusId() == null ? null : campusNames.get(user.getCampusId())),
                     row.getCreatedAt()
             );
         }).toList();

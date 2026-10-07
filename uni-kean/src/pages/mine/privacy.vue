@@ -38,7 +38,7 @@ async function toggle(value: boolean | { value?: boolean }) {
         <wd-switch :model-value="on" :disabled="saving" @change="toggle" />
       </wd-cell>
     </wd-cell-group>
-    <view class="tip">头像始终公开：任务列表、聊天列表、黑名单等处都会显示你的头像，开启隐私只隐藏统计信息（性别、校区、完成数、评分与评价）和可发现性。已有的私信不受影响。关闭后，本校同学可再次看到完整主页并发起私信。</view>
+    <view class="tip">头像始终公开：任务列表、聊天列表、黑名单等处都会显示你的头像，开启隐私只隐藏统计信息（性别、校区、完成数、评分与评价）和可发现性。已有的私信不受影响。关闭后，其他同学可再次看到完整主页并发起私信。</view>
     <wd-toast />
   </view>
 </template>

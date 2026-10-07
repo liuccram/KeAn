@@ -41,6 +41,9 @@ public class SubstituteTask {
 
     private Long campusId;
 
+    /** 发布者手输校区（选填，最长 50 字）。展示优先用它，为空才回退到 campusId 关联出的旧校区名。 */
+    private String campusText;
+
     private String building;
 
     private String classroom;

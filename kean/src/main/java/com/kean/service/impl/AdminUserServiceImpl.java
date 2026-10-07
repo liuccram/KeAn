@@ -35,6 +35,7 @@ import com.kean.service.AdminUserService;
 import com.kean.service.NotificationService;
 import com.kean.service.OperationLogService;
 import com.kean.service.PresenceService;
+import com.kean.utils.CampusNames;
 import com.kean.utils.FileUrls;
 import com.kean.utils.UserRestrictions;
 import com.kean.vo.AdminGenderGroupVO;
@@ -415,6 +416,8 @@ public class AdminUserServiceImpl implements AdminUserService {
                 campusName = campus.getName();
             }
         }
+        // 校区改为用户手输文本：优先文本，旧数据回退到上面的 campus_id 旧校区名
+        campusName = CampusNames.display(user.getCampusText(), campusName);
         // 管理端不再下发 phone / email：管理端界面并不展示这两个字段，而按邮箱/手机号搜索
         // 是本类里用 SQL 完成的（服务端过滤），所以收敛掉不影响任何功能，
         // 同时让敏感信息不再出现在管理端浏览器的响应里。
@@ -432,7 +435,8 @@ public class AdminUserServiceImpl implements AdminUserService {
         Set<Long> acceptedIds = tasks.stream().map(SubstituteTask::getAcceptedApplicationId).filter(Objects::nonNull).collect(Collectors.toSet());
         Map<Long, String> schools = schoolIds.isEmpty() ? Map.of() : schoolMapper.selectByIds(schoolIds).stream()
                 .collect(Collectors.toMap(School::getId, School::getName, (a, b) -> a));
-        Map<Long, String> campuses = campusIds.isEmpty() ? Map.of() : campusMapper.selectByIds(campusIds).stream()
+        // 校区已可空：用 HashMap 兜住 null key（Map.of().get(null) 会抛 NPE），无筛选逻辑变更
+        Map<Long, String> campuses = campusIds.isEmpty() ? new HashMap<>() : campusMapper.selectByIds(campusIds).stream()
                 .collect(Collectors.toMap(Campus::getId, Campus::getName, (a, b) -> a));
         Map<Long, String> publishers = publisherIds.isEmpty() ? Map.of() : sysUserMapper.selectByIds(publisherIds).stream()
                 .collect(Collectors.toMap(SysUser::getId, SysUser::getNickname, (a, b) -> a));
@@ -459,7 +463,9 @@ public class AdminUserServiceImpl implements AdminUserService {
                     task.getSchoolId(),
                     schools.get(task.getSchoolId()),
                     task.getCampusId(),
-                    campuses.get(task.getCampusId()),
+                    // 校区改为用户手输文本：优先文本，旧数据回退到 campus_id 关联出的旧校区名
+                    CampusNames.display(task.getCampusText(),
+                            task.getCampusId() == null ? null : campuses.get(task.getCampusId())),
                     task.getBuilding(),
                     task.getClassroom(),
                     task.getStatus(),

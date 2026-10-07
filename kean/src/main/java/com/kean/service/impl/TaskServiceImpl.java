@@ -1,6 +1,7 @@
 package com.kean.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.kean.common.ErrorCode;
 import com.kean.common.PageResult;
@@ -32,6 +33,7 @@ import com.kean.service.NotificationService;
 import com.kean.service.StorageService;
 import com.kean.service.TaskService;
 import com.kean.service.TaskStatusService;
+import com.kean.utils.CampusNames;
 import com.kean.utils.FileUrls;
 import com.kean.utils.UserRestrictions;
 import com.kean.vo.PublisherBriefVO;
@@ -144,9 +146,8 @@ public class TaskServiceImpl implements TaskService {
         if (query.courseId() != null) {
             wrapper.eq(SubstituteTask::getCourseId, query.courseId());
         }
-        if (query.campusId() != null) {
-            wrapper.eq(SubstituteTask::getCampusId, query.campusId());
-        }
+        // 校区已降级为可选项：列表不再按校区过滤（首页的校区筛选也已去掉），
+        // 同校范围内所有校区的任务一并返回；学校口径保持不变。
         if (StringUtils.hasText(query.taskDate())) {
             wrapper.eq(SubstituteTask::getTaskDate, parseDate(query.taskDate()));
         }
@@ -172,7 +173,7 @@ public class TaskServiceImpl implements TaskService {
         Map<Long, String> campusNames = loadCampusNames(page.getRecords());
         Set<Long> favs = favoriteIds(page.getRecords());
         List<TaskVO> list = page.getRecords().stream()
-                .map(task -> toVo(task, campusNames.get(task.getCampusId()), null, null, false, null, null, false, null, null, false, null, favs.contains(task.getId())))
+                .map(task -> toVo(task, displayCampusName(task, campusNames), null, null, false, null, null, false, null, null, false, null, favs.contains(task.getId())))
                 .toList();
         return new PageResult<>(list, page.getTotal(), pageNo, size);
     }
@@ -180,7 +181,8 @@ public class TaskServiceImpl implements TaskService {
     @Override
     public TaskVO detail(Long id) {
         SubstituteTask task = requireVisibleTask(id);
-        Campus campus = campusMapper.selectById(task.getCampusId());
+        // 校区展示：优先发布者手输的文本，旧数据回退到 campus_id 关联出的旧校区名（都没有就是 null，前端不显示）
+        String campusName = displayCampusName(task, null);
         LoginUser loginUser = SecurityUtils.currentUserOrNull();
         boolean mine = loginUser != null && Objects.equals(loginUser.userId(), task.getPublisherId());
         String myApplicationStatus = null;
@@ -225,7 +227,7 @@ public class TaskServiceImpl implements TaskService {
         }
         return toVo(
                 task,
-                campus == null ? null : campus.getName(),
+                campusName,
                 brief,
                 applicantBrief,
                 mine,
@@ -244,15 +246,16 @@ public class TaskServiceImpl implements TaskService {
     @Transactional
     public TaskVO create(CreateTaskRequest request) {
         SysUser user = requirePublisher();
+        Long schoolId = requirePublisherSchoolId(user);
         SubstituteTask task = new SubstituteTask();
         task.setPublisherId(user.getId());
-        task.setSchoolId(user.getSchoolId());
+        task.setSchoolId(schoolId);
         task.setApplyCount(0);
         task.setPublisherConfirmed(0);
         task.setApplicantConfirmed(0);
         task.setPublisherCompleted(0);
         task.setApplicantCompleted(0);
-        fillContent(task, request, user.getSchoolId());
+        fillContent(task, request);
         taskStatusService.initWaiting(task);
         taskMapper.insert(task);
         return detail(task.getId());
@@ -264,8 +267,8 @@ public class TaskServiceImpl implements TaskService {
         SysUser user = requirePublisher();
         SubstituteTask task = requireOwnedTask(id, user.getId());
         if (taskStatusService.isFullyEditable(task)) {
-            fillContent(task, request, user.getSchoolId());
-            taskMapper.updateById(task);
+            fillContent(task, request);
+            persistTask(task);
             return detail(task.getId());
         }
         taskStatusService.assertLocationEditable(task);
@@ -274,8 +277,8 @@ public class TaskServiceImpl implements TaskService {
             assertLocationUnchanged(task, request);
         }
         List<String> changes = describeLocationChanges(task, request);
-        applyLocationAndRemark(task, request, user.getSchoolId());
-        taskMapper.updateById(task);
+        applyLocationAndRemark(task, request);
+        persistTask(task);
         notifyTaskUpdated(task, changes);
         return detail(task.getId());
     }
@@ -400,11 +403,7 @@ public class TaskServiceImpl implements TaskService {
                 .orderByDesc(SubstituteTask::getCreatedAt), page, size);
     }
 
-    private void fillContent(SubstituteTask task, CreateTaskRequest request, Long schoolId) {
-        Campus campus = campusMapper.selectById(request.campusId());
-        if (campus == null || !Objects.equals(campus.getSchoolId(), schoolId) || campus.getStatus() == null || campus.getStatus() != 1) {
-            throw new BizException(ErrorCode.SCHOOL_INVALID);
-        }
+    private void fillContent(SubstituteTask task, CreateTaskRequest request) {
         LocalDateTime startAt = LocalDateTime.of(request.taskDate(), request.startTime());
         LocalDateTime endAt = LocalDateTime.of(request.taskDate(), request.endTime());
         if (!endAt.isAfter(startAt)) {
@@ -420,7 +419,7 @@ public class TaskServiceImpl implements TaskService {
         task.setEndTime(request.endTime());
         task.setStartAt(startAt);
         task.setEndAt(endAt);
-        task.setCampusId(campus.getId());
+        applyCampus(task, request);
         task.setBuilding(request.building().trim());
         task.setClassroom(request.classroom().trim());
         task.setComputerLab(Boolean.TRUE.equals(request.computerLab()) ? 1 : 0);
@@ -430,6 +429,36 @@ public class TaskServiceImpl implements TaskService {
         task.setReason(trimToNull(request.reason()));
         task.setRequirement(trimToNull(request.requirement()));
         task.setRemark(trimToNull(request.remark()));
+    }
+
+    /**
+     * 校区改为用户手输文本：空值 = 没填，顺带清掉旧数据里的 campus_id（否则展示会回退出旧校区名）；
+     * 填了就只存文本，不再写 campus_id（旧 campus_id 保留不动，仅作历史回退展示）。
+     */
+    private void applyCampus(SubstituteTask task, CreateTaskRequest request) {
+        String campusText = CampusNames.normalize(request.campusText());
+        task.setCampusText(campusText);
+        if (campusText == null) {
+            task.setCampusId(null);
+        }
+    }
+
+    /**
+     * 校区展示名：优先用户手输的 campus_text；旧数据（只有 campus_id）回退到关联出的旧校区名。
+     *
+     * @param campusNames 列表场景批量查好的 campusId→名字；传 null 表示按需单查（详情 / 编辑对比用）
+     */
+    private String displayCampusName(SubstituteTask task, Map<Long, String> campusNames) {
+        String legacyName = null;
+        if (task.getCampusId() != null) {
+            if (campusNames != null) {
+                legacyName = campusNames.get(task.getCampusId());
+            } else {
+                Campus campus = campusMapper.selectById(task.getCampusId());
+                legacyName = campus == null ? null : campus.getName();
+            }
+        }
+        return CampusNames.display(task.getCampusText(), legacyName);
     }
 
     private void assertCoreFieldsUnchanged(SubstituteTask task, CreateTaskRequest request) {
@@ -448,7 +477,8 @@ public class TaskServiceImpl implements TaskService {
         String classroom = request.classroom() == null ? "" : request.classroom().trim();
         int lab = Boolean.TRUE.equals(request.computerLab()) ? 1 : 0;
         int oldLab = task.getComputerLab() == null ? 0 : task.getComputerLab();
-        if (!Objects.equals(task.getCampusId(), request.campusId())
+        // 校区用“当前生效的展示名”和提交文本比较：旧任务只有 campus_id 时，前端回填的也是那个旧名字，不会误判成改动
+        if (!Objects.equals(nullToEmpty(displayCampusName(task, null)), nullToEmpty(CampusNames.normalize(request.campusText())))
                 || !Objects.equals(nullToEmpty(task.getBuilding()), building)
                 || !Objects.equals(nullToEmpty(task.getClassroom()), classroom)
                 || oldLab != lab) {
@@ -456,13 +486,8 @@ public class TaskServiceImpl implements TaskService {
         }
     }
 
-    private void applyLocationAndRemark(SubstituteTask task, CreateTaskRequest request, Long schoolId) {
-        Campus campus = campusMapper.selectById(request.campusId());
-        if (campus == null || !Objects.equals(campus.getSchoolId(), schoolId)
-                || campus.getStatus() == null || campus.getStatus() != 1) {
-            throw new BizException(ErrorCode.SCHOOL_INVALID);
-        }
-        task.setCampusId(campus.getId());
+    private void applyLocationAndRemark(SubstituteTask task, CreateTaskRequest request) {
+        applyCampus(task, request);
         task.setBuilding(request.building().trim());
         task.setClassroom(request.classroom().trim());
         task.setComputerLab(Boolean.TRUE.equals(request.computerLab()) ? 1 : 0);
@@ -499,8 +524,10 @@ public class TaskServiceImpl implements TaskService {
 
     private List<String> describeLocationChanges(SubstituteTask task, CreateTaskRequest request) {
         List<String> changes = new ArrayList<>();
-        if (!Objects.equals(task.getCampusId(), request.campusId())) {
-            changes.add("校区：" + campusName(task.getCampusId()) + " → " + campusName(request.campusId()));
+        String oldCampus = displayCampusName(task, null);
+        String newCampus = CampusNames.normalize(request.campusText());
+        if (!Objects.equals(nullToEmpty(oldCampus), nullToEmpty(newCampus))) {
+            changes.add("校区：" + displayText(oldCampus) + " → " + displayText(newCampus));
         }
         String newBuilding = request.building() == null ? "" : request.building().trim();
         if (!Objects.equals(nullToEmpty(task.getBuilding()), newBuilding)) {
@@ -531,17 +558,6 @@ public class TaskServiceImpl implements TaskService {
         return changes;
     }
 
-    private String campusName(Long campusId) {
-        if (campusId == null) {
-            return "未填写";
-        }
-        Campus campus = campusMapper.selectById(campusId);
-        if (campus == null || !StringUtils.hasText(campus.getName())) {
-            return "未填写";
-        }
-        return campus.getName();
-    }
-
     private String displayText(String value) {
         return StringUtils.hasText(value) ? value : "未填写";
     }
@@ -566,6 +582,37 @@ public class TaskServiceImpl implements TaskService {
             throw new BizException(ErrorCode.FORBID_PUBLISH);
         }
         return user;
+    }
+
+    /**
+     * 任务必须挂在一个真实存在的学校上（school_id 仍是 NOT NULL），学校只从发布者资料取，不接受请求里的学校。
+     * 资料里没有学校的历史/异常账号直接拒绝发布：静默归到默认学校会让任务出现在别的学校列表里，属于脏数据。
+     */
+    private Long requirePublisherSchoolId(SysUser user) {
+        if (user.getSchoolId() == null) {
+            throw new BizException(ErrorCode.SCHOOL_INVALID, "请先在学校资料里选择学校后再发布");
+        }
+        return user.getSchoolId();
+    }
+
+    /**
+     * 保存任务。MyBatis-Plus 默认跳过 null 字段，而校区是可选项又是手输文本，
+     * 清空时必须显式写 NULL（文本列和旧 campus_id 都要清），否则旧校区会被悄悄保留。
+     */
+    private void persistTask(SubstituteTask task) {
+        taskMapper.updateById(task);
+        if (task.getCampusText() != null && task.getCampusId() != null) {
+            return;
+        }
+        LambdaUpdateWrapper<SubstituteTask> clearCampus = new LambdaUpdateWrapper<SubstituteTask>()
+                .eq(SubstituteTask::getId, task.getId());
+        if (task.getCampusText() == null) {
+            clearCampus.set(SubstituteTask::getCampusText, null);
+        }
+        if (task.getCampusId() == null) {
+            clearCampus.set(SubstituteTask::getCampusId, null);
+        }
+        taskMapper.update(null, clearCampus);
     }
 
     private SubstituteTask requireOwnedTask(Long id, Long userId) {
@@ -617,7 +664,9 @@ public class TaskServiceImpl implements TaskService {
     private Map<Long, String> loadCampusNames(List<SubstituteTask> tasks) {
         Set<Long> ids = tasks.stream().map(SubstituteTask::getCampusId).filter(Objects::nonNull).collect(Collectors.toSet());
         if (ids.isEmpty()) {
-            return Map.of();
+            // 用可变 HashMap 而不是 Map.of()：校区现在是可选项，campusId 可能是 null，
+            // Map.of() 的 get(null) 会抛 NPE，HashMap 允许 null key。
+            return new HashMap<>();
         }
         Map<Long, String> names = new HashMap<>();
         campusMapper.selectByIds(ids).forEach(campus -> names.put(campus.getId(), campus.getName()));
@@ -667,7 +716,7 @@ public class TaskServiceImpl implements TaskService {
             Long myApplicationId = mineApp == null ? null : mineApp.getId();
             return toVo(
                     task,
-                    campusNames.get(task.getCampusId()),
+                    displayCampusName(task, campusNames),
                     nameBrief(task.getPublisherId(), displayNames.get(task.getPublisherId())),
                     null,
                     mine,
@@ -896,6 +945,8 @@ public class TaskServiceImpl implements TaskService {
                 campusName = userCampus.getName();
             }
         }
+        // 校区改为手输文本：优先文本，旧数据回退到上面的 campus_id 旧校区名
+        campusName = CampusNames.display(user.getCampusText(), campusName);
         boolean publisher = role == TrustRole.PUBLISHER;
         Integer completed = publisher
                 ? (user.getPublishCompletedCount() == null ? 0 : user.getPublishCompletedCount())

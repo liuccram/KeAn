@@ -73,7 +73,7 @@ onShow(() => {
           <view v-else class="avatar">{{ (item.nickname || "同").slice(0, 1) }}</view>
           <view class="info">
             <view class="name">{{ item.nickname }}</view>
-            <view class="campus">{{ item.campusName || "本校同学" }}</view>
+            <view class="campus">{{ item.campusName || "未填写校区" }}</view>
           </view>
           <wd-button size="small" plain @click="handleUnblock(item)">移出黑名单</wd-button>
         </view>
