@@ -24,13 +24,6 @@ export interface ChatMessageItem {
   mine: boolean;
 }
 
-export interface ChatPeerItem {
-  id: number;
-  nickname: string;
-  avatarUrl?: string | null;
-  campusName?: string | null;
-}
-
 export function listChats() {
   return request<ChatSessionItem[]>({
     url: "/api/chats",
@@ -50,14 +43,6 @@ export function unreadChatCount() {
   return request<number>({
     url: "/api/chats/unread-count",
     method: "GET"
-  });
-}
-
-export function listChatPeers(keyword?: string) {
-  return request<ChatPeerItem[]>({
-    url: "/api/chats/peers",
-    method: "GET",
-    data: keyword ? { keyword } : undefined
   });
 }
 
