@@ -304,10 +304,6 @@ function openPeer(item: ChatSessionItem) {
   uni.navigateTo({ url: `/pages/mine/user?id=${item.peerUserId}` });
 }
 
-function goPeers() {
-  uni.navigateTo({ url: "/pages/message/peers" });
-}
-
 async function handleReadAll() {
   try {
     await markAllNotificationsRead(noticeScope.value);
@@ -463,8 +459,7 @@ onReachBottom(() => {
 
       <template v-else>
         <view class="toolbar">
-          <text class="hint">可向任意同学发起私信</text>
-          <text class="link" @click="goPeers">发起私信</text>
+          <text class="hint">可在任务详情或同学主页发起私信</text>
         </view>
         <ListState
           :loading="listLoading"

@@ -35,12 +35,6 @@
       }
     },
     {
-      "path": "pages/message/peers",
-      "style": {
-        "navigationBarTitleText": "选择同学"
-      }
-    },
-    {
       "path": "pages/mine/index",
       "style": {
         "navigationBarTitleText": "我的",
