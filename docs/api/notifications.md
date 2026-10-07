@@ -4,7 +4,7 @@
 
 本文件接口均需登录：`Authorization: Bearer <token>`。
 
-本阶段不做 MinIO、不做私聊。消息 Tab 展示系统通知：有人申请代课、选人结果、履约确认。
+Phase 4 本阶段只落地站内消息通知；当时未做的对象存储与私聊均已实现（对象存储见 [对象存储：MinIO → RustFS 迁移与运维手册](../ops/rustfs.md)，私聊见 `ChatController`（`/api/chats`））。消息 Tab 展示系统通知：有人申请代课、选人结果、履约确认。
 
 ---
 
