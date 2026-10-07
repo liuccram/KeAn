@@ -62,7 +62,14 @@ public class TaskScheduleService {
     @Scheduled(fixedDelay = 30000)
     @SchedulerLock(name = "task.refreshStatuses", lockAtMostFor = "PT2M")
     public void refreshStatuses() {
-        expireRestrictions();
+        // 前置清理（用户禁言/禁止发布等到期）失败时不能拖垮整轮：它是纯附加动作，
+        // 与下面的任务状态扫描没有任何依赖关系。这里单独兜住（表结构缺失、DB 抖动等），
+        // 记 warn 后继续往下跑，保证过期扫描每轮都能执行到；下一轮 30 秒后再重试。
+        try {
+            expireRestrictions();
+        } catch (Exception ex) {
+            log.warn("Expire user restrictions failed, continue this round: {}", ex.getMessage());
+        }
         LocalDateTime now = LocalDateTime.now();
         List<SubstituteTask> dueExpire = taskMapper.selectList(new LambdaQueryWrapper<SubstituteTask>()
                 .in(SubstituteTask::getStatus, TaskStatus.WAITING.name(), TaskStatus.APPLYING.name())
