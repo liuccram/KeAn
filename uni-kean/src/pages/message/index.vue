@@ -14,6 +14,7 @@ import { usePageWallpaper } from "@/composables/usePageWallpaper";
 import { useUserStore } from "@/store/user";
 import { parseDateTime } from "@/utils/format";
 import { refreshMessageBadge } from "@/utils/messageBadge";
+import { hasNewerSeq, hasViewedSeq, syncViewedSeq } from "@/utils/chatStore";
 import { noticeFocus, taskDetailUrl } from "@/utils/taskAction";
 import { resolveMediaUrl } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
@@ -32,6 +33,28 @@ const taskFilter = ref<"all" | TaskKind>("all");
 const pickedBusy = ref(false);
 const list = ref<NotificationItem[]>([]);
 const chats = ref<ChatSessionItem[]>([]);
+/**
+ * 会话列表的「有新消息」辅助提示：用 lastSeqNo 与本地已看位点比较。
+ * 只影响这一个提示点，未读角标的既有口径（unreadCount）一点没动。
+ * 老后端没有 lastSeqNo 时 hasNewerSeq 恒为 false，整个提示不出现。
+ */
+const freshChats = computed(() => {
+  const hasNew = new Set<number>();
+  chats.value.forEach((item) => {
+    const lastSeqNo = Number(item.lastSeqNo || 0);
+    if (!lastSeqNo) {
+      return;
+    }
+    // 第一次看到这个会话时不提示（本地没有任何位点，没有「新」的参照物），只记下位点
+    if (hasViewedSeq(item.id) && hasNewerSeq(item.id, lastSeqNo)) {
+      hasNew.add(item.id);
+      return;
+    }
+    // 已在会话里看到过这个位点，记录下来，下次会话列表刷新就能判断「真的有新的」
+    syncViewedSeq(item.id, lastSeqNo);
+  });
+  return hasNew;
+});
 const loading = ref(false);
 const chatLoading = ref(false);
 const error = ref("");
@@ -481,6 +504,7 @@ onReachBottom(() => {
                 <view class="top">
                   <view class="name-row">
                     <text class="title">{{ item.peerNickname || "同学" }}</text>
+                    <view v-if="freshChats.has(item.id)" class="new-dot" />
                     <text v-if="item.peerBanned" class="muted-tag banned">已封禁</text>
                     <text v-else-if="item.peerMuted" class="muted-tag">已禁言</text>
                   </view>
@@ -828,6 +852,14 @@ onReachBottom(() => {
   background: #fff7e8;
   border-radius: 4px;
   padding: 1px 6px;
+}
+/* 用 lastSeqNo 判断的「有新消息」提示：只是辅助，不参与未读角标 */
+.new-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--kean-primary-active);
+  flex-shrink: 0;
 }
 .muted-tag.banned {
   color: var(--kean-danger);

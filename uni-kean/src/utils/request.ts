@@ -139,6 +139,10 @@ export function resolveMediaUrl(path?: string | null): string {
   if (/^https?:\/\//i.test(path) || path.startsWith("data:")) {
     return path;
   }
+  // 本地临时文件/blob 地址原样返回：那是"还没上传成功"的图片，拼成文件接口只会得到 404
+  if (/^(blob:|file:|wxfile:|filesystem:)/i.test(path) || path.includes("/_doc/") || path.includes("_tmp_")) {
+    return path;
+  }
   if (path.startsWith("/api/files/")) {
     return buildUrl(path);
   }

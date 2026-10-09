@@ -10,9 +10,17 @@ export interface RealtimeEvent {
   bizId?: number;
   title?: string;
   content?: string;
+  /** READ 事件（与 box-im 对齐后新增）：{ type:"READ", sessionId, maxSeq, readerId } */
+  sessionId?: number;
+  /** READ 事件的已读位点：对方已读到该会话的哪一条 seqNo */
+  maxSeq?: number;
+  /** READ 事件的读者；等于自己说明是别端上报，忽略即可 */
+  readerId?: number;
   data?: {
     id?: number;
     sessionId?: number;
+    readerId?: number;
+    maxSeq?: number;
     [key: string]: unknown;
   };
 }
@@ -102,6 +110,8 @@ function dispatch(event: RealtimeEvent) {
     handleAccountBanned(event.content);
     return;
   }
+  // READ 只影响「我发出的消息是否已读」，不改变我的未读数：
+  // 这里不刷新角标，避免每次对方读消息都多打一轮未读统计。
   if (event.type === "NOTICE" || event.type === "MESSAGE") {
     refreshMessageBadge();
   }
