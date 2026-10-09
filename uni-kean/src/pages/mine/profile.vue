@@ -6,7 +6,7 @@ import CodeBoxes from "@/components/CodeBoxes.vue";
 import FallbackImage from "@/components/FallbackImage.vue";
 import PersonAvatar from "@/components/PersonAvatar.vue";
 import { useUserStore } from "@/store/user";
-import { normalizeQqEmail } from "@/utils/qqEmail";
+import { QQ_EMAIL_HINT, normalizeQqEmail } from "@/utils/qqEmail";
 import { chooseAndCrop } from "@/utils/imageCrop";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useUploadProgress } from "@/composables/useUploadProgress";
@@ -159,7 +159,7 @@ function startEmailCountdown() {
 async function handleSendEmailCode() {
   const email = normalizeQqEmail(model.email);
   if (!email) {
-    toast.error("请填写正确的QQ邮箱");
+    toast.error(QQ_EMAIL_HINT);
     return;
   }
   if (!needEmailCode.value) {
@@ -200,7 +200,7 @@ function handleSave() {
       if (needEmailCode.value) {
         const email = normalizeQqEmail(model.email);
         if (!email) {
-          toast.error("请填写正确的QQ邮箱");
+          toast.error(QQ_EMAIL_HINT);
           return;
         }
         if (!/^\d{6}$/.test(model.smsCode)) {

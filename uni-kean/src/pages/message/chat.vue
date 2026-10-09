@@ -246,6 +246,68 @@ function applyIncoming(payload?: ChatMessageItem, options?: { silent?: boolean }
   }
 }
 
+/**
+ * IM（box 通道）私聊消息的节流增量拉取。
+ *
+ * <p>box 的推送体不带 kean 的会话序号语义，且和自研通道可能几乎同时到达同一批消息；
+ * 逐条触发增量会把一个「连发 5 条」变成 5 次请求，所以合并到 400ms 内只拉一次。</p>
+ */
+let incomingSyncTimer: ReturnType<typeof setTimeout> | null = null;
+const INCOMING_SYNC_DELAY_MS = 400;
+
+/**
+ * 收到 MESSAGE 事件（两条通道都走这里）。{@code eventSessionId} 是事件顶层的会话 id
+ * （IM 通道会把 {@code data.sessionId} 也镜像到顶层），两者取到哪个用哪个。
+ *
+ * <p><b>取舍：不做「直接插气泡」，改为按本地游标拉一次增量</b>，原因有三：
+ * 1) 推送来的那份数据没有 kean 的消息 id，直接插会与随后 HTTP/增量拉回来的同一条重复，
+ *    而只有增量接口返回的是权威版本（带 id/seqNo/status）；
+ * 2) 乱序：推送与本地 outbox 里的乐观消息、以及正在发送的那条需要一个统一的合并点，
+ *    {@code syncIncoming} → {@code mergeIncoming} 就是那个点（按 localId 用服务端版本替换本地那条）；
+ * 3) 与两条通道并存时的行为一致：自研通道带完整消息体时仍照旧直接插入（下面 applyIncoming 那条），
+ *    只有「没有 id / 不是权威版本」的推送才退化成拉增量。</p>
+ *
+ * <p>会话 id 对不上的推送直接忽略 —— 后端未上线 {@code sessionId} 字段时就是这个分支，
+ * 表现为「只刷未读角标、气泡等轮询补齐」，与本轮之前的现状一致。</p>
+ *
+ * <p>参数故意收 {@code unknown}：两条通道（自研 WS / box IM）投递过来的 {@code data}
+ * 在类型上是并集，这里显式收窄一次，避免在调用点写容易出错的断言。</p>
+ */
+function handleMessageEvent(data: unknown, eventSessionId?: number) {
+  if (!data || typeof data !== "object") {
+    return;
+  }
+  const payload = data as Partial<ChatMessageItem> & { sessionId?: unknown };
+  const target = Number(payload.sessionId || eventSessionId || 0);
+  if (!target || target !== sessionId.value) {
+    return;
+  }
+  const seq = Number(payload.seqNo || 0);
+  // 权威版本（带消息 id，且有 seqNo 可排序）仍按原逻辑立即上屏；
+  // 其余（例如 IM 通道里 id 缺席的那份）交给增量拉取，拿权威版本再合并。
+  if (Number(payload.id || 0) !== 0 && seq > 0) {
+    applyIncoming(data as Partial<ChatMessageItem>);
+    return;
+  }
+  const cursor = Number(getLastSeq(sessionId.value) || 0);
+  if (cursor <= 0) {
+    // 没有游标就没有增量可拉：只有带 localId 的推送（发送方回显 / 自己别的端发的）才插入，
+    // 它能和本地乐观消息按 localId 去重；其余情况宁可不插 —— 轮询兜底会走整页刷新，
+    // 消息不会丢，但不会出现「没有 id、排不了序」的野气泡。
+    if (payload.localId) {
+      applyIncoming(data as Partial<ChatMessageItem>);
+    }
+    return;
+  }
+  if (incomingSyncTimer) {
+    return;
+  }
+  incomingSyncTimer = setTimeout(() => {
+    incomingSyncTimer = null;
+    void syncIncoming();
+  }, INCOMING_SYNC_DELAY_MS);
+}
+
 /** 首次进入没有本地游标时，仍然走原来的分页接口 */
 async function loadFirstPage() {
   const data = await listChatMessages(sessionId.value, 1, 50);
@@ -639,7 +701,7 @@ useLiveUpdates((event) => {
     return;
   }
   if (event.type === "MESSAGE") {
-    applyIncoming(event.data as ChatMessageItem | undefined);
+    handleMessageEvent(event.data, event.sessionId);
     return;
   }
   if (event.type === "READ") {

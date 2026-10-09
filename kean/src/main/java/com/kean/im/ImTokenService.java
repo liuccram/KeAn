@@ -47,10 +47,26 @@ import java.util.Map;
  * {@code DotEnvLoader} 会把它塞进系统属性，Spring 的 {@code @Value} 对系统属性与环境变量同样生效）。
  * 该值必须与 im-server 的 {@code jwt.accessToken.secret} 一致。</p>
  *
- * <p><b>与本项目 {@code DATA_ENC_KEY} 的既有风格保持一致：未配置不抛异常、不阻止启动</b>，
- * 只在启动时 WARN 一次，随后 {@link #enabled()} 恒为 {@code false}、
+ * <p><b>与本项目 {@code DATA_ENC_KEY} 的既有风格保持一致：未配置 / 不可用都不抛异常、不阻止启动</b>，
+ * 只在启动时 WARN 或 ERROR 一次，随后 {@link #enabled()} 恒为 {@code false}、
  * {@code GET /api/im/token} 返回 {@code enabled=false}。这样漏配环境变量不会把整个后端带崩 ——
  * 代价是 IM 通道不可用，而课安原有功能完全不受影响。</p>
+ *
+ * <h2>为什么还要校验密钥长度（很容易踩的坑）</h2>
+ * <p>jjwt 的 {@link Keys#hmacShaKeyFor(byte[])} 会按 RFC 7518 §3.2 强制 HMAC-SHA 密钥
+ * <b>≥ 256 bit（32 字节）</b>，不满足时抛 {@link io.jsonwebtoken.security.WeakKeyException}
+ * （{@code InvalidKeyException} 的子类，属于运行时异常）。</p>
+ *
+ * <p>而 box-im 仓库自带的示例密钥就是过短的：{@code im-server/src/main/resources/application.yml} 与
+ * {@code im-platform/src/main/resources/application.yml} 都写着
+ * {@code jwt.accessToken.secret: MIIBIjANBgkq}，<b>只有 12 字节</b>。
+ * 这个值放在 im-server 侧<b>不会报错</b>（它用的 java-jwt {@code HMAC256} 不做长度校验，
+ * 照样能验签收下连接），但在 kean 侧会让 {@code hmacShaKeyFor} 直接抛异常。
+ * 如果放任它在构造函数里抛，Spring 创建 Bean 失败 → <b>整个 kean 启动即崩</b>。</p>
+ *
+ * <p>因此这里在构造时<b>先自己量长度</b>：不足 32 字节就当成「IM 未就绪」处理 ——
+ * 只记一条 ERROR（与「未配置」的 WARN 区分开），{@code enabled()} 返回 {@code false}，
+ * 绝不抛异常。详见 {@link #validateAccessSecret}。</p>
  */
 @Service
 public class ImTokenService {
@@ -77,6 +93,15 @@ public class ImTokenService {
     /** `info` 声明里终端字段的默认值：box-im {@code IMTerminalType.APP == 1}。 */
     private static final int DEFAULT_TERMINAL = 1;
 
+    /**
+     * jjwt 对 HMAC-SHA 密钥的最小字节数。
+     *
+     * <p>RFC 7518 §3.2 要求 HMAC 密钥长度 ≥ 摘要长度；HS256 因此要求 ≥ 256 bit = 32 字节。
+     * {@code Keys.hmacShaKeyFor} 会强制这条规则并在不满足时抛 {@code WeakKeyException}，
+     * 所以这里必须自己先量一遍长度（见 {@link #validateAccessSecret}）。</p>
+     */
+    private static final int MIN_HMAC_SECRET_BYTES = 32;
+
     private final ObjectMapper objectMapper;
 
     /** {@code null} 表示「IM 未启用」，此时所有签发/校验方法都拒绝工作。 */
@@ -98,32 +123,133 @@ public class ImTokenService {
         this.accessExpireSeconds = accessExpireSeconds;
         this.refreshExpireSeconds = refreshExpireSeconds;
 
+        // 未配置：WARN 一次，不阻止启动（与 DATA_ENC_KEY 的既有风格一致）。
+        SecretKey resolvedAccessKey = validateAccessSecret(accessSecret);
+        if (resolvedAccessKey == null) {
+            this.accessKey = null;
+            this.refreshKey = null;
+            return;
+        }
+        // 单独配置的 refresh 密钥同样不能让启动崩掉：不足 32 字节时退回派生密钥。
+        SecretKey resolvedRefreshKey = resolveRefreshKey(refreshSecret, accessSecret);
+        this.accessKey = resolvedAccessKey;
+        this.refreshKey = resolvedRefreshKey;
+    }
+
+    /**
+     * 校验 accessToken 密钥并构造 {@link SecretKey}。
+     *
+     * <p><b>本方法绝不抛异常</b> —— 任何不可用的情况都返回 {@code null}，
+     * 由调用方把 IM 置为未就绪。原因见类注释：这里抛异常等于 kean 启动失败。</p>
+     *
+     * <p>两种失败原因分别记不同级别的日志，便于排查：</p>
+     * <ul>
+     *   <li>未配置 → WARN（与 {@code DATA_ENC_KEY} 未配置同样的处理）；</li>
+     *   <li>已配置但不足 32 字节 → ERROR（这是配错了，不是漏配）。</li>
+     * </ul>
+     */
+    private static SecretKey validateAccessSecret(String accessSecret) {
         if (!StringUtils.hasText(accessSecret)) {
             log.warn("""
                     
                     ============================================================
-                    [IM 未启用] 环境变量 {} 未配置，box-im 兼容 token 无法签发。
+                    [IM 未启用/原因：未配置] 环境变量 {} 未配置，box-im 兼容 token 无法签发。
                     GET /api/im/token 将返回 enabled=false，uni-kean 的 IM 通道保持关闭。
                     如需启用，请配置与 im-server 的 jwt.accessToken.secret 完全一致的密钥：
                       IM_JWT_SECRET=<与 im-server 相同的密钥>
                     （可选）IM_JWT_REFRESH_SECRET=<refreshToken 密钥；不配则由上式派生>
                     课安现有的 HTTP / WebSocket 聊天链路不受任何影响。
                     ============================================================""", ACCESS_SECRET_ENV);
-            this.accessKey = null;
-            this.refreshKey = null;
-            return;
+            return null;
         }
 
-        this.accessKey = Keys.hmacShaKeyFor(accessSecret.getBytes(StandardCharsets.UTF_8));
-        this.refreshKey = StringUtils.hasText(refreshSecret)
-                ? Keys.hmacShaKeyFor(refreshSecret.getBytes(StandardCharsets.UTF_8))
-                : deriveRefreshSecret(accessSecret);
+        byte[] raw = accessSecret.getBytes(StandardCharsets.UTF_8);
+        if (raw.length < MIN_HMAC_SECRET_BYTES) {
+            log.error("""
+                    
+                    ============================================================
+                    [IM 未启用/原因：密钥过短] 环境变量 {} 已配置，但只有 {} 字节（{} bit）。
+                    jjwt 的 Keys.hmacShaKeyFor 按 RFC 7518 §3.2 要求 HMAC-SHA 密钥 >= {} 字节（{} bit），
+                    过短的密钥会抛 WeakKeyException。为避免它把整个 kean 启动带崩，
+                    这里已按「IM 未就绪」处理：不抛异常，GET /api/im/token 返回 enabled=false。
+                    密钥指纹(sha256 前 8 位)：{}（不打印密钥本体）
+
+                    注意：box-im 仓库示例里的密钥（如 MIIBIjANBgkq，仅 12 字节）就属于过短，
+                    且它在 im-server 侧不会报错（java-jwt 的 HMAC256 不校验长度），
+                    所以很容易只改了 im-server 却让 kean 起不来。
+
+                    修复方式（两边必须用同一个值）：
+                      1) 生成一个 >= {} 字节的随机密钥；
+                      2) kean 侧：IM_JWT_SECRET=<新密钥>
+                      3) im-server 侧：jwt.accessToken.secret=<同一个新密钥>，并重启 im-server。
+                    课安现有的 HTTP / WebSocket 聊天链路不受任何影响。
+                    ============================================================""",
+                    ACCESS_SECRET_ENV, raw.length, raw.length * 8,
+                    MIN_HMAC_SECRET_BYTES, MIN_HMAC_SECRET_BYTES * 8,
+                    fingerprint(raw), MIN_HMAC_SECRET_BYTES);
+            return null;
+        }
+
+        try {
+            return Keys.hmacShaKeyFor(raw);
+        } catch (RuntimeException ex) {
+            // 理论上长度够了就不会走到这里；仍然兜底，保证「启动不崩」这条底线。
+            log.error("[IM 未启用/原因：密钥不可用] 环境变量 {} 无法构造 HMAC SecretKey（已按未就绪处理，不影响启动）：{}",
+                    ACCESS_SECRET_ENV, ex.getMessage());
+            return null;
+        }
     }
 
     /**
-     * IM 通道是否可用（即 {@code IM_JWT_SECRET} 是否已配置且可用）。
+     * 解析 refreshToken 密钥：显式配置且足够长就用它，否则由 access 密钥派生。
      *
-     * <p>控制器据此决定返回 {@code enabled=true} 还是一份空壳。</p>
+     * <p>box-im 里 access 与 refresh 用的是两个不同的 secret，但 refresh 密钥<b>不参与</b>
+     * im-server 的握手，所以它不合格时不必让整个 IM 通道失效 —— 退回派生密钥即可。</p>
+     */
+    private static SecretKey resolveRefreshKey(String refreshSecret, String accessSecret) {
+        if (StringUtils.hasText(refreshSecret)) {
+            byte[] raw = refreshSecret.getBytes(StandardCharsets.UTF_8);
+            if (raw.length < MIN_HMAC_SECRET_BYTES) {
+                log.warn("[IM refreshToken 密钥过短] 环境变量 {} 只有 {} 字节（需 >= {} 字节），"
+                                + "已改用由 {} 派生的密钥。refreshToken 仅用于我们自己换票，不影响 im-server 握手。",
+                        REFRESH_SECRET_ENV, raw.length, MIN_HMAC_SECRET_BYTES, ACCESS_SECRET_ENV);
+                return deriveRefreshSecret(accessSecret);
+            }
+            try {
+                return Keys.hmacShaKeyFor(raw);
+            } catch (RuntimeException ex) {
+                log.warn("[IM refreshToken 密钥不可用] 环境变量 {} 无法构造 HMAC SecretKey，已改用派生密钥：{}",
+                        REFRESH_SECRET_ENV, ex.getMessage());
+                return deriveRefreshSecret(accessSecret);
+            }
+        }
+        return deriveRefreshSecret(accessSecret);
+    }
+
+    /**
+     * 密钥指纹：{@code sha256(secret)} 的十六进制前 8 位。
+     *
+     * <p>用它可以在「kean 与 im-server 是否配的同一个密钥」这类排查里对齐答案，
+     * 而<b>不会泄露密钥本体</b>。与项目里 {@code DATA_ENC_KEY} 的处理风格一致。</p>
+     */
+    private static String fingerprint(byte[] raw) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(raw);
+            StringBuilder sb = new StringBuilder(8);
+            for (int i = 0; i < 4; i++) {
+                sb.append(String.format("%02x", digest[i]));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException ex) {
+            return "(指纹计算失败：JVM 不支持 SHA-256)";
+        }
+    }
+
+    /**
+     * IM 通道是否可用：{@code IM_JWT_SECRET} 已配置<b>且</b>长度合格。
+     *
+     * <p>未配置与密钥过短都会返回 {@code false}（日志里用不同级别区分这两种原因）。
+     * 控制器据此决定返回 {@code enabled=true} 还是一份空壳。</p>
      */
     public boolean enabled() {
         return accessKey != null;

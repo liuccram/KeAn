@@ -162,7 +162,14 @@ age -d -i /path/to/key.txt kean-<日期>.sql.gz.enc | gunzip | \
 
 微信小程序**强制要求 HTTPS**，所以这条不是可选项：
 
-- Nginx 配 `443` + 有效证书（Let's Encrypt 即可），`80` 跳 `443`
+- Nginx 配 `443` + 有效证书，`80` 跳 `443`
+  > **线上现状**（与 [`docs/ops/nginx.conf.example`](./nginx.conf.example) 一致）：
+  > 证书用的是 **Cloudflare Origin 证书**（`/etc/nginx/ssl/origin.crt` + `origin.key`，
+  > SAN = `*.kean.college` + `kean.college`，一张覆盖三个域名），不是 Let's Encrypt；
+  > TLS 在 Cloudflare 边缘终结，回源 443。若将来改成直连源站（不走 Cloudflare），
+  > 再换成 Let's Encrypt / 商业证书即可，本条其余要求不变。
+  > ⚠️ 走 Cloudflare 回源时，ufw 必须只放行 Cloudflare 网段访问 80/443，
+  > 否则 `CF-Connecting-IP` 变成可伪造，后端拿到的「真实 IP」不可信。
 - 验证：`curl -I https://<域名>/health` → 200；`curl -I http://<域名>/health` → 301
 
 ### 5.2 后端 → MySQL / Redis（建议，可后置）

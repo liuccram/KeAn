@@ -278,7 +278,7 @@ npm run dev                  # http://localhost:5174/login
 
 ## 🗄 数据库与迁移
 
-建表与种子数据全部走 **Flyway**，位于 `kean/src/main/resources/db/migration/`，应用启动时自动执行（当前最新版本 **V29**，共 29 个迁移）。`docs/sql/` 下是早期的建表脚本存档，仅供追溯。
+建表与种子数据全部走 **Flyway**，位于 `kean/src/main/resources/db/migration/`，应用启动时自动执行（当前最新版本 **V35**，共 35 个迁移）。`docs/sql/` 下是早期的建表脚本存档（停在 `V24`，仅供追溯，**不要拿去建库**），说明见 [`docs/sql/README.md`](docs/sql/README.md)；其中 `docs/sql/im-platform.sql` 属于 box-im 的**独立库 `im_platform`**，不走 Flyway。
 
 **不要手工改库结构或种子数据** —— 新增变更请加一个更大的版本号迁移文件。
 
@@ -302,6 +302,10 @@ npm run dev                  # http://localhost:5174/login
 | [`docs/api/admin.md`](docs/api/admin.md) | 管理端接口（部分待实现） |
 | [`docs/admin/plan.md`](docs/admin/plan.md) | 管理端规划 |
 | [`docs/ops/rustfs.md`](docs/ops/rustfs.md) | 对象存储运维 |
+| [`docs/ops/nginx.conf.example`](docs/ops/nginx.conf.example) | 线上 Nginx 反代配置（三域名分站 + Cloudflare 回源 + nginx 容器注意事项） |
+| [`docs/sql/README.md`](docs/sql/README.md) | `docs/sql/` 是历史存档；`im-platform.sql` 属于独立库 `im_platform` |
+| [`docs/ops/im-migration.md`](docs/ops/im-migration.md) | IM 迁移：两个库的边界、执行与回滚 |
+| [`docs/ops/im-server-patch.md`](docs/ops/im-server-patch.md) | im-server 侧补丁与部署验收（阶段 3） |
 | [`docs/engineering-plan.md`](docs/engineering-plan.md) | 工程化改进计划 |
 
 ## ❓ 常见问题

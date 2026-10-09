@@ -1,0 +1,381 @@
+# 课安 · Nginx 反向代理示例（Cloudflare 回源 + 三域名分站）
+#
+# ============================================================================
+# ⚠️ 先读这三行
+# ============================================================================
+# 1) 本文件是**参考/示例**，供新人理解拓扑与照抄片段用。
+#    线上实际文件在服务器上：`/root/nginx/conf/nginx.conf`（**以那份为准**）。
+#    两者若不一致，改的是服务器上那份，然后把可用片段回抄到本文件。
+# 2) 本文件顶部描述的是**当前线上真实部署**（三域名分站 + Cloudflare 回源 +
+#    nginx 跑在容器里），已与本仓代码/编排文件交叉核对过，见下面逐条依据。
+# 3) 域名/路径/证书路径都是真实值，不是 `<你的域名>` 占位符 —— 换域名时**全文替换**。
+#
+# ============================================================================
+# 线上拓扑（实测）
+# ============================================================================
+#   nginx        : Docker 容器，镜像 `nginx:1.31-alpine`
+#   H5           : kean.college      → 静态站，容器内 `/var/www/kean-h5`
+#   官网(下载页) : www.kean.college   → 静态站，容器内 `/var/www/kean-site`
+#   后端 API     : api.kean.college   → 反代 **172.17.0.1:8080**
+#   证书         : `/etc/nginx/ssl/origin.crt` + `origin.key`
+#                  （Cloudflare Origin 证书，SAN = `*.kean.college` + `kean.college`，
+#                    一张即覆盖上面三个域名，无需三份）
+#   80 → 443     : 三个域名都跳转
+#   TLS 终止     : Cloudflare 边缘（用户 ←HTTPS→ Cloudflare ←HTTPS→ 源站 443）
+#
+# ⚠️⚠️ **最容易踩的坑：nginx 是容器，而且只挂了两个路径**
+#
+#     容器的 bind mount 只有：
+#       · `nginx.conf`   → `/etc/nginx/conf.d/nginx.conf`（或 /etc/nginx/nginx.conf）
+#       · `/root/ssl`    → `/etc/nginx/ssl`
+#
+#     **`/var/www/kean-h5` 与 `/var/www/kean-site` 不在挂载里** —— 它们是**容器内部**的路径。
+#     后果：你在宿主机上把 dist 拷进 `/var/www/...`，nginx **根本看不到**，页面还是旧的/404。
+#
+#     两个正确做法（二选一）：
+#       A. 拷进容器（当前线上做法，改完即生效、不用重启容器）：
+#            docker cp ./dist/.  <nginx容器名>:/var/www/kean-h5/
+#            docker cp ./site-kean/dist/.  <nginx容器名>:/var/www/kean-site/
+#          ⚠️ 容器重建（`docker compose up -d --force-recreate` / `docker rm` 后重跑）
+#             会丢掉这些文件 —— 每次重建后都要重新 `docker cp`。
+#       B. 重建容器时把宿主机目录加进挂载（一次性治好，推荐），例如：
+#            -v /root/www/kean-h5:/var/www/kean-h5:ro
+#            -v /root/www/kean-site:/var/www/kean-site:ro
+#          之后发版只需要在宿主机覆盖文件，不必再进容器。
+#
+#     ⚠️ 注意：`www.kean.college` 加载的是 `site-kean` 这个 Vite/React 工程的
+#        **`dist` 构建产物**，不是 `site-kean/` 源码目录。发版顺序永远是
+#        「本地/CI `npm run build` → 把 `dist/` 送进容器 → 刷新页面」，
+#        把源码目录挂进去是不会生效的。
+#
+# ============================================================================
+# 与反代配套的三件事（缺一件就出问题）
+# ============================================================================
+# 1. **后端必须打开 `forward-headers-strategy`**
+#    本仓 `kean/src/main/resources/application.yml:3` 当前是 `forward-headers-strategy: none`
+#    （已核实：**默认关着**）。上线反代后**必须**改成 `framework`
+#    （进程环境变量写法 `SERVER_FORWARD_HEADERS_STRATEGY=framework`）。
+#    不打开 → Spring 读不到 `X-Forwarded-For`/`X-Real-IP`，所有请求的客户端 IP 都变成容器的
+#    网关 IP（同一个值）→ `AuthRateLimitService` 的登录/SMS 限流会把**全站用户算成同一个人**，
+#    一个人失败几次就把所有人一起限流。
+#
+# 2. **真实客户端 IP 取自 Cloudflare 的头，不是 `$remote_addr`**
+#    Cloudflare 回源时 `$remote_addr` 永远是 Cloudflare 边缘节点的 IP。
+#    真实用户 IP 在 `CF-Connecting-IP` 头里（nginx 变量 `$http_cf_connecting_ip`），
+#    所以下面统一写 `X-Real-IP $http_cf_connecting_ip` / `X-Forwarded-For $http_cf_connecting_ip`。
+#    **这个头之所以可信**：服务器 ufw **只放行 Cloudflare 网段**访问 80/443（见文件末尾），
+#    非 Cloudflare 来源根本连不到 nginx，因此不存在「伪造 CF-Connecting-IP 绕过限流」的路径。
+#    ⚠️ 反过来也要注意：若哪天 ufw 放开了非 Cloudflare 来源，这个头立刻变成**可伪造**的，
+#    那时必须换成 `set_real_ip_from <CF网段> + real_ip_header CF-Connecting-IP` 或改回 `$remote_addr`。
+#
+# 3. **Turnstile 要求安全上下文** → 必须走 HTTPS；纯 HTTP 下真人验证不会正常工作。
+#
+# ============================================================================
+# 与本仓其他文件的交叉依据
+# ============================================================================
+#   · 业务接口统一在 `/api` 下；不在 `/api` 下的只有 `/health`、`/health/ready`、`/turnstile.html`
+#     （`kean/src/main/java/com/kean/controller/HealthController.java` 无类级 @RequestMapping）
+#   · 自研 WebSocket 在 `/ws/chat`（`uni-kean/src/utils/ws.ts` 拼 `${apiBase}/ws/chat`）
+#   · box-im im-server 的 WS 在 `/im`，上游端口 **8878**，路径**写死不能 rewrite**
+#     （详见 `docs/ops/im-server-patch.md` §4，与本文件保持一致）
+#   · 上传上限：后端 `spring.servlet.multipart` = max-file-size **5MB** / max-request-size **6MB**
+#     （`kean/src/main/resources/application.yml:20-22`），故此处 `client_max_body_size 10m` 留余量
+#   · 图片经后端 `/api/files/**` 鉴权代理读出（对象存储是私有桶），**不要**把存储服务反代到公网
+
+# =====================================================================
+# 0) 公共片段（TLS / 日志 / 头部）—— 用 include 或直接复制进各 server
+# =====================================================================
+# 下面三个 server 块的 ssl_* / 日志写法完全一致，只列一次说明，块内仍逐块写出（方便整段复制）：
+#
+#   ssl_certificate     /etc/nginx/ssl/origin.crt;   # Cloudflare Origin 证书，覆盖三个域名
+#   ssl_certificate_key /etc/nginx/ssl/origin.key;    # 宿主机 /root/ssl 挂进容器 /etc/nginx/ssl
+#   ssl_protocols       TLSv1.2 TLSv1.3;
+#   ssl_ciphers         HIGH:!aNULL:!MD5;
+#   ssl_session_cache   shared:SSL:10m;
+#   ssl_session_timeout 1d;
+
+# =====================================================================
+# 1) kean.college —— H5 静态站（uni-kean 的 dist/build/h5）
+#    ⚠️ 纯静态：本域名**不代理** /api。浏览器侧的接口走 https://api.kean.college
+#       （`VITE_API_BASE_URL` 指向它，见 `uni-kean/src/utils/apiBase.ts`），
+#       因此这里没有 CORS 问题需要 nginx 参与。
+# =====================================================================
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name kean.college;
+
+    # 80 → 443（三个域名都是这个策略）
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name kean.college;
+
+    ssl_certificate     /etc/nginx/ssl/origin.crt;
+    ssl_certificate_key /etc/nginx/ssl/origin.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # 上传：后端允许 5MB 单文件 / 6MB 整请求，这里留余量；
+    # 若设得比后端小，用户会看到 nginx 的 413 而不是后端的中文提示
+    client_max_body_size 10m;
+
+    # H5 端安全响应头
+    add_header X-Content-Type-Options    nosniff                        always;
+    add_header X-Frame-Options           SAMEORIGIN                      always;
+    add_header Referrer-Policy           strict-origin-when-cross-origin always;
+    add_header Strict-Transport-Security "max-age=31536000"             always;
+
+    access_log /var/log/nginx/kean.access.log;
+    error_log  /var/log/nginx/kean.error.log warn;
+
+    # 站点根目录：**容器内部**路径，宿主机不挂载（见文件顶部「最容易踩的坑」）
+    root /var/www/kean-h5;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 带 hash 的资源可以长缓存
+    location ~* \.(js|css|png|jpg|jpeg|gif|webp|svg|ico|woff2?)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # index.html 绝不缓存：否则发版后用户还拿到旧壳，引用到已删除的旧资源
+    location = /index.html {
+        add_header Cache-Control "no-store, must-revalidate";
+    }
+}
+
+# =====================================================================
+# 2) www.kean.college —— 下载官网（site-kean 的 **dist** 产物）
+#    纯静态单页滚动站（无前端路由），所以 / 用 try_files 即可，不需要 SPA fallback。
+#    ⚠️ 这里放的是 `site-kean/dist/`，不是 `site-kean/` 源码目录。
+# =====================================================================
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name www.kean.college;
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name www.kean.college;
+
+    ssl_certificate     /etc/nginx/ssl/origin.crt;
+    ssl_certificate_key /etc/nginx/ssl/origin.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    client_max_body_size 10m;
+    add_header X-Content-Type-Options    nosniff           always;
+    add_header X-Frame-Options           SAMEORIGIN        always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    access_log /var/log/nginx/kean-site.access.log;
+    error_log  /var/log/nginx/kean-site.error.log warn;
+
+    root /var/www/kean-site;
+    index index.html;
+
+    # ⚠️ 下面这条正则 location 会**先于** `location /` 命中，而它带 `try_files $uri =404`，
+    #    所以 /downloads/xxx.apk 这类带后缀的路径**不会**回落到 index.html（这里不需要回落）。
+    #    若哪天官网加了前端路由（React Router 的 history 模式），必须把它改成
+    #    `try_files $uri /index.html;`，否则刷新子路由会 404。
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # 安装包：体积大、更新少，单独给短缓存（发新版包时文件名带版本号最稳）
+    location /downloads/ {
+        expires 1h;
+        add_header Cache-Control "public";
+        try_files $uri =404;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|webp|svg|ico|woff2?)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-store, must-revalidate";
+    }
+}
+
+# =====================================================================
+# 3) api.kean.college —— 所有动态请求：后端 API + 自研 WS + box-im WS
+#
+#    ⚠️ **上游是 172.17.0.1:8080，不是 127.0.0.1:8080**
+#       kean 后端跑在**宿主机**上、只监听 docker 网桥地址；而 nginx 在**容器**里，
+#       容器内的 `127.0.0.1` 指的是容器自己 → 写 127.0.0.1 会得到 502 Bad Gateway。
+#       容器访问宿主机要用 docker0 网桥网关 **172.17.0.1**（`ip addr show docker0` 可确认）。
+#    ⚠️ 同时需要 ufw 放行「容器 → 宿主机 8080」（见文件末尾的那一条），
+#       否则表现为握手超时/连接被拒，而不是 502。
+# =====================================================================
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name api.kean.college;
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name api.kean.college;
+
+    ssl_certificate     /etc/nginx/ssl/origin.crt;
+    ssl_certificate_key /etc/nginx/ssl/origin.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    client_max_body_size 10m;
+
+    # API 响应不加 SAMEORIGIN/HSTS 之外的限制头，避免影响 App webview 与上传
+    add_header X-Content-Type-Options    nosniff           always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    access_log /var/log/nginx/kean-api.access.log;
+    error_log  /var/log/nginx/kean-api.error.log warn;
+
+    # ------------------------------------------------------------------
+    # 3.1 自研 WebSocket（兜底通道，**保留，不要删**）
+    #     前端连的是 wss://api.kean.college/ws/chat
+    #     与 box-im 是双通道并存，详见 docs/ops/im-migration.md
+    # ------------------------------------------------------------------
+    location /ws/ {
+        proxy_pass http://172.17.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $http_cf_connecting_ip;
+        proxy_set_header X-Forwarded-For   $http_cf_connecting_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # 长连接：默认 60s 会把空闲 socket 掐断，导致客户端反复重连
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # ------------------------------------------------------------------
+    # 3.2 box-im im-server 的 WebSocket（阶段 3，与上面 /ws/ 双通道并存）
+    #     前端连的是 wss://api.kean.college/im（`VITE_IM_WS_URL`）
+    #
+    #     ⚠️ **路径必须原样透传，绝对不能 rewrite**
+    #        im-server 的 WebSocketServer 里写死 `WebSocketServerProtocolHandler("/im")`，
+    #        rewrite 成 /ws 或 / 会直接握手 404。
+    #     ⚠️ 端口 **8878**，且 **不要把它暴露到公网**：它没有 TLS，也没有 kean 的
+    #        JwtAuthFilter，只有 im-server 自己的 checkSign。对外一律走本 location。
+    #     ⚠️ 8879（TCP socket，im-server 的 `tcpsocket.enable: false`）同样不要暴露。
+    # ------------------------------------------------------------------
+    location /im {
+        proxy_pass http://172.17.0.1:8878;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $http_cf_connecting_ip;
+        proxy_set_header X-Forwarded-For   $http_cf_connecting_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # im-server 侧 IdleStateHandler 读空闲 60s，客户端 20s 一次心跳；
+        # nginx 默认 60s 读超时会与心跳赛跑，这里放宽到 3600s，与 /ws/ 一致。
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }
+
+    # ------------------------------------------------------------------
+    # 3.3 业务接口：统一 /api（认证、任务、聊天、文件、管理端 /api/admin… 全在这）
+    # ------------------------------------------------------------------
+    location /api/ {
+        proxy_pass http://172.17.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        # ⚠️ 这里用 `=` 覆盖而不是 `$proxy_add_x_forwarded_for` 追加 —— **这是刻意的**：
+        #    客户端自带的 X-Forwarded-For 不可信（可任意伪造），而 CF-Connecting-IP 由
+        #    Cloudflare 边缘写入且客户端无法覆盖。所以上游只应该看到这一个可信值，
+        #    绝不能保留客户端传来的链（否则用户能伪造 IP 绕过登录限流）。
+        proxy_set_header X-Real-IP         $http_cf_connecting_ip;
+        proxy_set_header X-Forwarded-For   $http_cf_connecting_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        # 图片上传 / 大列表：放宽读超时
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_connect_timeout 10s;
+        # 文件/图片要流式返回，别攒在 nginx 里
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+
+    # ------------------------------------------------------------------
+    # 3.4 /api 之外的例外（少一个都会出问题）
+    # ------------------------------------------------------------------
+    # 健康检查：给负载均衡 / 监控用；想只允许内网就在这两行加 allow/deny
+    location = /health {
+        proxy_pass http://172.17.0.1:8080;
+        proxy_set_header Host $host;
+    }
+    location = /health/ready {
+        proxy_pass http://172.17.0.1:8080;
+        proxy_set_header Host $host;
+    }
+
+    # App 端真人验证的承载页（webview 会打开它，缺了它 App 上无法完成验证）
+    location = /turnstile.html {
+        proxy_pass http://172.17.0.1:8080;
+        proxy_set_header Host $host;
+    }
+}
+
+# =====================================================================
+# 4) 对象存储**不要**反代到公网
+#    · 桶是私有的，图片一律经后端 /api/files/** 鉴权后读出
+#    · MySQL(3306) / Redis(6379) / RustFS(9000,9001) 只监听 127.0.0.1 或 docker 网桥，
+#      不要开公网端口（`docker-compose.prod.yml` 里已把它们绑到 127.0.0.1）
+# =====================================================================
+
+# =====================================================================
+# 5) ufw：必须放行「nginx 容器 → 宿主机 8080 / 8878」这一条
+# =====================================================================
+# 后端只监听 docker 网桥，容器内访问宿主机的 172.17.0.1:8080 属于「从 docker0 进来」的流量。
+# 如果 ufw 默认 deny incoming，这条会被挡掉（表现为超时/拒连，很容易误判成后端没起）。
+#
+# 宿主机上执行（一条即可覆盖所有容器）：
+#
+#     ufw allow from 172.17.0.0/16 to any port 8080 proto tcp comment 'nginx container -> kean backend'
+#     ufw allow from 172.17.0.0/16 to any port 8878 proto tcp comment 'nginx container -> im-server'
+#
+# 公网侧只放行 Cloudflare 网段访问 80/443（否则 CF-Connecting-IP 不再可信，见文件顶部第 2 条）：
+#
+#     for ip in $(curl -s https://www.cloudflare.com/ips-v4) $(curl -s https://www.cloudflare.com/ips-v6); do
+#         ufw allow from "$ip" to any port 80  proto tcp
+#         ufw allow from "$ip" to any port 443 proto tcp
+#     done
+#     ufw delete allow 80/tcp    # 删掉可能存在的全网放行规则
+#     ufw delete allow 443/tcp
+#     ufw status numbered
+#
+# ⚠️ 8878（im-server）**不要**对公网开放，只对 docker 网桥开放。

@@ -14,6 +14,7 @@ import com.kean.enums.ChatMessageStatus;
 import com.kean.enums.UserRole;
 import com.kean.enums.UserStatus;
 import com.kean.exception.BizException;
+import com.kean.im.ImSenderService;
 import com.kean.mapper.ChatMessageMapper;
 import com.kean.mapper.ChatSessionMapper;
 import com.kean.mapper.SysUserMapper;
@@ -63,6 +64,14 @@ public class ChatServiceImpl implements ChatService {
     private final BlacklistService blacklistService;
     private final ChatSeqService chatSeqService;
     private final RealtimePublisher realtimePublisher;
+    /**
+     * box-im im-server 的镜像投递（阶段 3 新增，<b>纯追加</b>）。
+     *
+     * <p>它只在「课安自己的 {@link ChatWebSocketHandler} 推完之后」再多写一份 Redis 队列；
+     * {@code IM_JWT_SECRET} 未配置时 {@link ImSenderService#sendPrivate} 内部直接 return，
+     * 因此开关关闭时本类的行为与新增之前逐字节一致。</p>
+     */
+    private final ImSenderService imSenderService;
 
     public ChatServiceImpl(
             ChatSessionMapper chatSessionMapper,
@@ -71,7 +80,8 @@ public class ChatServiceImpl implements ChatService {
             ChatWebSocketHandler chatWebSocketHandler,
             BlacklistService blacklistService,
             ChatSeqService chatSeqService,
-            RealtimePublisher realtimePublisher
+            RealtimePublisher realtimePublisher,
+            ImSenderService imSenderService
     ) {
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
@@ -80,6 +90,7 @@ public class ChatServiceImpl implements ChatService {
         this.blacklistService = blacklistService;
         this.chatSeqService = chatSeqService;
         this.realtimePublisher = realtimePublisher;
+        this.imSenderService = imSenderService;
     }
 
     @Override
@@ -266,6 +277,20 @@ public class ChatServiceImpl implements ChatService {
 
         // 保留既有 WebSocket 链路：仍推 MESSAGE 事件，只是 payload 里多了 seqNo/localId/status/readAt。
         chatWebSocketHandler.pushMessage(peerId, toMessageVo(message, peerId));
+
+        // 阶段 3：在既有推送「之后」再镜像一份到 box-im im-server 的私聊队列
+        // （im:message:private:{serverId}）。这里是纯追加：
+        //   · IM_JWT_SECRET 未配置 → sendPrivate 内部第一行就 return，不触 Redis；
+        //   · 接收方不在 im-server 上 → 只留 DEBUG 日志；
+        //   · 任何异常都在 sendPrivate 内部被 try/catch 吃掉，只 log.warn，绝不外抛，
+        //     因此不会让本方法所在的 @Transactional 事务回滚。
+        // 第 3 个参数是 sessionId：镜像 data 里必须带它，否则客户端 applyIncoming()
+        // 会因为 sessionId 对不上而直接丢弃这条消息（气泡不显示，只剩角标）。
+        // 最后一个参数是入库后的 createdAt（AuditMetaObjectHandler 填的），
+        // 让镜像里的时间与 HTTP 路径返回的 ChatMessageVO.createdAt 完全一致。
+        imSenderService.sendPrivate(peerId, userId, session.getId(), type, text, idemKey, seqNo,
+                message.getCreatedAt());
+
         return toMessageVo(message, userId);
     }
 

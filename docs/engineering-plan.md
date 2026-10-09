@@ -22,7 +22,7 @@
 
 | 模块 | 技术栈 | 规模 |
 |---|---|---|
-| `kean/` | Spring Boot 3.3.13 / Java 17、MyBatis-Plus、Spring Security + JWT、Redis、MySQL + Flyway、MinIO、WebSocket、Mail、Turnstile | 242 个 Java 文件、21 Controller（**106 个 endpoint**）、~30 Service、24 迁移 |
+| `kean/` | Spring Boot 3.3.13 / Java 17、MyBatis-Plus、Spring Security + JWT、Redis、MySQL + Flyway、MinIO、WebSocket、Mail、Turnstile | 242 个 Java 文件、25 Controller（**110 个 endpoint**）、~30 Service、35 迁移 |
 | `uni-kean/` | uni-app 3.0（Vue 3.4）、wot-design-uni、sass | 107 源文件、48 视图 |
 | `web-kean/` | Vue 3.5 + Element Plus 2.11 + ECharts 6 + Pinia 3 + Vite 6 | ~33 源文件 |
 | `docs/` | 手写 API 文档、管理端规划、SQL 副本、支付草案 | — |
@@ -31,7 +31,7 @@
 
 - **`.env` 卫生良好**：`.env` 已 gitignore 且未入库；入库的只有 `.env.example` 与内容为空的 `.env.development`；`kean/src/main/resources` 无硬编码凭据；`.env.example` 连"禁止 `ChangeMe_Admin_123`"都写明。
   ⚠️ 但 **Java 源码里确实有硬编码凭据**（见 1.3⑧）—— 这推翻了我只看配置文件时的初判。
-- **数据库演进规范**：Flyway 24 个版本化迁移，`V10__one_accepted_per_task.sql` 用 DB 唯一约束解决并发接单，方向正确。
+- **数据库演进规范**：Flyway 35 个版本化迁移（`V1`..`V35`），`V10__one_accepted_per_task.sql` 用 DB 唯一约束解决并发接单，方向正确。
 - **审计与异常处理规范**：`AuditMetaObjectHandler` 自动填充，`operation_log` 表已建；`GlobalExceptionHandler.java:25-71` 把 `BizException`/`Bind`/`ConstraintViolation`/解析/上传/兜底全部映射到统一 `Result`，**没有裸 int 错误码**；连 Spring Security 的 401/403 也返回 `Result` 结构（`SecurityConfig.java:120-133`）。
 - **DTO 校验覆盖率高**：39 处 `@Valid`、121 个 jakarta 约束分布在 35 个 DTO 上（仅参数级有缺口，见 1.4）。
 - **Security 基本盘正确**：stateless（`SecurityConfig.java:57`）、csrf/httpBasic/formLogin 全关、BCrypt 默认强度、CORS 拒绝 `*`（`CorsProperties.java:26-29`）、`allowCredentials=false`。
@@ -90,10 +90,40 @@ src 中的真实缺陷：
 - `web-kean` 内部还有重名类型：`AdminUser` 在 `src/utils/storage.ts:4`（5 字段）与 `src/api/user.ts:4`（34 字段）各定义一次。
 - 两端 `request()` 签名不同（`(url, options)` vs `({url, method, data})`），无法直接共用。
 
-#### ④ 接口文档覆盖率约 57%，且已实质漂移
+#### ④ 接口文档覆盖率约 46%，且已实质漂移
 
-`docs/api/*.md` 只覆盖约 **28 个**用户端 mapping（auth 6、dict 3、notifications 4、tasks 5、applications 10）加 `admin.md` 里约 33 条管理端路径，
-而 21 个 Controller 共 **106 个 endpoint mapping** → **约 45 条完全没有文档**（Chat 8、Favorite 3、Blacklist 3、Report 5、Review 4、File 2、Me 的设备/头像/封面/邮箱/隐私/heartbeat 7）。
+> 本节计数为**重新实测值**（原写的"21 Controller / 106 endpoint / 约 45 条缺失"已过期）。
+> 复核方法见下方代码块，任何人可一条命令复现。
+
+`docs/api/*.md` 覆盖 **51 条**端点（用户端 31：`auth.md` 9 —— AuthController 6 + MeController 的 `PUT /api/me/*` 3 与 `POST /api/me/delete-account`；`applications.md` 10 —— ApplicationController 5 + TaskController 的 confirm/complete/cancel + MeController 的 published/applied；`tasks.md` 5、`notifications.md` 4、`dict.md` 3；管理端 20，见 `admin.md`），
+而 25 个 Controller 共 **110 个 endpoint mapping** → **59 条完全没有文档**（Me 12、Chat 7、Admin 42 条里只写了 20 条 → 管理端缺 22，等等）。
+
+> **计数怎么来的（结论可复现，别凭印象改）**
+>
+> ```bash
+> # ① 端点数：只数「方法级」映射注解，即 @GetMapping/@PostMapping/@PutMapping/@DeleteMapping/@PatchMapping。
+> #    类级 @RequestMapping("...") 是路径前缀，不是端点，必须排除。
+> rg -c '^\s*@(Get|Post|Put|Delete|Patch)Mapping' kean/src/main/java --glob '*.java' | awk -F: '{s+=$2} END {print s}'
+> #   → 110
+>
+> # ② Controller 数：@RestController 的类，**排除** GlobalExceptionHandler（它是 @RestControllerAdvice，不是端点载体）
+> rg -l '@RestController$' kean/src/main/java --glob '*.java' | wc -l
+> #   → 25（controller 包 24 个 + com.kean.im.ImController）
+>
+> # ③ 迁移数：Flyway 版本化文件数（V1..V35，无缺口；不含 R__ 可重复迁移）
+> ls kean/src/main/resources/db/migration/V*.sql | wc -l
+> #   → 35
+>
+> # ④ 已文档化端点数：数 docs/api/*.md 里 "## 方法 路径" / "### 方法 路径" 形式的标题
+> rg -c '^#{2,3} (GET|POST|PUT|DELETE|PATCH) /' docs/api/*.md | awk -F: '{s+=$2} END {print s}'
+> #   → 51
+> ```
+>
+> 逐 Controller 明细（合计 110）：
+> 管理端 42 —— AdminCatalog 10、AdminSystem 7、AdminAnnouncement 5、AdminReport 5、AdminUser 5、AdminDashboard 4、AdminTask 4；
+> 用户端 68 —— Me 12、Auth 8、Task 8、Chat 7、Application 5、Report 5、Catalog 4、Notification 4、Review 4、Blacklist 3、Favorite 3、File 2、Health 2、Announcement 1、UserProfile 1、Im 1。
+>
+> ⚠️ 本节数字与 1.1 表格、3.1、附「实测命令」必须同步 —— 以后改一处就要改全部（这正是 3.5 要治理的漂移）。
 
 已抽样确认的具体错漏：
 
@@ -102,16 +132,21 @@ src 中的真实缺陷：
 - `admin.md:411` 仍写"建议新增 `USER_NOT_FOUND`"，而 `common/ErrorCode.java:50` 早已定义 `40408`。
 - `admin.md` 漏了 `AdminReportController.java:43,58` 与 `appealStatus` 参数（`AdminReportController.java:34`）。
 
-**SQL 副本同样是陈旧复制品**：
+**SQL 副本同样是陈旧复制品**（详见 [`docs/sql/README.md`](sql/README.md)，本次已加）：
 
-- `docs/sql/` 23 份 vs 线上 Flyway 24 份 —— **`V8__user_email.sql` 缺失**。
-- `docs/sql/V1__init_base_tables.sql` 与线上迁移**差 132 行**，且开头是：
+- `docs/sql/` **24 份**（`V1`..`V24` 共 23 份，**缺 `V8__user_email.sql`**，另加独立库脚本 `im-platform.sql`）vs 线上 Flyway **35 份**（`V1`..`V35` 无缺口）—— 副本停在 `V24`，落后 11 个版本。
+- `docs/sql/V1__init_base_tables.sql` 与线上迁移**不同**（`V1` 230 行 vs 迁移 226 行：本目录多出 `CREATE DATABASE IF NOT EXISTS KeBang ...; USE KeBang;` 与一行"保持一致"的注释），且开头是：
   ```sql
   CREATE DATABASE IF NOT EXISTS KeBang ...;
   USE KeBang;
   ```
   这是 **Flyway 之前的旧手工建库脚本**，却与迁移同名同号 —— 照它执行会建出一个叫 `KeBang` 的库。
-- `V1`、`V2` 逐字节不同，其余 21 份一致 —— 说明它曾经是"手工同步的副本"，然后停止了同步。
+  > 注：本文早先写的"差 132 行"与本目录 `V2` "有差异"两条**未能复核证实**（`V1` 实测只差上面几行，
+  > `V2` 与迁移前 6 行逐字一致）；如需保留这类结论，请重新用 `Get-FileHash` + 行数比对给出证据。
+- **`docs/sql/im-platform.sql` 属于独立库 `im_platform`**（box-im 的 9 张 `im_*` 表，一次性手工 SQL），
+  **不属于 kean 库、不进 Flyway 序列**；两者混在一个 schema 会互踩（`clean` 按库清、box 脚本无 `IF NOT EXISTS`）。
+- 因此本次**没有**把 `V25`..`V35` 抄进 `docs/sql/`，改为在该目录加 `README.md` 声明「本目录仅历史存档，
+  以 `kean/src/main/resources/db/migration/` 为准」—— 手工副本已经漂移过一次，再抄一次只会再次过期。
 
 **没有任何机器可读契约**：全仓 `springdoc|swagger|openapi` 零命中。
 
@@ -285,7 +320,7 @@ docker 未安装   ← 唯一环境阻塞
 
 | # | 任务 | 说明 |
 |---|---|---|
-| 3.1 | 接入 `springdoc-openapi-starter-webmvc-ui` 2.6.x | 由 21 个 Controller 的 **106 个 endpoint 自动生成** OpenAPI，产出 `/v3/api-docs`（给机器）与 `/swagger-ui`（给人）。**这一步同时把 1.3④ 那 45 条缺失文档一次性补齐。** |
+| 3.1 | 接入 `springdoc-openapi-starter-webmvc-ui` 2.6.x | 由 25 个 Controller 的 **110 个 endpoint 自动生成** OpenAPI，产出 `/v3/api-docs`（给机器）与 `/swagger-ui`（给人）。**这一步同时把 1.3④ 那 51 条缺失文档一次性补齐。** |
 | 3.2 | 用 `openapi-typescript` 生成共享类型包 | 新建**纯类型**包（如 `packages/api-types`）。**不要做成 pnpm workspace 共享源码包** —— 见下方"为什么不"。 |
 | 3.3 | 用生成类型替换手写类型 | 删除两份手写 `TaskItem`（43 字段）、`PageResult`，统一从生成包 import；修掉 `TaskItem` 定义在 `api/user.ts` 的错位；合并 web-kean 两个 `AdminUser`。 |
 | 3.4 | 字典收敛到后端 | 项目已有 `docs/api/dict.md`。把状态码→文案/Tone 映射改为**后端下发**，前端不再硬编码；`web-kean/src/utils/dicts.ts` 的 4 张平行映射合并为 1 张 `{label, tone, color, elementType}`。此步直接修掉 1.3③ 的文案不一致。 |
@@ -337,7 +372,7 @@ docker 未安装   ← 唯一环境阻塞
 |---|---|---|---|
 | 后端单元 | JUnit 5（**依赖已在 pom 里**） | `JwtService`、`FileUrls`/`FileUrlSigner`、`ErrorCode` | ✅ 立即可用 |
 | 后端 Web 层 | `@WebMvcTest` + MockMvc + spring-security-test | 每个 Controller 的鉴权与校验边界（含 2.2 的越权用例） | ✅ |
-| 后端集成 | **Testcontainers（mysql:8 + redis:7）** | **Flyway 24 个迁移从头跑通**（高价值）、并发接单唯一约束、状态机流转 | ⚠️ **需先装 Docker Desktop** |
+| 后端集成 | **Testcontainers（mysql:8 + redis:7）** | **Flyway 35 个迁移从头跑通**（高价值）、并发接单唯一约束、状态机流转 | ⚠️ **需先装 Docker Desktop** |
 | web-kean 单元 | Vitest + @vue/test-utils | `utils/request.ts` 拦截器、`stores/user.ts`、`utils/dicts.ts` | ✅ 纯 Vite 6，零阻力 |
 | uni-kean 单元 | Vitest（stub 掉 `uni`） | 纯函数：`utils/format.ts`、`taskAction.ts`、`prefs.ts`、`imageCrop.ts` | ✅ |
 | 管理端 E2E | Playwright | 登录 → 用户列表 → 封禁 → 代课强制取消 → 举报处理 | ✅ |
@@ -447,10 +482,11 @@ git branch -a; git remote -v
 
 # 迁移与文档漂移：对比文件名集合与 MD5
 Get-FileHash kean\src\main\resources\db\migration\*.sql -Algorithm MD5
-#   → docs/sql 缺 V8__user_email.sql；V1 差 132 行；V2 有差异
+#   → docs/sql 24 份（V1..V24，缺 V8）+ im-platform.sql；migration 35 份（V1..V35）
+#   → docs/sql/V1 开头多两行 CREATE DATABASE/USE KeBang，与迁移不同名同号
 
 # 接口覆盖率（相对 docs/api/*.md）
-#   → 21 Controller / 106 endpoint；文档约覆盖 28 + 33 条
+#   → 25 Controller / 110 endpoint；文档约覆盖 51 条
 
 # uni-kean 类型检查（关键发现）
 cd uni-kean; node node_modules/vue-tsc/bin/vue-tsc.js --noEmit

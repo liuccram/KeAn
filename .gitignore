@@ -16,3 +16,13 @@ unpackage/
 dist/
 .cursor/
 kean/target/
+
+# box-im 上游源码的临时副本（调研用，非本项目代码，不入库）
+.boxim-ref/
+
+# 下载官网 site-kean（Vite + React 工程）
+# ⚠️ 注意：**不要**忽略整个 site-kean/ —— 源码要入库；
+#    只忽略依赖与构建产物。服务器上 www.kean.college 加载的是它的 dist 产物，
+#    但 dist 由构建生成、不入库（发版时现构建或上传到服务器）。
+site-kean/node_modules/
+site-kean/dist/
