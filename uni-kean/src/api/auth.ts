@@ -15,7 +15,8 @@ export interface TurnstileConfig {
 export interface RegisterPayload {
   username: string;
   password: string;
-  nickname: string;
+  /** 昵称选填：不传（或传空）时服务端用雪花算法自动分配「课安用户xxxxxx」 */
+  nickname?: string | null;
   gender: string;
   schoolId: number;
   /** 校区选填，由用户手输（1-50 字）；不填时不传或传 null */

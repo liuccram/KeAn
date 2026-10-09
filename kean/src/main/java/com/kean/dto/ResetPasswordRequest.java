@@ -6,8 +6,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record ResetPasswordRequest(
-        @NotBlank(message = "请填写 QQ 号")
-        @Pattern(regexp = QqEmails.REQUIRED_PATTERN, message = "请填写 5-11 位 QQ 号")
+        @NotBlank(message = QqEmails.INVALID_MESSAGE)
+        @Pattern(regexp = QqEmails.REQUIRED_PATTERN, message = QqEmails.INVALID_MESSAGE)
         String email,
 
         @NotBlank(message = "请填写邮箱验证码")

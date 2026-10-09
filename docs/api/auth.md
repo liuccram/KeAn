@@ -30,11 +30,11 @@ Authorization: Bearer <token>
 |---|---|---|---|
 | username | string | 是 | 4-32 位，字母数字下划线 |
 | password | string | 是 | 8-32 位 |
-| nickname | string | 是 | 1-32 位 |
+| nickname | string | 否 | 1-32 位；不填（或空白）时服务端用雪花算法自动分配「课安用户xxxxxx」，并保证不与已有昵称重复 |
 | gender | string | 是 | `MALE` / `FEMALE` |
 | schoolId | number | 是 | 学校 ID |
 | campusText | string | 否 | 校区名称，由用户自行填写（1-50 字，服务端去首尾空格），不填也能注册 |
-| email | string | 是 | QQ 号 |
+| email | string | 是 | 完整 QQ 邮箱（如 `12345678@qq.com`）；只填 QQ 号、缺 `@`、非 qq.com 域名一律拒绝 |
 | smsCode | string | 是 | 6 位邮箱验证码 |
 | turnstileToken | string | 开启时必填 | Cloudflare 一次性 token |
 
@@ -48,7 +48,7 @@ Authorization: Bearer <token>
   "gender": "FEMALE",
   "schoolId": 1,
   "campusText": "主校区",
-  "email": "123456",
+  "email": "12345678@qq.com",
   "smsCode": "123456",
   "turnstileToken": "0.xxxx"
 }

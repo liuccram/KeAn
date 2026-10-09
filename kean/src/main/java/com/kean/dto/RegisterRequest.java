@@ -1,6 +1,7 @@
 package com.kean.dto;
 
 import com.kean.utils.QqEmails;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -16,8 +17,8 @@ public record RegisterRequest(
         @Size(min = 8, max = 32, message = "密码长度为 8-32 位")
         String password,
 
-        @NotBlank(message = "昵称不能为空")
-        @Size(min = 1, max = 32, message = "昵称长度为 1-32 位")
+        // 昵称选填：留空（null/空白）时由 AuthServiceImpl 用雪花算法自动分配「课安用户xxxxxx」。
+        @Size(max = 32, message = "昵称最长 32 位")
         String nickname,
 
         @NotBlank(message = "请选择性别")
@@ -31,8 +32,11 @@ public record RegisterRequest(
         @Size(max = 50, message = "校区名称最长 50 个字")
         String campusText,
 
-        @NotBlank(message = "请填写 QQ 号")
-        @Pattern(regexp = QqEmails.REQUIRED_PATTERN, message = "请填写 5-11 位 QQ 号")
+        // 必须是完整 QQ 邮箱（12345678@qq.com）：只填 QQ 号、缺 @、非 qq.com 域名一律拒绝。
+        // @Email 与 @Pattern 都用同一个提示文案，谁先命中提示都一样；@Pattern 才是真正卡住"纯 QQ 号"的那道关。
+        @NotBlank(message = QqEmails.INVALID_MESSAGE)
+        @Email(message = QqEmails.INVALID_MESSAGE)
+        @Pattern(regexp = QqEmails.REQUIRED_PATTERN, message = QqEmails.INVALID_MESSAGE)
         String email,
 
         @NotBlank(message = "请填写邮箱验证码")

@@ -5,7 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
 public record SendSmsRequest(
-        @Pattern(regexp = QqEmails.OPTIONAL_PATTERN, message = "请填写 5-11 位 QQ 号")
+        // 发码同样要求完整 QQ 邮箱；邮箱允许为空（如改密码场景由服务端取本人邮箱）。
+        @Pattern(regexp = QqEmails.OPTIONAL_PATTERN, message = QqEmails.INVALID_MESSAGE)
         String email,
 
         @NotBlank(message = "请选择验证场景")

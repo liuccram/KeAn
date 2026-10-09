@@ -3,7 +3,7 @@ import { fetchTurnstileConfig } from "@/api/auth";
 import { resetPassword, sendSms } from "@/api/sms";
 import CodeBoxes from "@/components/CodeBoxes.vue";
 import TurnstileChallenge from "@/components/TurnstileChallenge.vue";
-import { normalizeQqEmail } from "@/utils/qqEmail";
+import { QQ_EMAIL_HINT, normalizeQqEmail } from "@/utils/qqEmail";
 import { useToast } from "wot-design-uni";
 import { onMounted, onUnmounted, reactive, ref } from "vue";
 
@@ -100,7 +100,7 @@ function requireCaptcha(): boolean {
 async function handleSendSms() {
   const email = normalizeQqEmail(model.email);
   if (!email) {
-    toast.error("请填写 5-11 位 QQ 号");
+    toast.error(QQ_EMAIL_HINT);
     return;
   }
   if (sending.value || countdown.value > 0) {
@@ -136,7 +136,7 @@ function handleSubmit() {
       }
       const email = normalizeQqEmail(model.email);
       if (!email) {
-        toast.error("请填写正确的 QQ 邮箱");
+        toast.error(QQ_EMAIL_HINT);
         return;
       }
       if (!/^\d{6}$/.test(model.smsCode)) {
@@ -180,7 +180,7 @@ function handleSubmit() {
           label-width="90px"
           prop="email"
           clearable
-          placeholder="初始QQ邮箱"
+          placeholder="例如 12345678@qq.com"
           :rules="[{ required: true, message: '请填写QQ邮箱' }]"
         />
       </wd-cell-group>

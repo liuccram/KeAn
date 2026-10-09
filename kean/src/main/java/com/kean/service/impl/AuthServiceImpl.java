@@ -2,6 +2,7 @@ package com.kean.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.kean.common.ErrorCode;
 import com.kean.dto.ChangeEmailRequest;
 import com.kean.dto.ChangePasswordRequest;
@@ -69,6 +70,18 @@ public class AuthServiceImpl implements AuthService {
 
     /** 注销后对外显示的昵称。 */
     private static final String DELETED_NICKNAME = "已注销用户";
+
+    /** 用户没填昵称时自动分配的前缀，最终形如「课安用户583921」。 */
+    private static final String AUTO_NICKNAME_PREFIX = "课安用户";
+
+    /**
+     * 自动昵称的雪花 ID 后缀位数：先试 6 位（更短好看），连续撞名再放宽到 8 位，
+     * 最后用完整雪花 ID（<=0 表示不截断）兜底。
+     */
+    private static final int[] AUTO_NICKNAME_DIGITS = {6, 8, 0};
+
+    /** 每种后缀位数最多尝试的次数，全撞满才换更长的后缀。 */
+    private static final int AUTO_NICKNAME_ATTEMPTS_PER_WIDTH = 8;
 
     private final SysUserMapper sysUserMapper;
     private final SchoolMapper schoolMapper;
@@ -146,7 +159,8 @@ public class AuthServiceImpl implements AuthService {
         user.setUsername(request.username());
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setNickname(request.nickname());
+        // 昵称选填：没填就用雪花算法自动分配一个不与已有昵称重复的「课安用户xxxxxx」
+        user.setNickname(resolveNickname(request.nickname()));
         user.setGender(request.gender());
         user.setSchoolId(request.schoolId());
         // 校区改为用户手输文本（选填）：空值 = 没填，不再写 campus_id
@@ -618,6 +632,49 @@ public class AuthServiceImpl implements AuthService {
             wrapper.ne(SysUser::getId, excludeUserId);
         }
         return sysUserMapper.selectCount(wrapper) > 0;
+    }
+
+    private boolean existsNickname(String nickname) {
+        return sysUserMapper.selectCount(
+                new LambdaQueryWrapper<SysUser>().eq(SysUser::getNickname, nickname)
+        ) > 0;
+    }
+
+    /** 昵称选填：填了就用用户的（去掉首尾空白），没填（null/空白）就走雪花算法自动分配。 */
+    private String resolveNickname(String nickname) {
+        if (StringUtils.hasText(nickname)) {
+            return nickname.trim();
+        }
+        String generated = generateNickname();
+        log.info("注册未填昵称，自动分配昵称：{}", generated);
+        return generated;
+    }
+
+    /**
+     * 自动昵称：用 MyBatis-Plus 自带的雪花算法 IdWorker.getId()（不引入新依赖）取后 6 位，
+     * 拼成「课安用户583921」；撞名（库中已有同名）就再取一个；6 位连续撞满放宽到 8 位，
+     * 最后用完整雪花 ID 兜底（雪花 ID 本身唯一，加前缀后 23 位，仍在 nickname 的 32 位上限内）。
+     */
+    private String generateNickname() {
+        for (int digits : AUTO_NICKNAME_DIGITS) {
+            for (int attempt = 0; attempt < AUTO_NICKNAME_ATTEMPTS_PER_WIDTH; attempt++) {
+                String candidate = AUTO_NICKNAME_PREFIX + snowflakeTail(digits);
+                if (!existsNickname(candidate)) {
+                    return candidate;
+                }
+            }
+        }
+        // 理论上到不了这里（最后一种宽度用的是唯一雪花 ID）；真到了宁可报错，也不返回可能重复的昵称。
+        throw new BizException(ErrorCode.BAD_REQUEST, "昵称分配失败，请稍后重试");
+    }
+
+    /** 取雪花 ID 的末 digits 位；digits <= 0 或超过 ID 长度时返回完整 ID。 */
+    private static String snowflakeTail(int digits) {
+        String id = String.valueOf(IdWorker.getId());
+        if (digits <= 0 || digits >= id.length()) {
+            return id;
+        }
+        return id.substring(id.length() - digits);
     }
 
     private String normalizeEmail(String email) {
