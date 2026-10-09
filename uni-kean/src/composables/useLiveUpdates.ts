@@ -27,6 +27,7 @@ export function useLiveUpdates(handler: (event?: RealtimeEvent) => void, pollMs 
   function bind() {
     unbind();
     off = onRealtime(handler);
+    console.log("[kean-rt] page bind", { imEnabled: isImEnabled(), pollMs });
     bindIm(handler);
     if (pollMs > 0) {
       timer = setInterval(() => handler(), pollMs);
@@ -54,7 +55,14 @@ export function useLiveUpdates(handler: (event?: RealtimeEvent) => void, pollMs 
       target(event);
     });
     // 不在每次 onShow 都重新取票：imSocket 自己按 expireAt 判断（过 60s 余量才重取）。
-    connectIm().catch(() => undefined);
+    // 必须把 onError 传进去：connect() 无参调用时 imSocket 的 events.onError 永远是空的，
+    // 连接失败（取票失败 / ws 握手失败 / 地址没配）会完全静默，线上无从排查。
+    connectIm({
+      onError: (error) => {
+        console.warn("[kean-rt][im] connect failed", String((error as Error)?.message || error));
+        console.log("[kean-rt] im error", { error: String((error as Error)?.message || error) });
+      }
+    }).catch(() => undefined);
   }
 
   function unbind() {

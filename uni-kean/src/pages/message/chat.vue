@@ -12,13 +12,24 @@ import { actionBlockReason, formatChatTime, shouldShowChatTime } from "@/utils/f
 import { blockUser } from "@/api/blacklist";
 import { refreshMessageBadge } from "@/utils/messageBadge";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
-import { isOptimistic, markMineRead, maxCreatedAtOf, maxSeqOf, mergeIncoming, sortTimeline } from "@/utils/chatMerge";
 import {
+  isOptimistic,
+  markMineRead,
+  maxCreatedAtOf,
+  maxSeqOf,
+  mergeConfirm,
+  mergeIncoming,
+  sortTimeline
+} from "@/utils/chatMerge";
+import {
+  createLocalId,
   getLastSeq,
+  getOutboxEntry,
   listOutbox,
   removeOutbox,
   setLastSeq,
   setReadAt,
+  upsertOutbox,
   type ChatSendState
 } from "@/utils/chatStore";
 import {
@@ -40,7 +51,7 @@ import { useUploadProgress } from "@/composables/useUploadProgress";
 import { useUserStore } from "@/store/user";
 import { onHide, onLoad, onShow, onUnload } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 
 const toast = useToast();
 const userStore = useUserStore();
@@ -51,13 +62,32 @@ const content = ref("");
 const sending = ref(false);
 /** 正在发送（含自动重试中）的 localId：hydrate 出来的失败消息重发时也能显示「发送中」 */
 const sendingIds = ref<string[]>([]);
+/** 已在飞行的发送请求条数：只用来显示「发送中」提示，绝不参与「能不能发」的判断 */
+const inflight = ref(0);
 /**
- * 输入区是否还要挡住新消息。
- * 自动重试（最多 3 次 + 退避）可能持续两三秒，这期间不该让用户发不出下一条；
- * 所以 composer 只看「已有本地消息还在发送中」，而不看一次请求的飞行状态。
+ * 是否还有发送请求在飞 —— <b>只用来显示「发送中」提示，绝不参与「能不能发」的判断</b>。
+ *
+ * <p>这里曾经被当成守卫（`busy` 为真就提前 return），那正是「只转圈、不出气泡」的成因之一：
+ * 上一条还在重试时新的点击被丢弃，乐观气泡根本没机会插入。</p>
+ *
+ * <p><b>2024 补记（实测产物证据）</b>：{@code wot-design-uni} 的 {@code wd-button}
+ * 在 {@code loading=true} 时<b>根本不派发 click</b>（产物 {@code wd-button.Cb9JFRLM.js}：
+ * {@code f.disabled || f.loading || h("click", e)}；源码 {@code wd-button.vue} 同）。
+ * 也就是说 {@code :loading="busy"} 等于在重试期间把发送按钮变成不可点，
+ * 注释里过去写的「按钮仍是可点的」是<b>错的</b>。所以按钮上不再绑定 loading，
+ * 改用旁边的 {@code sendingHint} 文案提示发送中。</p>
  */
-const busy = computed(() => sending.value || sendingIds.value.length > 0);
-const readReporter = createReadReporter(sessionId.value);
+const busy = computed(() => inflight.value > 0 || sending.value || sendingIds.value.length > 0);
+/** 发送中的可见提示：不吞点击，只做展示 */
+const sendingHint = computed(() => (busy.value ? "发送中" : ""));
+// 传取值函数而不是当前值：这一行在 setup 里执行时 sessionId 还是 0（真实 id 要到 onLoad 才有），
+// 值捕获会让 readReporter 永远被 !sessionId 挡在发请求之前。
+// onRead 只在服务端确认已读后才重算未读角标 —— 之前是"入队即刷"，markRead 失败时角标会假清零。
+const readReporter = createReadReporter(() => sessionId.value, {
+  onRead: () => {
+    void refreshMessageBadge();
+  }
+});
 // 解构到顶层，模板才会自动解包 ref
 const { active: uploading, label: uploadLabel, onProgress, reset: resetUpload } = useUploadProgress();
 const chatBlock = computed(() => actionBlockReason(userStore.state.user, "chat"));
@@ -76,14 +106,43 @@ const myAvatar = computed(() => resolveMediaUrl(userStore.state.user?.avatarUrl)
 const peerAvatar = computed(() => resolveMediaUrl(session.value?.peerAvatarUrl));
 const myUserId = computed(() => Number(userStore.state.user?.id || 0));
 
+/**
+ * ⚠️ 临时诊断埋点（本轮只加日志、不改逻辑）。
+ *
+ * 统一前缀 `[kean-send]` / `[kean-rt]`，只打长度与 ID，绝不打消息正文（隐私）。
+ * 目的：让线上复现时自己说话 —— 区分「插入没执行」「插入后又被整页刷新覆盖」
+ * 「插进去了但渲染侧过滤掉」这三种此前无法区分的可能。
+ */
+function logSend(step: string, detail: Record<string, unknown> = {}) {
+  console.log(`[kean-send] ${step}`, detail);
+}
+
 const displayMessages = computed<ChatDisplayMessage[]>(() => {
-  return messages.value.map((item, index) => ({
+  const list = messages.value;
+  logSend("render", { messagesLen: list.length, sendingIds: sendingIds.value.length });
+  return list.map((item, index) => ({
     ...item,
     mine: resolveMine(item),
-    sendState: sendingIds.value.indexOf(String(item.localId || "")) >= 0 ? "sending" : item.sendState,
+    sendState: resolveSendState(item),
     showTime: shouldShowChatTime(index === 0 ? null : messages.value[index - 1]?.createdAt, item.createdAt)
   }));
 });
+
+/**
+ * 角标状态：服务端口径优先，本地「正在重发」只在服务端还没结论时才显示为发送中。
+ *
+ * <p>为什么不能无条件压成 sending：重发时 localId 会留在 {@code sendingIds} 直到重发结束，
+ * 而重发成功后服务端已给了 seqNo/status=3 —— 无条件压实会把刚拿回来的 ✓✓ 打回「发送中」，
+ * 表现为「双钩要刷新才回来」。</p>
+ */
+function resolveSendState(item: ChatMessageItem): ChatSendState | undefined {
+  if (sendingIds.value.indexOf(String(item.localId || "")) < 0) {
+    return item.sendState;
+  }
+  const server = outgoingStatus({ ...item, mine: resolveMine(item) });
+  // 服务端已经给出结论（已发送/已读）时不再覆盖；本地还是 sending/failed/未知才显示为发送中
+  return server === "sent" || server === "read" ? item.sendState : "sending";
+}
 
 function openUser(userId?: number | null, mine = false) {
   if (mine) {
@@ -120,17 +179,35 @@ function statusClass(message: ChatMessageItem): string {
   return status ? `st-${status}` : "";
 }
 
-/** seqNo 缺失（老后端）时为 0，用来判断有没有可用的增量游标 */
-function latestSeq(): number {
-  const seq = maxSeqOf(messages.value);
-  return seq > 0 ? seq : Number(getLastSeq(sessionId.value) || 0);
+/**
+ * 已读上报的位点：优先取「对方发来的消息」的最大 seqNo —— 服务端只把
+ * 「对方发给我、seq_no <= maxSeq」的消息置为已读，先报自己那条会让位点跳过对方的消息。
+ * 一条都没有（只有我发的 / 老后端无 seqNo）时退回全部消息的最大值。
+ */
+function unreadMaxSeq(): number {
+  const fromPeer = messages.value.filter((item) => resolveMine(item) === false);
+  const seq = maxSeqOf(fromPeer);
+  return seq > 0 ? seq : maxSeqOf(messages.value);
 }
 
 /** 已读位点：最大值出现时立刻发，其余合并到 1 秒后 */
 function reportRead(seq: number, immediate = false) {
-  if (readReporter.note(seq, { immediate })) {
-    refreshMessageBadge();
+  readReporter.note(seq, { immediate });
+}
+
+/**
+ * 进会话（以及每次全量刷新后）无条件上报一次已读：
+ * - 有 seqNo 就带 maxSeq（服务端会清未读 + 把对方发给我的消息置已读 + 推 READ 双勾）；
+ * - 一条 seqNo 都拿不到（老后端 / 序号字段缺失）时不发 maxSeq=0（那等于"读到第 0 条"，
+ *   服务端会当成位点 0 处理），改为走不带 body 的老口径，只清自己那侧未读数。
+ */
+function chatRead(): void {
+  const seq = unreadMaxSeq();
+  if (seq > 0) {
+    readReporter.note(seq, { immediate: true });
+    return;
   }
+  readReporter.flushUnscoped();
 }
 
 function scrollToBottom() {
@@ -153,7 +230,22 @@ function upsertMessages(incoming: ChatMessageItem[]): { changed: boolean; batchS
   if (!incoming.length) {
     return { changed: false, batchSeq: 0 };
   }
-  const rows = incoming.filter((item) => Number(item?.sessionId || 0) === sessionId.value);
+  const rows = incoming.filter((item) => {
+    if (!item) {
+      return false;
+    }
+    const target = Number(item.sessionId || 0);
+    if (target) {
+      return target === sessionId.value;
+    }
+    // 老后端不保证回 sessionId：只认「localId 能对上本地已有条目」的那种，
+    // 那是本会话刚发出去、服务端回显的同一条。localId 由本端生成，不会跨会话撞车；
+    // 认不出来的一律丢弃 —— 绝不把别的会话、或排不了序的野消息插进来。
+    if (!item.localId) {
+      return false;
+    }
+    return messages.value.some((row) => String(row.localId || "") === String(item.localId));
+  });
   if (!rows.length) {
     return { changed: false, batchSeq: 0 };
   }
@@ -165,6 +257,7 @@ function upsertMessages(incoming: ChatMessageItem[]): { changed: boolean; batchS
   if (next === messages.value) {
     return { changed: false, batchSeq };
   }
+  logSend("assign:upsertMessages", { before: messages.value.length, after: next.length, rows: rows.length });
   messages.value = next;
 
   if (batchSeq > 0) {
@@ -222,7 +315,7 @@ async function syncIncoming(batchSize = 100): Promise<SyncOutcome> {
   }
 }
 
-function applyIncoming(payload?: ChatMessageItem, options?: { silent?: boolean }) {
+function applyIncoming(payload?: ChatMessageItem) {
   if (!payload || Number(payload.sessionId || 0) !== sessionId.value) {
     return;
   }
@@ -230,10 +323,12 @@ function applyIncoming(payload?: ChatMessageItem, options?: { silent?: boolean }
   const existed = messages.value.some(
     (item) => Number(item.id) === Number(message.id) || (message.localId && item.localId === message.localId)
   );
+  logSend("applyIncoming", { id: message.id, localId: message.localId || "", existed });
   if (existed) {
     return;
   }
   messages.value = sortTimeline(messages.value.concat(message));
+  logSend("assign:applyIncoming", { len: messages.value.length });
   const seq = Number(message.seqNo || 0);
   if (seq > 0) {
     setLastSeq(sessionId.value, seq);
@@ -241,9 +336,8 @@ function applyIncoming(payload?: ChatMessageItem, options?: { silent?: boolean }
   setReadAt(sessionId.value, Date.parse(String(message.createdAt || "")) || 0);
   scrollToBottom();
   reportRead(seq);
-  if (!options?.silent && !message.mine) {
-    refreshMessageBadge();
-  }
+  // 角标不在这里刷：消息到屏不等于服务端已读到（未读数由 markRead 清零），
+  // 真正的重算在 readReporter 的 onRead 回调里
 }
 
 /**
@@ -308,11 +402,36 @@ function handleMessageEvent(data: unknown, eventSessionId?: number) {
   }, INCOMING_SYNC_DELAY_MS);
 }
 
+/**
+ * 本地还没被服务端确认的消息（乐观插入或从 outbox 恢复的失败消息）。
+ *
+ * <p>它是「气泡只增不灭」的守卫：整页刷新（{@link loadFirstPage}）会把列表
+ * 换成服务端那一页，而断网时本地那条<b>服务端根本没有</b> —— 不把它挑出来重挂，
+ * 就会「刷新一下气泡就没了」。用户在断网时看到气泡消失，自然会以为消息丢了。</p>
+ */
+function unsentLocalMessages(): ChatMessageItem[] {
+  return messages.value.filter((item) => {
+    if (item.localId && isOptimistic(item)) {
+      return true;
+    }
+    // 兜底：会话 id 没写上的本地条目（老数据）也算，宁可多留一条也不吞掉用户的消息
+    return Number(item.id || 0) < 0;
+  });
+}
+
 /** 首次进入没有本地游标时，仍然走原来的分页接口 */
 async function loadFirstPage() {
   const data = await listChatMessages(sessionId.value, 1, 50);
   const rows = (data?.list || []).map((item) => ({ ...item, sessionId: sessionId.value }));
-  messages.value = sortTimeline(rows);
+  // 服务端那一页 + 本地未确认的那些：合并而不是替换，避免整页刷新把乐观气泡冲掉
+  const keepLocal = unsentLocalMessages();
+  logSend("assign:loadFirstPage", {
+    before: messages.value.length,
+    rows: rows.length,
+    keepLocal: keepLocal.length
+  });
+  messages.value = sortTimeline(mergeIncoming(rows, keepLocal));
+  logSend("assign:loadFirstPage.done", { after: messages.value.length, displayLen: displayMessages.value.length });
   const seq = maxSeqOf(rows);
   // 老后端没有 seqNo 时游标保持 0，后续不再走增量接口，退回「每次全量拉第一页」的旧行为
   if (seq > 0) {
@@ -327,6 +446,7 @@ async function loadFirstPage() {
 /** 恢复上次没发成功的消息：只恢复「失败」态，真正在发送中的会随页面销毁重来 */
 function restoreOutbox() {
   const pending = listOutbox(sessionId.value);
+  logSend("restoreOutbox", { pending: pending.length, before: messages.value.length });
   if (!pending.length) {
     return;
   }
@@ -343,27 +463,59 @@ function restoreOutbox() {
     sendState: "failed" as ChatSendState
   }));
   messages.value = sortTimeline(mergeIncoming(messages.value, rows));
+  logSend("assign:restoreOutbox", { after: messages.value.length, displayLen: displayMessages.value.length });
 }
 
 async function loadMessages() {
   await loadFirstPage();
   restoreOutbox();
-  const seq = latestSeq();
-  if (seq > 0) {
-    // 进入会话即上报已读；若先做增量同步，合并后的最大值会走节流窗口
-    reportRead(seq, true);
-  }
-  await refreshMessageBadge();
+  // 进入会话即上报已读（有 seqNo 带 maxSeq，没有就退回老口径）；后续更大的值走 1 秒节流。
+  // 角标不在这里刷：必须在服务端确认已读后再重算，否则 markRead 失败时角标会假清零。
+  chatRead();
   await nextTick();
   scrollToBottom();
 }
 
+/**
+ * 乐观插入本地消息（幂等）。
+ *
+ * <p>两条硬性约束：</p>
+ * <ol>
+ *   <li><b>同步执行</b>：调用点必须在任何 await / 任何守卫之前，按下发送气泡立刻可见；</li>
+ *   <li><b>不经过任何会话过滤</b>：这里是列表的直接写入，只做 mergeIncoming（按 localId 去重）
+ *       + sortTimeline，sessionId 只作为字段写入，不参与筛选 —— 断网、会话 id 迟到都不影响上屏。</li>
+ * </ol>
+ *
+ * <p>同一个 localId 重复调用只会返回已存在那条的 id，不会产生第二个气泡
+ * （图片先插入、随后 sendWithOutbox 再插一次就是走这条幂等分支）。</p>
+ */
 function insertLocalMessage(input: {
   localId: string;
   content: string;
   msgType: string;
   sendState?: ChatSendState;
 }): number {
+  logSend("insertLocal.enter", {
+    localId: input.localId || "",
+    hasLocalId: Boolean(input.localId),
+    msgType: input.msgType,
+    len: input.content.length,
+    before: messages.value.length
+  });
+  if (!input.localId) {
+    // 没有 localId 就没有去重键：这里不是「本地乐观消息」的入口，直接不插
+    logSend("insertLocal.return", { reason: "skip:empty-localId", messagesLen: messages.value.length });
+    return 0;
+  }
+  const existed = messages.value.find((item) => String(item.localId || "") === input.localId);
+  if (existed) {
+    logSend("insertLocal.return", {
+      reason: "skip:duplicate",
+      id: existed.id,
+      messagesLen: messages.value.length
+    });
+    return Number(existed.id);
+  }
   const payload: ChatSendPayload = {
     localId: input.localId,
     content: input.content,
@@ -376,77 +528,260 @@ function insertLocalMessage(input: {
   });
   const row = { ...local, sessionId: sessionId.value, senderId: myUserId.value };
   messages.value = sortTimeline(mergeIncoming(messages.value, [row]));
+  // 插入后立刻对比「数组长度」与「实际渲染的 computed 长度」：
+  // 两个数不一致就说明渲染侧把它过滤掉了。
+  logSend("insertLocal.return", {
+    reason: "inserted",
+    id: row.id,
+    messagesLen: messages.value.length,
+    displayLen: displayMessages.value.length
+  });
+  nextTick(() => {
+    logSend("insertLocal.nextTick", {
+      messagesLen: messages.value.length,
+      displayLen: displayMessages.value.length
+    });
+    // ⚠️ 必须滚动到底！乐观插入的气泡在列表末尾，不滚用户就"以为消息没发出去"（
+    // 这正是线上反馈「断网发送看不到气泡」的真正原因：联网时消息走 applyIncoming（见 :337）会滚，
+    // 离线时只走这条乐观插入路径，之前这里只打日志没滚动 → 气泡其实已经渲染，只是停在视口之外）。
+    scrollToBottom();
+  });
   return row.id;
 }
 
-/** 重试用尽：把本地那条标成失败（红色感叹号可手动重发） */
+/** 重试用尽：把本地那条标成失败（红色感叹号可手动重发）。只改角标，绝不移除气泡 */
 function markLocalFailed(localId: string) {
+  const found = messages.value.some((item) => item.localId === localId);
+  logSend("markLocalFailed", { localId: localId || "", found, len: messages.value.length });
   messages.value = messages.value.map((item) =>
     item.localId === localId ? { ...item, sendState: "failed" as ChatSendState } : item
   );
+  logSend("markLocalFailed.done", { localId: localId || "", len: messages.value.length, found });
+}
+
+/**
+ * 服务端确认落库、但回执里没有消息体（老后端）：此时气泡已不可删除，
+ * 若 outbox 里没有这条（原实现只在失败时落盘），「重发」会取不到内容而假失败。
+ * 这里补写一份原始内容，让重发路径依然可用。
+ */
+function rememberOutboxContent(entry: { localId: string; msgType: string; content: string; attempts: number }) {
+  if (getOutboxEntry(sessionId.value, entry.localId)) {
+    return;
+  }
+  upsertOutbox({
+    localId: entry.localId,
+    sessionId: sessionId.value,
+    content: entry.content,
+    msgType: entry.msgType,
+    attempts: entry.attempts,
+    updatedAt: Date.now()
+  });
 }
 
 /** 服务端确认发送但没有消息体（老后端）：本地那条改成「已发送」 */
 function markLocalSent(localId: string) {
+  logSend("markLocalSent", { localId: localId || "" });
   messages.value = messages.value.map((item) =>
     item.localId === localId ? { ...item, sendState: undefined, status: item.status ?? 1 } : item
   );
 }
 
-async function sendPayload(payload: ChatSendPayload, confirm: (localId: string, message?: ChatMessageItem) => void) {
-  if (!payload.localId) {
+/**
+ * 重发时本地没有可重发的原始内容（例如这条其实已经落库、只是回执里没有消息体）。
+ * 此时不能假装重发成功、也不能让气泡永远停在"发送中"：
+ * 回到「已发送」角标并如实提示，用户可以重新输入内容发送。
+ */
+function markResendUnavailable(localId: string) {
+  markLocalSent(localId);
+  toast.info("这条已发出，无法再次发送");
+}
+
+/**
+ * 发送成功回执：用服务端版本按 localId 替换本地那条乐观消息（清掉 sendState）。
+ * 不走 upsertMessages —— 那条路径会按 sessionId 过滤，老后端不回 sessionId 时会整行丢弃，
+ * 本地那条就永远停在"发送中"并盖住单/双勾。
+ */
+function confirmIncoming(message?: ChatMessageItem) {
+  if (!message || typeof message !== "object") {
     return;
   }
-  const localId = payload.localId;
-  sending.value = true;
-  sendingIds.value = sendingIds.value.concat(localId);
+  const row = { ...message, sessionId: sessionId.value };
+  logSend("confirmIncoming", { id: row.id, localId: row.localId || "", seqNo: Number(row.seqNo || 0), status: row.status });
+  messages.value = mergeConfirm(messages.value, [row]);
+  logSend("confirmIncoming.done", { len: messages.value.length, displayLen: displayMessages.value.length });
+  const seq = Number(row.seqNo || 0);
+  if (seq > 0) {
+    setLastSeq(sessionId.value, seq);
+  }
+}
+
+/**
+ * 「进行中」状态的看门狗。
+ *
+ * <p>一次发送最坏耗时 = 3 次网络尝试 × 15s 请求超时 + 两次退避(400/800ms)，约 47s；
+ * 兜底时限 {@link SEND_FALLBACK_DEADLINE_MS} 是 32s。所以 60s 足够覆盖任何正常路径。</p>
+ *
+ * <p>为什么必须有：{@code inflight} / {@code sendingIds} 一旦因任何意外没被清掉，
+ * 界面就会永久停在「发送中」，而用户看到的只是「点了没反应」。宁可误清一次（只是
+ * loading 停早了一点，消息本身不受影响，气泡与失败角标照旧），也不能让界面永久卡死。</p>
+ */
+const BUSY_WATCHDOG_MS = 60000;
+let busyWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+
+function armBusyWatchdog() {
+  if (busyWatchdogTimer) {
+    return;
+  }
+  busyWatchdogTimer = setTimeout(() => {
+    busyWatchdogTimer = null;
+    if (inflight.value > 0 || sendingIds.value.length > 0) {
+      console.warn("[kean-send] busy watchdog fired: 发送中状态超过上限未清，强制复位", {
+        inflight: inflight.value,
+        sendingIds: sendingIds.value.length
+      });
+      inflight.value = 0;
+      sendingIds.value = [];
+    }
+    if (sending.value) {
+      sending.value = false;
+    }
+  }, BUSY_WATCHDOG_MS);
+}
+
+function clearBusyWatchdog() {
+  if (!busyWatchdogTimer) {
+    return;
+  }
+  // 只有在确实没有在飞请求/在途重发时才取消，否则下一轮发送就没有保护了
+  if (inflight.value <= 0 && sendingIds.value.length === 0 && !sending.value) {
+    clearTimeout(busyWatchdogTimer);
+    busyWatchdogTimer = null;
+  }
+}
+
+async function sendPayload(payload: ChatSendPayload, confirm: (localId: string, message?: ChatMessageItem) => void) {
+  const localId = String(payload.localId || "");
+  if (!localId) {
+    logSend("sendPayload.return", { reason: "no-localId" });
+    return;
+  }
+  // 计数与递减在同一个函数里配对，无论从哪条路径进来都不会漏减（loading 不会卡住）
+  inflight.value += 1;
+  armBusyWatchdog();
+  logSend("sendPayload.enter", { localId, msgType: payload.msgType, inflight: inflight.value, sessionId: sessionId.value });
   try {
     // 重试始终复用同一个 localId，靠服务端幂等去重
     const result = await sendWithOutbox(sendContext, payload);
+    logSend("sendPayload.result", { localId, ok: result.ok, inserted: result.inserted, hasMessage: Boolean(result.message) });
     if (result.ok) {
       if (result.message) {
-        upsertMessages([{ ...result.message, sessionId: sessionId.value }]);
+        confirmIncoming(result.message);
       } else {
         // 没带回消息体的老后端：把本地那条标成「已发送单勾」，否则会一直显示发送中
         markLocalSent(localId);
       }
       confirm(localId, result.message);
       scrollToBottom();
+      logSend("sendPayload.return", {
+        reason: "ok",
+        len: messages.value.length,
+        displayLen: displayMessages.value.length
+      });
       return;
     }
+    // 失败只换角标：气泡留在原地（红色感叹号，可点击/长按重发）
+    logSend("sendPayload.return", {
+      reason: "failed",
+      inserted: result.inserted,
+      len: messages.value.length,
+      displayLen: displayMessages.value.length
+    });
+    if (result.inserted) {
+      markLocalFailed(localId);
+      toast.error("消息发送失败，长按气泡或点感叹号可重发");
+      return;
+    }
+    // 极端情况：气泡没能显示出来（列表异常），此时标"失败"会是隐形的，如实提示重发
+    toast.error("消息未能显示，请重新发送");
+  } catch (error) {
+    // 兜底：任何意外都让这条消息进入失败态，而不是留下一个永远「发送中」的气泡
+    logSend("sendPayload.throw", { localId, error: String((error as Error)?.message || error) });
     markLocalFailed(localId);
-    toast.error("消息发送失败，长按气泡或点感叹号可重发");
+    toast.error((error as Error)?.message || "消息发送失败，长按气泡可重发");
   } finally {
-    sendingIds.value = sendingIds.value.filter((id) => id !== localId);
-    sending.value = false;
+    // 这里的 finally + chatSync 内部的兜底超时，共同保证按钮 loading 一定会被清掉
+    inflight.value = Math.max(0, inflight.value - 1);
+    clearBusyWatchdog();
   }
 }
 
 const sendContext: ChatSendContext = {
   sessionId: sessionId.value,
+  onOutbox: (entry) => {
+    rememberOutboxContent(entry);
+  },
   insertLocal: insertLocalMessage
 };
 
+/** 发送前必做：气泡先落地（同步、不受任何守卫影响），再进网络阶段 */
+function enqueueLocalMessage(payload: ChatSendPayload) {
+  const localId = payload.localId || createLocalId();
+  payload.localId = localId;
+  logSend("enqueue.enter", { localId, msgType: payload.msgType, len: payload.content.length });
+  const insertedId = insertLocalMessage({
+    localId,
+    content: payload.content,
+    msgType: payload.msgType,
+    sendState: "sending"
+  });
+  logSend("enqueue.exit", { localId, insertedId, messagesLen: messages.value.length });
+  return localId;
+}
+
+/**
+ * 点「发送」。
+ *
+ * <p><b>这里绝不因为「上一条还在发」而丢弃本次输入</b>：{@code content} 已在同步阶段清空，
+ * 用户看到输入框空了却什么都没有发生，是比重复提交严重得多的缺陷。
+ * 重复提交本身由两点兜住：① 输入框内容清空后第二次点击走 {@code !text} 直接返回；
+ * ② 服务端按 {@code localId} 幂等去重。</p>
+ */
 async function handleSend() {
+  // 第一行埋点：能区分「点击根本没进来」（wd-button 吞掉 / 按钮不可点）与「进来了但没插气泡」
+  logSend("click:send", {
+    len: content.value.length,
+    sessionId: sessionId.value,
+    busy: busy.value,
+    inflight: inflight.value,
+    sending: sending.value,
+    blocked: sendBlocked.value
+  });
   if (sendBlocked.value) {
     toast.error(sendBlocked.value);
     return;
   }
   const text = content.value.trim();
-  if (!text || busy.value) {
+  if (!text) {
+    logSend("click:send.skip", { reason: "empty-text" });
     return;
   }
   const payload = createOutboxPayload(text, "TEXT");
   content.value = "";
+  // ⭐ 乐观插入在任何 await / 任何守卫之前：点一下必然出现气泡
+  enqueueLocalMessage(payload);
+  if (!sessionId.value) {
+    // 会话 id 还没就绪（onLoad 未完成）：直接给失败态 + 可重发，绝不静默丢弃
+    logSend("click:send.skip", { reason: "no-sessionId", localId: payload.localId });
+    markLocalFailed(payload.localId as string);
+    toast.error("会话信息未就绪，请重新进入会话");
+    return;
+  }
   await sendPayload(payload, () => undefined);
 }
 
 function handleSendImage() {
   if (sendBlocked.value) {
     toast.error(sendBlocked.value);
-    return;
-  }
-  if (busy.value) {
     return;
   }
   uni.chooseImage({
@@ -459,13 +794,10 @@ function handleSendImage() {
         return;
       }
       const payload = createOutboxPayload(filePath, "IMAGE");
-      insertLocalMessage({
-        localId: payload.localId as string,
-        content: filePath,
-        msgType: "IMAGE",
-        sendState: "sending"
-      });
+      // ① 气泡先出现（本地临时路径直接能显示），再谈上传
+      enqueueLocalMessage(payload);
       sending.value = true;
+      armBusyWatchdog();
       try {
         const uploaded = await uploadFile(filePath, "CHAT", { onProgress });
         // 本地乐观消息换成 objectKey，重发时就不需要再依赖临时文件
@@ -484,7 +816,14 @@ function handleSendImage() {
         toast.error((error as Error).message || "图片发送失败");
       } finally {
         resetUpload();
+        clearBusyWatchdog();
       }
+    },
+    // 取消选图时也要把上传中状态收掉，否则 sending 会一直为真、按钮永远转圈
+    fail: () => {
+      sending.value = false;
+      resetUpload();
+      clearBusyWatchdog();
     }
   });
 }
@@ -541,52 +880,75 @@ async function resendMessage(localId: string, item: ChatMessageItem) {
       toast.info("图片已失效，请重新选择图片发送");
       return;
     }
-    if (!isUploadedSource(source) && !sending.value) {
-      sending.value = true;
+    if (!isUploadedSource(source)) {
       sendingIds.value = sendingIds.value.concat(localId);
+      sending.value = true;
+      armBusyWatchdog();
       try {
         const uploaded = await uploadFile(source, "CHAT", { onProgress });
         messages.value = messages.value.map((row) =>
           row.localId === localId ? { ...row, content: uploaded.objectKey, url: uploaded.objectKey } : row
         );
         sending.value = false;
-        await sendPayload(
-          { localId, content: uploaded.objectKey, msgType: "IMAGE", attempts: 0 },
-          () => undefined
-        );
+        await sendPayload({ localId, content: uploaded.objectKey, msgType: "IMAGE", attempts: 0 }, () => undefined);
       } catch (error) {
-        if (sendingIds.value.indexOf(localId) >= 0) {
-          sendingIds.value = sendingIds.value.filter((id) => id !== localId);
-        }
         sending.value = false;
         markLocalFailed(localId);
         toast.error((error as Error).message || "图片发送失败");
       } finally {
+        sendingIds.value = sendingIds.value.filter((id) => id !== localId);
+        sending.value = false;
         resetUpload();
       }
       return;
     }
   }
+  // 重发前确保这条气泡还在：气泡只增不灭（用户主动删除除外），重发不该把它弄丢
+  insertLocalMessage({
+    localId,
+    content: String(item.content || ""),
+    msgType: item.msgType,
+    sendState: "sending"
+  });
   sendingIds.value = sendingIds.value.concat(localId);
-  sending.value = true;
+  armBusyWatchdog();
   try {
     const result = await retryOutboxEntry(sendContext, localId);
     if (result.ok && result.message) {
-      upsertMessages([{ ...result.message, sessionId: sessionId.value }]);
+      // 与首发同一条路径：按 localId 用服务端版本替换本地那条（清掉"发送中"）
+      confirmIncoming(result.message);
       scrollToBottom();
-    } else {
+    } else if (result.ok) {
+      // 老后端没回消息体：本地那条改成单勾，别一直卡在"发送中"
+      markLocalSent(localId);
+    } else if (getOutboxEntry(sessionId.value, localId)) {
       markLocalFailed(localId);
       toast.error("重发失败，请检查网络后重试");
+    } else {
+      // outbox 里没有原始内容（例如上次其实已落库、只是回执丢了消息体）：
+      // 如实告诉用户无法重发，并回到「已发送」角标，不留下一条永远"发送中"的气泡
+      markResendUnavailable(localId);
     }
   } finally {
     sendingIds.value = sendingIds.value.filter((id) => id !== localId);
-    sending.value = false;
+    clearBusyWatchdog();
+  }
+}
+
+function markMineReadLocal(limit: number): void {
+  const next = markMineRead(messages.value, limit);
+  if (next !== messages.value) {
+    messages.value = next;
+    console.log("[kean-rt] read-status applied", { maxSeq: limit, len: messages.value.length });
+  } else {
+    console.log("[kean-rt] read-status unchanged", { maxSeq: limit });
   }
 }
 
 /** READ 事件：把「我发出的、seqNo ≤ maxSeq」的消息标为已读（气泡双勾） */
 function applyReadReceipt(payload?: { sessionId?: number; readerId?: number; maxSeq?: number }) {
   const targetSession = Number(payload?.sessionId || 0);
+  console.log("[kean-rt] applyReadReceipt", { targetSession, current: sessionId.value, maxSeq: payload?.maxSeq });
   if (!targetSession || targetSession !== sessionId.value) {
     return;
   }
@@ -598,10 +960,7 @@ function applyReadReceipt(payload?: { sessionId?: number; readerId?: number; max
   if (!Number.isFinite(limit) || limit <= 0) {
     return;
   }
-  const next = markMineRead(messages.value, limit);
-  if (next !== messages.value) {
-    messages.value = next;
-  }
+  markMineReadLocal(limit);
 }
 
 function handleReportUser() {
@@ -674,7 +1033,10 @@ onShow(() => {
   // 回到前台：带上 afterSeq 增量补拉积压的消息
   if (sessionId.value) {
     void syncIncoming();
-    readReporter.flush();
+    // 进会话（首次 onLoad 后紧跟 onShow）也走这里兜一次：loadMessages 抛错时
+    // 至少还能按"当前已显示的最大 seqNo"上报一次已读，未读数不会一直挂着。
+    // note() 自带幂等（没有更大的 seqNo 就什么都不发），不会重复打接口。
+    chatRead();
   }
 });
 
@@ -687,16 +1049,30 @@ onUnload(() => {
 });
 
 useLiveUpdates((event) => {
+  console.log("[kean-rt] page handler", {
+    kind: event ? event.type || "unknown" : "poll",
+    sessionId: event?.sessionId,
+    maxSeq: event?.maxSeq
+  });
   if (!event) {
     // 轮询兜底（WS 断线时）：优先增量，拿不到增量再退回整页刷新
     if (sessionId.value) {
-      syncIncoming().then((outcome) => {
-        // 只有"没有游标 / 接口失败"才退回整页刷新，避免每次轮询都重拉 50 条
-        if (outcome === "skip" && !getLastSeq(sessionId.value)) {
-          loadSession();
-          loadMessages();
-        }
-      });
+      syncIncoming()
+        .then((outcome) => {
+          // 只有"没有游标 / 接口失败"才退回整页刷新，避免每次轮询都重拉 50 条
+          if (outcome === "skip" && !getLastSeq(sessionId.value)) {
+            // 断网时这两个请求必然失败：显式捕获，否则会变成一条看不到来源的未捕获拒绝
+            void loadSession().catch((error) => {
+              console.log("[kean-rt] poll loadSession failed", { error: String((error as Error)?.message || error) });
+            });
+            void loadMessages().catch((error) => {
+              console.log("[kean-rt] poll loadMessages failed", { error: String((error as Error)?.message || error) });
+            });
+          }
+        })
+        .catch((error) => {
+          console.log("[kean-rt] poll syncIncoming failed", { error: String((error as Error)?.message || error) });
+        });
     }
     return;
   }
@@ -717,6 +1093,42 @@ useLiveUpdates((event) => {
       loadSession();
     }
   }
+});
+
+/**
+ * 全局兜底埋点：离线分支抛出的未捕获异常此前在 H5 上完全不可见
+ * （乐观插入若在某处抛错，用户只看到「点了没反应」）。
+ */
+onMounted(() => {
+  logSend("mounted", { sendingHint: sendingHint.value });
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.addEventListener(
+    "unhandledrejection",
+    (event: PromiseRejectionEvent) => {
+      const reason = event?.reason;
+      console.error("[kean-send][uncaught] unhandledrejection", {
+        message: String((reason as Error)?.message || reason),
+        stack: String((reason as Error)?.stack || "").split("\n").slice(0, 4).join(" | "),
+        messagesLen: messages.value.length
+      });
+    },
+    true
+  );
+  window.addEventListener(
+    "error",
+    (event: ErrorEvent) => {
+      console.error("[kean-send][uncaught] error", {
+        message: String(event?.message || ""),
+        source: String(event?.filename || ""),
+        line: event?.lineno,
+        col: event?.colno,
+        messagesLen: messages.value.length
+      });
+    },
+    true
+  );
 });
 </script>
 
@@ -766,9 +1178,13 @@ useLiveUpdates((event) => {
     </view>
     <view v-if="sendBlocked" class="mute-tip" :class="{ banned: peerBanned }">{{ sendBlocked }}</view>
     <view v-else class="composer">
-      <wd-button size="small" plain :disabled="busy" @click="handleSendImage">{{ uploading ? uploadLabel : "图片" }}</wd-button>
+      <wd-button size="small" plain @click="handleSendImage">{{ uploading ? uploadLabel : "图片" }}</wd-button>
       <input v-model="content" class="input" confirm-type="send" placeholder="输入消息" @confirm="handleSend" />
-      <wd-button size="small" type="primary" :loading="busy" @click="handleSend">发送</wd-button>
+      <!-- 「发送中」只做展示，不吞点击：wd-button 在 loading=true 时不会派发 click，
+           所以这个提示必须放在按钮外面，按钮本身永远保持可点（重复提交由清空输入框
+           + 服务端 localId 幂等兜住，绝不靠丢弃用户的点击来防） -->
+      <text v-if="sendingHint" class="sending-tip">{{ sendingHint }}</text>
+      <wd-button size="small" type="primary" @click="handleSend">发送</wd-button>
     </view>
     <wd-toast />
   </view>
@@ -941,5 +1357,11 @@ useLiveUpdates((event) => {
   border-radius: 18px;
   padding: 0 12px;
   font-size: 14px;
+}
+/* 发送中的文字提示：替代会吞点击的按钮 loading */
+.sending-tip {
+  color: #9aa4b2;
+  font-size: 12px;
+  white-space: nowrap;
 }
 </style>

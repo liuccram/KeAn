@@ -24,23 +24,46 @@ function timeOf(message: ChatMessageItem): number {
   return Number.isFinite(time) ? time : 0;
 }
 
-/** 缺 seqNo 的消息排在前面：它们通常是最早的历史分页数据 */
+/**
+ * 时间线排序（**升序**）。
+ *
+ * 排序规则（重要 ✗ 这里踩过两次坑）：
+ *   ① **待确认的本地乐观消息永远排最后** ✗ —— 它是最新发出的，理应在底部。
+ *      这条 rule 必须独立成立 ✓ 不能靠"有没有 seqNo"来判断 ✓
+ *      （曾经用「缺 seqNo 就排最前」当历史数据处理 ✗ 结果乐观消息被顶到列表最顶部 ✗
+ *        线上表现为「断网发送看不到气泡」✗ 而联网时消息带着服务端 seqNo 进来 ✗
+ *        所以从线上看不出来 ✓✓）
+ *   ② 其余消息**一律按时间排** ✓（`createdAt` 服务端与本地都有且单调 ✓）
+ *      —— 不要用 seqNo 当主键 ✗：一旦某条已发出的消息在客户端没拿到 seqNo ✗
+ *      （回执字段没映射上 / 历史数据缺列 ✗）它就会被误当成"最早的消息"顶到最上面 ✗✓
+ *   ③ 时间相同时，有 seqNo 的按 seqNo ✓ 再兜底按 id ✓
+ */
+function timelineRank(message: ChatMessageItem): number {
+  // 0 = 普通消息（按时间排）· 1 = 待确认的乐观消息（永远最后）
+  return isOptimistic(message) ? 1 : 0;
+}
+
 function seqOf(message: ChatMessageItem): number {
   const seq = positive(message.seqNo);
-  return seq > 0 ? seq : -1;
+  return seq > 0 ? seq : 0;
 }
 
 export function sortTimeline(list: ChatMessageItem[]): ChatMessageItem[] {
   return [...list].sort((a, b) => {
-    const seqA = seqOf(a);
-    const seqB = seqOf(b);
-    if (seqA !== seqB) {
-      return seqA - seqB;
+    const rankA = timelineRank(a);
+    const rankB = timelineRank(b);
+    if (rankA !== rankB) {
+      return rankA - rankB;
     }
     const timeA = timeOf(a);
     const timeB = timeOf(b);
     if (timeA !== timeB) {
       return timeA - timeB;
+    }
+    const seqA = seqOf(a);
+    const seqB = seqOf(b);
+    if (seqA !== seqB) {
+      return seqA - seqB;
     }
     return Number(a.id || 0) - Number(b.id || 0);
   });
@@ -71,6 +94,80 @@ export function maxCreatedAtOf(list: ChatMessageItem[]): number {
 /** 本地乐观消息：负 id，还没有服务端回执 */
 export function isOptimistic(message: ChatMessageItem): boolean {
   return Number(message.id || 0) < 0 || Boolean(message.sendState);
+}
+
+function isMessageItem(value: unknown): value is ChatMessageItem {
+  return Boolean(value) && typeof value === "object";
+}
+
+/**
+ * 发送回执合并：把 POST/重发响应里的服务端消息按 localId 替换掉本地乐观的那条。
+ *
+ * <p>与 {@link mergeIncoming} 的区别只有一个，但很关键：<b>这里不做会话过滤</b>。
+ * 调用方拿到的是「刚刚 POST 的那个会话」的权威回执，按定义就属于当前会话；
+ * 而回执里 {@code sessionId} 缺失（老后端）或类型/命名与本地不一致时，
+ * 走列表入口（chat.vue 的 upsertMessages）会被整行丢弃 —— 本地那条就永远停在
+ * "sending"，既盖住角标也盖住对勾。</p>
+ *
+ * <p>命中 localId 后服务端版本整体覆盖本地字段（含 status/seqNo/id），
+ * {@code sendState} 随之消失；另有一条兜底：同一会话里那条「同一内容 + 同一类型」
+ * 且仍是负 id / 仍是发送中的本地条目一并清掉，避免老后端不回 localId 时留下幽灵气泡。</p>
+ */
+export function mergeConfirm(
+  existing: ChatMessageItem[],
+  incoming: ChatMessageItem[]
+): ChatMessageItem[] {
+  const rows = incoming.filter(isMessageItem);
+  if (!rows.length) {
+    return existing;
+  }
+  const merged: ChatMessageItem[] = [...existing];
+  const indexOf = new Map<string, number>();
+  merged.forEach((item, index) => {
+    const key = dedupeKey(item);
+    if (!indexOf.has(key)) {
+      indexOf.set(key, index);
+    }
+  });
+
+  rows.forEach((item) => {
+    const key = dedupeKey(item);
+    const found = indexOf.get(key);
+    if (found === undefined) {
+      indexOf.set(key, merged.length);
+      merged.push(item);
+      return;
+    }
+    // 服务端版本优先，sendState 等前端字段随覆盖一起消失
+    merged[found] = { ...merged[found], ...item, sendState: undefined };
+  });
+
+  // 兜底：本条已确认，同一内容/类型的本地乐观条目不应再留着（否则它会一直显示"发送中"）。
+  // 只在 incoming 确实带着服务端 id 时才做这层清理（{@link isOptimistic} 对只有 sendState
+  // 的条目也返回 true，那种"回执本身没落库"的情况不能当成确认）。
+  const confirmed = rows.filter((item) => Number(item.id || 0) > 0);
+  const guarded =
+    confirmed.length === 0
+      ? merged
+      : merged.filter((item) => {
+          if (!isOptimistic(item)) {
+            return true;
+          }
+          return !confirmed.some((row) => {
+            if (row.msgType !== item.msgType) {
+              return false;
+            }
+            const rowText = String(row.content ?? "");
+            // TEXT：乐观条目的 content 与回执一致
+            if (rowText && rowText === String(item.content ?? "")) {
+              return true;
+            }
+            // IMAGE：本地乐观条目可能还拿着 blob/临时路径，而回执里是 objectKey —— 比 url 兜一层
+            const rowUrl = String(row.url ?? "");
+            return Boolean(rowUrl) && rowUrl === String(item.url ?? item.content ?? "");
+          });
+        });
+  return sortTimeline(guarded);
 }
 
 /**
@@ -111,6 +208,11 @@ export function mergeIncoming(
     if (item.sendState === undefined && previous.sendState) {
       next.sendState = previous.sendState;
     }
+    // 服务端版本（有 id + seqNo）说明这条已经落库：本地那个"发送中/失败"标记必须让位，
+    // 否则它会把状态角标压成"发送中"，连对勾都盖住（这一层是三条写入口的共同兜底）。
+    if (Number(item.id || 0) > 0 && positive(item.seqNo) > 0) {
+      next.sendState = undefined;
+    }
     merged[found] = next;
   });
 
@@ -133,7 +235,10 @@ export function markMineRead(list: ChatMessageItem[], maxSeq: number): ChatMessa
       return item;
     }
     touched = true;
-    return { ...item, status: 3 };
+    // status 用服务端口径的字面量（chat.ts 的 ChatMessageStatus）：3 = 已读。
+    // 同时清掉 sendState —— 有 seqNo 说明服务端已确认落库，
+    // 它绝不该再压着 outgoingStatus 显示"发送中"而盖住双勾（防御性兜底）。
+    return { ...item, status: 3, sendState: undefined };
   });
   return touched ? next : list;
 }

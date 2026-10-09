@@ -22,6 +22,7 @@ const router = createRouter({
         { path: "catalog", name: "catalog", component: () => import("@/views/catalog/index.vue"), meta: { title: "学校与校区", en: "School & Campus" } },
         { path: "announcements", name: "announcements", component: () => import("@/views/announcements/index.vue"), meta: { title: "公告与消息", en: "Announcements" } },
         { path: "analytics", name: "analytics", component: () => import("@/views/analytics/index.vue"), meta: { title: "数据统计", en: "Analytics" } },
+        { path: "im", name: "im", component: () => import("@/views/im/index.vue"), meta: { title: "IM 监控", en: "IM Monitoring" } },
         { path: "system", name: "system", component: () => import("@/views/system/index.vue"), meta: { title: "系统管理", en: "System Settings" } }
       ]
     }

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * 把课安的业务消息「镜像投递」到 box-im <b>im-server</b> 的 Redis List 队列
@@ -70,6 +71,23 @@ import java.util.Set;
  * 此时所有公开方法<b>立刻返回</b>，不读 Redis、不写 Redis、不打 WARN（只有 DEBUG）。
  * 每个方法各自 try/catch，<b>任何异常都只 log.warn，绝不外抛</b>，
  * 因此调用方（{@code ChatServiceImpl} / {@code RealtimePublisher}）的业务事务不会受影响。</p>
+ *
+ * <h2>投递计数（监控，第 ① 项）</h2>
+ * <p>本类额外维护四个无锁计数器（{@link java.util.concurrent.atomic.LongAdder}），
+ * 通过 {@link #snapshot()} 只读暴露给巡检任务与健康端点，用途见 {@link ImDeliveryStats}：
+ * {@code attempts} / {@code pushed} / {@code failed} / {@code skipped}。</p>
+ *
+ * <p><b>刻意不影响发送路径</b>：</p>
+ * <ul>
+ *   <li>{@code LongAdder.increment()} / {@code add()} 是 CAS 无锁操作，
+ *       <b>不抛异常</b>（溢出也只是静默回绕，不会中断投递），因此计数逻辑不可能成为
+ *       投递失败的新来源；</li>
+ *   <li>计数调用点全部在 {@code try}/{@code catch} 之外或 catch 块的第一行，
+ *       即使它们在 catch 块里也不会掩盖原始异常（原异常此刻已被捕获并即将 log.warn）。</li>
+ * </ul>
+ *
+ * <p>⚠️ 计数<b>不改变</b>本类「吞异常」的既有行为：所有公开方法仍然
+ * {@code return 0} + {@code log.warn}，绝不外抛。</p>
  */
 @Service
 public class ImSenderService {
@@ -143,6 +161,23 @@ public class ImSenderService {
      */
     private final boolean mirrorEnabled;
 
+    /**
+     * 投递计数（第 ① 项监控）。四个计数器分别对应
+     * {@link ImDeliveryStats} 的四个字段，语义与粒度见该类注释。
+     *
+     * <p>选 {@link LongAdder} 而不是 {@code AtomicLong}：IM 投递是<b>高并发写、极低频读</b>
+     * （每条消息都会写、巡检 60 秒读一次），{@code LongAdder} 在竞争下的写开销更低；
+     * {@code sum()} 不是原子快照，但计数只用于「本轮增量是否超阈值」这种量级判断，
+     * 少量误差无害。</p>
+     */
+    private final LongAdder deliveryAttempts = new LongAdder();
+
+    private final LongAdder deliveryPushed = new LongAdder();
+
+    private final LongAdder deliveryFailed = new LongAdder();
+
+    private final LongAdder deliverySkipped = new LongAdder();
+
     public ImSenderService(ImTokenService imTokenService,
                            StringRedisTemplate redis,
                            ObjectMapper objectMapper,
@@ -169,6 +204,22 @@ public class ImSenderService {
     }
 
     /**
+     * 投递计数的<b>只读快照</b>（第 ① 项监控）。
+     *
+     * <p>无锁、无副作用、不读 Redis：任何时刻调用都安全，返回的是某个瞬间的近似值
+     * （{@link LongAdder#sum()} 不保证跨字段原子一致，用于阈值判断足够）。</p>
+     *
+     * @return 累计计数快照，含义与粒度见 {@link ImDeliveryStats}
+     */
+    public ImDeliveryStats snapshot() {
+        return new ImDeliveryStats(
+                deliveryAttempts.sum(),
+                deliveryPushed.sum(),
+                deliveryFailed.sum(),
+                deliverySkipped.sum());
+    }
+
+    /**
      * 投递一条<b>私聊消息</b>到 {@code im:message:private:{serverId}}。
      *
      * @param recvId  接收方用户 id（= box 的 {@code PrivateMessageVO.recvId}）
@@ -190,12 +241,17 @@ public class ImSenderService {
                            String msgType, String content, String localId, Long seqNo,
                            LocalDateTime createdAt) {
         if (!enabled()) {
+            // 计数点 ①：IM 未启用导致的 no-op（唯一计入 skipped 的分支）。
+            deliverySkipped.increment();
             log.debug("[IM 镜像投递跳过] IM 通道未就绪，私聊消息不投递到 im-server（kean 现有链路不受影响）");
             return 0;
         }
         if (recvId == null || sendId == null || !StringUtils.hasText(content)) {
+            // 参数非法：既不是投递尝试也不是故障，刻意不计数（否则脏调用会把失败率打起来）。
             return 0;
         }
+        // 计数点 ②：真正进入投递逻辑的「消息条数」。放在参数校验之后、try 之前。
+        deliveryAttempts.increment();
         try {
             Set<String> serverIds = readServerIds(recvId);
             if (serverIds.isEmpty()) {
@@ -208,6 +264,8 @@ public class ImSenderService {
                     String.format(Locale.ROOT, "私聊消息 recvId=%d sendId=%d sessionId=%s seqNo=%s",
                             recvId, sendId, sessionId, seqNo));
         } catch (Exception ex) {
+            // 计数点 ③：一次投递（消息级）失败。注意逐队列写入失败在 push() 里另计。
+            deliveryFailed.increment();
             log.warn("[IM 镜像投递] 私聊消息投递失败（不影响 kean 现有业务），recvId={}, sendId={}：{}",
                     recvId, sendId, ex.getMessage());
             return 0;
@@ -226,12 +284,16 @@ public class ImSenderService {
      */
     public int sendSystem(List<Long> recvIds, Object data) {
         if (!enabled()) {
+            // 计数点 ①（系统消息侧）：与 sendPrivate 同一个计数器。
+            deliverySkipped.increment();
             log.debug("[IM 镜像投递跳过] IM 通道未就绪，系统消息不投递到 im-server（kean 现有链路不受影响）");
             return 0;
         }
         if (data == null) {
             return 0;
         }
+        // 计数点 ②（系统消息侧）。
+        deliveryAttempts.increment();
         try {
             boolean broadcast = recvIds == null || recvIds.isEmpty();
             // 广播：box 的广播约定就是 receivers 为空列表（im-server 会把「未找到 channel」的接收者写进结果队列，
@@ -273,6 +335,8 @@ public class ImSenderService {
             return push(serverIds, SYSTEM_QUEUE_PREFIX, body,
                     String.format(Locale.ROOT, "系统消息 receivers=%d broadcast=%s", receivers.size(), broadcast));
         } catch (Exception ex) {
+            // 计数点 ③（系统消息侧）。
+            deliveryFailed.increment();
             log.warn("[IM 镜像投递] 系统消息投递失败（不影响 kean 现有业务）：{}", ex.getMessage());
             return 0;
         }
@@ -307,10 +371,15 @@ public class ImSenderService {
                 redis.opsForList().rightPush(queuePrefix + ":" + serverId, body);
                 pushed++;
             } catch (Exception ex) {
+                // 计数点 ④：单个队列写入失败（这里是 Redis 抖动/超时最直接的观测点：
+                // push 内部吞掉异常，若不计数，业务层与巡检都看不到）。
+                deliveryFailed.increment();
                 log.warn("[IM 镜像投递] 写入队列 {}{} 失败，{}：{}", queuePrefix, ":" + serverId, desc, ex.getMessage());
             }
         }
+        // 计数点 ②（写入侧）：按「实际写成功的队列个数」累加，与返回值同源。
         if (pushed > 0) {
+            deliveryPushed.add(pushed);
             log.info("[IM 镜像投递] 已投递 {} 个 im-server 队列（{}），{}", pushed, queuePrefix + ":*", desc);
         }
         return pushed;

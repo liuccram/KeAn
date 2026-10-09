@@ -15,7 +15,8 @@ interface RequestOptions {
   data?: unknown;
 }
 
-const REQUEST_TIMEOUT_MS = 15000;
+/** 单个 HTTP 请求的超时（导出给「一次发送的总兜底时限」推导用，口径只有这一处） */
+export const REQUEST_TIMEOUT_MS = 15000;
 let handlingBan = false;
 
 function currentRoute() {

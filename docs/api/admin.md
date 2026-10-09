@@ -398,6 +398,51 @@ CREATE TABLE announcement (
 
 ---
 
+## IM 监控
+
+> 面向「IM 镜像投递」的运维看板与处置（队列堆积 / 投递失败 / 残留队列）。
+> 完整字段说明、返回样例与前端渲染建议见 [`../ops/im-monitoring.md`](../ops/im-monitoring.md) §6。
+
+### GET /api/admin/im/stats
+
+只读。数据来自**最近一次巡检**（默认 60 秒一轮）的不可变快照，不实时 `SCAN`。
+`status` 与 `/health/ready` 的 `im` 字段**同源**（`DISABLED` / `UP` / `DEGRADED`）。
+
+`data`：`status`、`enabled`、`redisAvailable`、`message`、`counters{attempts,pushed,failed,skipped}`、
+`queues[{key,length,serverId,residue,residueReason}]`、`queueTotal`、`queueCount`、
+`residueFound`、`residueKeys`、`maxServerId`、`failedInLastCycle`、`lastInspectionAt`、`queriedAt`。
+
+Redis 不可用时仍返回 `200`，只是 `redisAvailable=false` + `message`（`queues` 为空）。
+
+### GET /api/admin/im/alerts
+
+只读。**内存态**：最多保留 50 条（`kean.im.alert-history-size`），**进程重启即清空**。
+
+| 参数 | 说明 |
+|---|---|
+| limit | 可选，默认 50，被缓冲容量截断 |
+
+`data`：`list[{time,kind,level,summary,currentValue,threshold,keys,mailSent,mailNote}]`、
+`size`、`limit`、`capacity`、`note`。`kind` ∈ `queue-backlog` / `delivery-failure` / `queue-residue`。
+
+### POST /api/admin/im/queues/clean
+
+**写操作（不可逆）**：`DEL` 会永久丢弃残留队列里尚未推送的消息。
+
+```json
+{ "confirm": "CLEAN_RESIDUE", "serverIds": [3] }
+```
+
+`confirm` 必填且必须逐字符等于 `CLEAN_RESIDUE`（否则 `40000`）；`serverIds` 可选（最多 64 个）。
+只允许删除「最近一次巡检判定为残留」且「serverId 不在活跃集合（在线槽位值 ∪ 最新实例）里」的键，
+活跃集合读不完整时**一律拒绝**。
+
+`data`：`requested`、`deleted`、`skipped`、`results[{key,serverId,length,deleted,reason}]`、
+`cleanedAt`、`note`。**被拒绝是正常结果**（`deleted=false` + `reason`），不是错误。
+写操作记录 `operation_type=IM_QUEUE_CLEAN`、`target_type=IM_QUEUE`、`target_id=键名`。
+
+---
+
 ## 错误码（新增/复用）
 
 | HTTP | code | 含义 |

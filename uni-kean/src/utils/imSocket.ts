@@ -164,6 +164,8 @@ export async function connect(handlers?: ImSocketEvent): Promise<void> {
   }
   const url = resolveImWsUrl();
   if (!url) {
+    // 顺手把「配没配地址」打出来：否则这种失败在 H5 上完全不可见
+    console.log("[kean-rt] im url missing", describeImEndpoints());
     emitError(new Error("未配置 VITE_IM_WS_URL / VITE_IM_BASE_URL，IM 通道无法连接"));
     return;
   }
@@ -274,6 +276,8 @@ function handleMessage(raw: unknown): void {
     return;
   }
   const cmd = typeof frame.cmd === "number" ? frame.cmd : -1;
+  // [kean-rt] box 收帧：cmd 3=私聊 5=系统 2=强制下线
+  console.log("[kean-rt] im recv cmd", { cmd });
   if (cmd === IMCmd.LOGIN) {
     // 登录成功：开心跳、置为在线（顺序与 box-im 的 wssocket.js 一致）。
     emitState("ONLINE");
@@ -432,18 +436,22 @@ export function toRealtimeEvent(cmd: number, data: unknown): ImRealtimeEvent | n
 /** 依次交给所有订阅者；调用方保证不因监听器异常而中断收包循环。 */
 function dispatchMapped(cmd: number, data: unknown): void {
   if (!mappedListeners.size) {
+    console.log("[kean-rt] im mapped skipped:no-listener", { cmd });
     return;
   }
   let event: ImRealtimeEvent | null;
   try {
     event = toRealtimeEvent(cmd, data);
   } catch (error) {
+    console.log("[kean-rt] im map threw", { cmd, error: String(error) });
     emitError(error);
     return;
   }
   if (!event) {
+    // 非业务帧（含 box 从不产生的 READ）
     return;
   }
+  console.log("[kean-rt] im mapped", { cmd, type: event.type, sessionId: event.sessionId, listeners: mappedListeners.size });
   mappedListeners.forEach((listener) => {
     try {
       listener(event);
@@ -619,10 +627,16 @@ function clearReconnect(): void {
 
 function emitState(next: ImState): void {
   state = next;
+  console.log("[kean-rt] im state", { state: next });
   events.onState?.(next);
 }
 
 function emitError(error: unknown): void {
+  // 没人注册 onError 时也要留痕：否则这个错误在线上是完全静默的
+  if (!events.onError) {
+    console.warn("[kean-rt][im] error (no handler)", String((error as Error)?.message || error));
+    return;
+  }
   events.onError?.(error);
 }
 

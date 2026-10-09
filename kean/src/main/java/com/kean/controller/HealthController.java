@@ -1,5 +1,6 @@
 package com.kean.controller;
 
+import com.kean.im.ImQueueMonitorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +39,14 @@ import java.util.concurrent.TimeUnit;
  * <p>对象存储<b>故意不参与判定</b>：它不可用时多数接口仍能正常服务（只有图片相关功能受影响），
  * 把它算进就绪会让一次存储抖动把整个实例摘下线。存储状态由启动期连通性探测日志
  * 与上传报错体现，不作为就绪依据。
+ *
+ * <p><b>IM 镜像投递同理，也不参与判定</b>（第 ④ 项监控）：{@code /health/ready} 的返回里
+ * <b>追加</b>一个 {@code im} 字段，取值 {@code DISABLED} / {@code UP} / {@code DEGRADED}
+ * （由 {@code ImQueueMonitorService} 的巡检结果决定），但
+ * <b>HTTP 状态码与既有 {@code db} / {@code redis} 字段的语义完全不变</b>：
+ * IM 是「尽力而为的旁路」，即使它的队列堆到几万条，kean 的其余接口依然完全可用，
+ * 把整站判成不健康（503 → 被负载均衡摘流量 → 连锁雪崩）是错误的处置。
+ * 需要按 IM 状态告警的编排系统请读 {@code im} 字段本身，而不是看状态码。
  */
 @RestController
 public class HealthController {
@@ -52,6 +61,19 @@ public class HealthController {
     private final long probeTimeoutMs;
 
     /**
+     * IM 巡检状态来源（第 ④ 项）。<b>可选依赖</b>，用 {@code @Autowired(required = false)}
+     * 的 setter 注入而不是构造参数，原因有二：
+     * <ol>
+     *   <li>本类的两个构造函数被 {@code HealthControllerTest} 直接调用，
+     *       改签名会让既有单测编译失败（本轮不许破坏既有验证）；</li>
+     *   <li>IM 是旁路：即使这个 Bean 不存在（例如裁剪过的上下文 / 单测），
+     *       {@code /health/ready} 也必须照常工作。</li>
+     * </ol>
+     * 它为 {@code null} 时，{@code im} 字段按 {@code DISABLED} 处理。
+     */
+    private ImQueueMonitorService imQueueMonitor;
+
+    /**
      * 显式标注 {@code @Autowired}：本类还有一个包级私有的构造函数（供测试注入更短的超时），
      * 两个构造函数会让 Spring 无法判断用哪个，从而直接启动失败。
      */
@@ -64,6 +86,12 @@ public class HealthController {
         this.dataSource = dataSource;
         this.redisTemplate = redisTemplate;
         this.probeTimeoutMs = probeTimeoutMs;
+    }
+
+    /** IM 巡检组件的可选注入（见字段注释）。 */
+    @Autowired(required = false)
+    public void setImQueueMonitor(ImQueueMonitorService imQueueMonitor) {
+        this.imQueueMonitor = imQueueMonitor;
     }
 
     @GetMapping("/health")
@@ -81,7 +109,29 @@ public class HealthController {
         body.put("status", up ? "UP" : "DOWN");
         body.put("db", db ? "UP" : "DOWN");
         body.put("redis", redis ? "UP" : "DOWN");
+        // 第 ④ 项：追加 IM 状态。只反映状态，绝不参与 status/HTTP 码的判定（见类注释）。
+        body.put("im", imStatus());
         return ResponseEntity.status(up ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    /**
+     * IM 状态：{@code DISABLED}（密钥未配置/不合格，或镜像投递已关）/
+     * {@code UP}（启用且最近一次巡检无异常）/ {@code DEGRADED}（启用但队列堆积、
+     * 投递失败超阈值或发现残留队列）。
+     *
+     * <p>纯内存读、不做任何 I/O，因此<b>不会</b>拖慢探针，也不需要走 {@link #probe} 的超时预算。</p>
+     */
+    private String imStatus() {
+        if (imQueueMonitor == null) {
+            return ImQueueMonitorService.STATUS_DISABLED;
+        }
+        try {
+            return imQueueMonitor.healthStatus();
+        } catch (Exception ex) {
+            // 理论上不可达（healthStatus 只读 volatile）。真出问题也绝不能让探针失败。
+            log.warn("读取 IM 巡检状态失败（IM 是旁路，不影响就绪判定）：{}", ex.getMessage());
+            return ImQueueMonitorService.STATUS_DISABLED;
+        }
     }
 
     private void checkDatabase() throws SQLException {

@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   Bell,
+  ChatDotRound,
   Clock,
   DataAnalysis,
   Document,
@@ -34,6 +35,7 @@ const menus = [
   { path: "/catalog", title: "学校与校区", icon: School },
   { path: "/announcements", title: "公告与消息", icon: Bell },
   { path: "/analytics", title: "数据统计", icon: DataAnalysis },
+  { path: "/im", title: "IM 监控", icon: ChatDotRound },
   { path: "/system", title: "系统管理", icon: Setting }
 ];
 

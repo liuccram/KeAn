@@ -555,6 +555,7 @@ curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
 | 私聊/系统消息镜像投递 + `data` 契约 | [`kean/src/main/java/com/kean/im/ImSenderService.java`](../../kean/src/main/java/com/kean/im/ImSenderService.java) |
 | 密钥校验 / 指纹 / 取票 | [`kean/src/main/java/com/kean/im/ImTokenService.java`](../../kean/src/main/java/com/kean/im/ImTokenService.java)、[`ImController.java`](../../kean/src/main/java/com/kean/im/ImController.java) |
 | Redis 只支持 standalone + 0 号库 | [`kean/src/main/java/com/kean/config/RedisConfig.java`](../../kean/src/main/java/com/kean/config/RedisConfig.java) |
+| 投递计数 / 队列巡检 / 邮件告警 / `/health/ready` 的 `im` 字段 | [`docs/ops/im-monitoring.md`](./im-monitoring.md) |
 | 客户端开关 / 连接 / 帧映射 | [`uni-kean/src/utils/imFlag.ts`](../../uni-kean/src/utils/imFlag.ts)、[`imSocket.ts`](../../uni-kean/src/utils/imSocket.ts) |
 | nginx 与 ufw 示例 | [`docs/ops/nginx.conf.example`](./nginx.conf.example) |
 | 阶段状态与剩余工作 | [`docs/ops/im-migration.md`](./im-migration.md) §6 |
