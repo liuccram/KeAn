@@ -345,7 +345,14 @@ public class ImTokenService {
                 .audience().add(String.valueOf(userId)).and()
                 .claim("info", info)
                 .expiration(Date.from(expireAt))
-                .signWith(key)
+                // ⚠️ 必须显式指定 HS256，不能只写 signWith(key)！
+                // jjwt 的 Keys.hmacShaKeyFor 会按密钥【字节长度】自动挑算法：32B→HS256 / 48B→HS384 / 64B→HS512。
+                // 而 box-im 的 im-server 用 java-jwt 的 Algorithm.HMAC256(secret) 写死 HS256 验签，
+                // 于是「密钥 64 字节 → 我们签 HS512 → 它按 HS256 验」→ 必然验签失败 →
+                // 表现为【握手 101 成功、登录帧发出后连接被立刻关闭】，im-server 只打一行
+                // 「用户token校验不通过，强制下线」，客户端只看到"连上就断"，极难排查。
+                // 线上曾真实踩到：密钥由 openssl rand -base64 48 生成，正好 64 字节 → 自动变成 HS512。
+                .signWith(key, Jwts.SIG.HS256)
                 .compact();
     }
 

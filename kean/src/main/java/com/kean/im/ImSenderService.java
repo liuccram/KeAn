@@ -151,6 +151,12 @@ public class ImSenderService {
         this.redis = redis;
         this.objectMapper = objectMapper;
         this.mirrorEnabled = mirrorEnabled;
+        // 启动即把「镜像投递开没开、密钥就绪没就绪」打出来。
+        // 目的：运维能一眼看出配置到底有没有被 Spring 读到 —— 只看 /proc/<pid>/environ 只能证明
+        // systemd 注入了环境变量，不能证明 @Value 解析成功（键名拼错时会静默沿用默认值 true）。
+        log.info("[IM 镜像投递] mirrorEnabled={}（配置项 kean.im.mirror-enabled / 环境变量 KEAN_IM_MIRROR_ENABLED），"
+                        + "tokenReady={}（IM_JWT_SECRET 是否已配置且 ≥32 字节）→ 实际生效 enabled={}",
+                mirrorEnabled, imTokenService.enabled(), mirrorEnabled && imTokenService.enabled());
     }
 
     /**

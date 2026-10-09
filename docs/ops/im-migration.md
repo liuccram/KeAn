@@ -161,13 +161,47 @@ kean V34 是**课安自己的**增强迁移，不对应 box-im 某个具体 SQL 
 
 ## 6. 阶段 3 启用步骤：把实时推送切到 box-im im-server
 
-> **当前状态：已实现、默认关闭、未部署。**
-> 本仓阶段 3 的代码已经落地（见 6.4），但**没有提交、没有推送、没有部署、没有跑构建**。
-> 默认配置下（`IM_JWT_SECRET` 未配置 + `VITE_IM_ENABLED` 未设置）行为与本阶段之前**完全一致**。
+> ### 当前状态（逐步更新）
 >
-> 下面这条路走通之后，实时通道是**双通道并存**的：
-> 课安自研 `ws://<host>/ws/chat`（**永远在，一行没删**）+ box-im im-server `ws://<host>/im`。
-> 出问题的回滚手段就是关 flag —— 见 [6.3](#63-回滚)。
+> | 阶段 | 内容 | 状态 |
+> |---|---|---|
+> | ① | 连接层骨架（token 取票 / WS 客户端 / 帧映射） | ✅ 已完成 |
+> | ② | 消息模型对齐（`IMRecvInfo` / `PrivateMessageVO` 同构 + 课安补充字段） | ✅ 已完成 |
+> | ③ | 推送切 box 队列（`im:message:private\|system:{serverId}`） | ✅ 已完成 |
+> | ④ | **im-server 已部署并实测握手 101 通过** | ✅ 已完成（本轮） |
+> | ⑤ | **上游自带封禁/踢线，无需补丁** | ✅ 已澄清（本轮，见 §6.5） |
+> | ⑥ | 客户端开关 `VITE_IM_ENABLED` | ⏳ **尚未打开**（下一步） |
+> | ⑦ | 端到端联调（私聊进气泡 / 队列不堆积 / 封禁踢线 + 阻止重连） | ⏳ **尚未做** |
+>
+> ④ 的实测记录：官方 master 4.0.0 已在服务器上编译
+> （`mvn -pl im-server -am -DskipTests package` → BUILD SUCCESS）、以 systemd `im-server.service`
+> 跑起来（`IMServerApp v4.0.0` ✓、`websocket server 初始化完成,端口：8878` ✓）、
+> Redis 用 kean 共用的实例（`127.0.0.1:26739`、0 号库 ✓ 已写 `im:max_server_id`）、
+> 经 nginx `location /im` 反代到 `172.17.0.1:8878` 的 WS 握手返回
+> **`HTTP/1.1 101 Switching Protocols`** ✓；kean 的 `IM_JWT_SECRET` 与 im-server 的
+> `jwt.accessToken.secret` 的 **sha256 前 16 位一致（`1aa7a016cacd65ad`）** ✓。
+> ⚠️ 这并不等于端到端通了 —— 还没有真实客户端在线，⑦ 仍未做。
+>
+> ### ⚠️ 当前状态提醒：后端**已经在往 box 队列镜像投递**（空转）
+>
+> `kean.im.mirror-enabled` **默认 `true`** ✓（`@Value("${kean.im.mirror-enabled:true}")`），
+> 而 `IM_JWT_SECRET` **已配置** ✓ ⇒ 生效条件是 `mirrorEnabled && imTokenService.enabled()`，
+> 两个都满足 —— 因此**即便客户端开关 `VITE_IM_ENABLED` 还没打开，后端也已在向 box 队列投递**。
+>
+> * 这是**空转**：无害（投递失败只记 WARN，业务不受影响），但**没有意义**
+>   —— 没有客户端挂在 im-server 上，投进去也没人收；
+> * 更需要注意的是：**若 im-server 停机，这些队列无人消费会无界增长 ✗**（Redis 内存风险）。
+> * 所以本轮已把 **`KEAN_IM_MIRROR_ENABLED=false`** 写入服务器上的 `/opt/kean/.env.prod`，
+>   等开客户端开关时**再一起打开**。
+>   **【未能证实】** 本仓库内的 `.env.prod` 里并没有 `IM_JWT_SECRET` /
+>   `KEAN_IM_MIRROR_ENABLED` 这两个变量，所以这条只能以服务器上那份文件为准，本仓无法交叉验证。
+>
+> ### 行为边界
+>
+> * 默认配置下（`IM_JWT_SECRET` 未配置 + `VITE_IM_ENABLED` 未设置）行为与本阶段之前**完全一致**。
+> * 双通道并存：课安自研 `ws://<host>/ws/chat`（**永远在，一行没删**）
+>   + box-im im-server `ws://<host>/im`。
+> * 出问题的回滚手段就是关 flag —— 见 [6.3](#63-回滚)。
 
 ### 6.1 环境变量清单
 
@@ -175,8 +209,8 @@ kean V34 是**课安自己的**增强迁移，不对应 box-im 某个具体 SQL 
 |---|---|---|---|---|
 | `IM_JWT_SECRET` | **kean 后端** | 启用 IM 时必填 | 空 | box-im 兼容 token 的签名密钥。**必须与 im-server 的 `jwt.accessToken.secret` 逐字节一致，且 ≥32 字节**。不配置 / 不足 32 字节 → 记日志且 IM 判为未就绪（**不崩、不报错**），`GET /api/im/token` 返回 `enabled=false` |
 | `IM_JWT_REFRESH_SECRET` | kean 后端 | 否 | 由 `IM_JWT_SECRET` 派生 | refreshToken 密钥。不参与 im-server 握手，仅在 im-platform 上线后换票用 |
-| `KEAN_IM_MIRROR_ENABLED` | kean 后端 | 否 | `true` | 是否把消息镜像投递到 box 队列（Spring relaxed binding → `kean.im.mirror-enabled`）。设 `false` = 「只关投递、不动 token」。**总开关仍是 `IM_JWT_SECRET`** |
-| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | kean 后端 | 沿用现状 | 沿用现状 | ⚠️ **必须与 im-server 用同一个 Redis 实例、同一个库**。kean 的 `RedisConfig` 只支持 standalone 且**只读 host/port/password，永远用 0 号库** |
+| `KEAN_IM_MIRROR_ENABLED` | kean 后端 | 否 | `true` | 是否把消息镜像投递到 box 队列（Spring relaxed binding → `kean.im.mirror-enabled`）。设 `false` = 「只关投递、不动 token」。**总开关仍是 `IM_JWT_SECRET`**。⚠️ **当前建议设 `false`**：默认 `true` + `IM_JWT_SECRET` 已配置 ⇒ 客户端开关还没开时后端也会投递（空转；im-server 停机时队列会无界增长），详见本节开头的「当前状态提醒」 |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | kean 后端 | 沿用现状 | 沿用现状 | ⚠️ **必须与 im-server 用同一个 Redis 实例、同一个库**。kean 的 `RedisConfig` 只支持 standalone 且**只读 host/port/password，永远用 0 号库**（不读 `database`）；线上实测端口 `26739` |
 | `VITE_IM_ENABLED` | **uni-kean 客户端** | 启用时必填 | 未设置 = 关闭 | 客户端唯一总开关。只有 `true` / `1` / `on` / `yes`（大小写不敏感）才开。**不设置时下面两个地址变量填了也没用** |
 | `VITE_IM_WS_URL` | uni-kean 客户端 | 二者至少一个 | 空 | im-server 的 WS 地址，形如 `wss://<你的域名>/im`。**路径必须是 `/im`**（im-server 写死了 `WebSocketServerProtocolHandler("/im")`），写成 `/ws` 会握手 404 |
 | `VITE_IM_BASE_URL` | uni-kean 客户端 | 二者至少一个 | 空 | 只写源站也行（如 `https://<你的域名>`），客户端会自动补 `/im` 并把 `http(s)` 归一化成 `ws(s)`。`VITE_IM_WS_URL` 优先 |
@@ -187,27 +221,36 @@ kean V34 是**课安自己的**增强迁移，不对应 box-im 某个具体 SQL 
 > 或直接由进程环境变量注入。
 >
 > ⚠️ 另外两个**不在本表里但也有要求**的配置：`im-server` 侧的 `jwt.accessToken.secret`
-> 与 `spring.data.redis.*`，以及 nginx 的 `location /im` —— 全部在
-> [`docs/ops/im-server-patch.md`](./im-server-patch.md) 里逐行给了。
+> 与 `spring.data.redis.*`，以及 nginx 的 `location /im` 与 **ufw 放行 8878**
+> —— 全部在 [`docs/ops/im-server-patch.md`](./im-server-patch.md) 里逐行给了。
+> ✅ 再次强调：**im-server 不需要任何代码改动**（上游自带封禁校验）。
 
 ### 6.2 部署顺序
 
 严格按这个顺序，每一步都有可验证的检查点（详细命令见
-[`docs/ops/im-server-patch.md` §5](./im-server-patch.md#5-部署顺序与验收阶段-3)）：
+[`docs/ops/im-server-patch.md` §3](./im-server-patch.md#3-部署步骤本轮已实测走通一遍-)）。
+**第 1–4 步本轮已实测走通一遍 ✅**：
 
 ```
 1. 生成密钥            openssl rand -base64 48  →  写入 kean 的 IM_JWT_SECRET
+                       同时写入 im-server 的 jwt.accessToken.secret（同一个值、>=32 字节）
+                       检查点：两边 sha256 前 16 位一致（实测 1aa7a016cacd65ad）
 2. Redis 对齐          确认 kean 与 im-server 的 host/port/password 指向同一个实例、0 号库
-3. 起 im-server        （打 im-server-patch.md §1 的封禁 2 行补丁 + §2 密钥 + §3 Redis）
-                       检查点：redis-cli get im:max_server_id  → 存在且 >= 1
-4. nginx 加 /im        （im-server-patch.md §4 的片段）→ nginx -t && reload
-                       检查点：curl 握手返回 101 Switching Protocols
+                       （实测 127.0.0.1:26739）
+3. 起 im-server        ✅ 无需任何补丁（只有 §2 密钥 + §3 Redis 两处配置）
+                       mvn -pl im-server -am -DskipTests package → systemctl start im-server
+                       检查点：日志 IMServerApp v4.0.0 + websocket server 初始化完成,端口：8878
+                               redis-cli get im:max_server_id  → 存在且 >= 1
+4. nginx 加 /im        （im-server-patch.md §3.3 的片段）→ nginx -t && reload
+                       ⚠️ 先 ufw allow from 172.17.0.0/16 to any port 8878 proto tcp（漏了会 504）
+                       检查点：curl 握手返回 101 Switching Protocols  ✅ 实测通过
 5. 后端自测（不开前端 flag）
                        kean 里发一条私聊消息 →
                        redis-cli llen im:message:private:1 递增
                        im-server 日志出现「接收到私聊消息，发送者:x,接收者:y,内容:...」
                        再确认 llen 不再增长（说明被 leftPop 消费掉了）
 6. 打开客户端 flag     VITE_IM_ENABLED=true + VITE_IM_WS_URL=wss://<域名>/im → 重新构建发布
+                       ⚠️ 同时把 KEAN_IM_MIRROR_ENABLED 放回 true（见本节开头的状态提醒）
 7. 灰度                先放一小批用户（按设备/账号灰度，不要一次全量）
 8. 观察                见下面的观察项；无异常再逐步放大
 ```
@@ -219,9 +262,10 @@ kean V34 是**课安自己的**增强迁移，不对应 box-im 某个具体 SQL 
 | kean 日志 `[IM 镜像投递] 已投递 N 个 im-server 队列` | 每次发消息 / 每次通知都会有一条；`N=0` 表示「接收方不在 im-server 上」 |
 | kean 日志 `[IM 镜像投递] ...投递失败` | 单条 WARN，业务不受影响（投递是尽力而为） |
 | im-server 日志 `用户token校验不通过，强制下线` | **两边密钥不一致**（最常见）。kean 侧看不出问题，必须去 im-server 看 |
-| im-server 日志 `用户已被封禁,拒绝建立连接` | 封禁补丁生效 |
+| im-server 日志 `用户不可用，拒绝连接,userId:…` | **上游自带的封禁校验**生效（`LoginProcessor.java:51` 读到 `im:user:denied:{userId}`）。⚠️ 不是「我们打的补丁」——课安没有补丁 |
 | `llen im:message:private:*` 持续增长不下降 | 消费端没跑，或**队列键写错**（少了 `:{serverId}` 后缀 / serverId 不是当前那个） |
 | 客户端连上立刻断 | 同上密钥问题；或 nginx `/im` 路径被 rewrite |
+| nginx 反代 `/im` 返回 **504** | **ufw 没放行 8878**（kean 的 8080 放行了也没用）。`ufw allow from 172.17.0.0/16 to any port 8878 proto tcp` |
 
 ### 6.3 回滚
 
@@ -230,8 +274,8 @@ kean V34 是**课安自己的**增强迁移，不对应 box-im 某个具体 SQL 
 | 步骤 | 动作 | 效果 |
 |---|---|---|
 | 1（首选） | 客户端 `VITE_IM_ENABLED=false` 或删除该变量 → 重新发布前端 | 立即回到**只有自研 `/ws/chat`** 的现状。`imSocket.connect()` 里第一行 `if (!isImEnabled()) return;`，一行后续代码都不执行 |
-| 2 | 后端 `KEAN_IM_MIRROR_ENABLED=false`（或删掉 `IM_JWT_SECRET`） | `ImSenderService` 全部 no-op，kean 不再往 box 队列写任何东西。`GET /api/im/token` 返回 `enabled=false` |
-| 3 | 停 im-server 进程；nginx 移除 `location /im` | kean 与客户端都不依赖它 |
+| 2 | 后端 `KEAN_IM_MIRROR_ENABLED=false`（或删掉 `IM_JWT_SECRET`） | `ImSenderService` 全部 no-op，kean 不再往 box 队列写任何东西。`GET /api/im/token` 返回 `enabled=false`。**本轮已把 `KEAN_IM_MIRROR_ENABLED=false` 写入服务器 `/opt/kean/.env.prod`**，即当前就处于这一步 |
+| 3 | 停 im-server 进程（`systemctl stop im-server`）；nginx 移除 `location /im` | kean 与客户端都不依赖它 |
 
 > **双通道并存是刻意的设计**：`ChatWebSocketHandler` / `WebSocketConfig` / `ChatSessionHub` /
 > `RealtimePublisher` 的既有推送路径**一行未删、一行未改**，所以第 1 步的回滚是**秒级**的，
@@ -248,6 +292,11 @@ kean V34 是**课安自己的**增强迁移，不对应 box-im 某个具体 SQL 
 | `uni-kean/src/composables/useLiveUpdates.ts` | `useLiveUpdates()` / `resetImChannel()`（新） | **追加**「`isImEnabled()` 为真时才连接 IM 通道并订阅映射事件」；既有 `onRealtime(handler)` 一行未改。flag 关时整块跳过 |
 
 **「开关关时零变化」的论证**
+
+> ⚠️ **注意时效**：下面第 2 条的前提是「`IM_JWT_SECRET` 未配置」，
+> 而**当前服务器上 `IM_JWT_SECRET` 已经配好了** —— 所以第 2 条现在**不成立**：
+> 后端已经在投递（空转），这正是 §6 开头要求把 `KEAN_IM_MIRROR_ENABLED` 设为 `false` 的原因。
+> 前端第 1 条（`VITE_IM_ENABLED` 未设置）**仍然成立**，客户端的零变化没有变。
 
 1. 客户端：`VITE_IM_ENABLED` 未设置 → `isImEnabled()` 为 `false`
    → `useLiveUpdates.bindIm()` 第一行 `if (!isImEnabled()) return;`
@@ -273,27 +322,37 @@ kean V34 是**课安自己的**增强迁移，不对应 box-im 某个具体 SQL 
 | 不删 `ChatWebSocketHandler` / `WebSocketConfig` / `ChatSessionHub` | 它们是兜底通道，退役是再下一阶段的事 |
 | 不加数据库迁移、不加 Maven/npm 依赖、不改 `application*.yml` / `.env*` / `web-kean/` | 本阶段边界 |
 
-### 6.5 im-server 侧要做的补丁
+### 6.5 im-server 侧要做的事：**零代码改动**（只有配置与运维）
 
-**全部在 [`docs/ops/im-server-patch.md`](./im-server-patch.md)**（im-server 是独立仓库，
-课安不会提交进去，所以只产出补丁与说明）。要点：
+> ✅ **结论：上游 box-im master 4.0.0 自带封禁校验，课安不需要给 im-server 打任何补丁。**
+> 本节此前写的是「要打封禁 2 行补丁」✗ —— 那是基于较旧的镜像仓库得出的**错误结论**，
+> 已按官方 `bluexsx/box-im` master（commit `4ebfb0a`）实测澄清。
 
-1. **封禁校验 2 行**：插在 `LoginProcessor.process` 的 `checkSign` 通过、拿到 `userId` 之后
-   （即 `log.info("用户登录，userId:{}", userId);` 之后）、
-   `UserChannelCtxMap.addChannelCtx` 之前（准确位置与逐字代码见
-   [`im-server-patch.md` §1.1/§1.2](./im-server-patch.md)）。
-   变量名**必须**是 `redisMQTemplate`（该类已有的
-   `RedisMQTemplate` 注入字段），键名 `kean:im:banned:{userId}` 必须与 kean 侧逐字节一致。
-   这 2 行只解决「**阻止重连**」，踢已有连接靠 `im:user:force_logout:{serverId}`（已实现）。
+**全部细节在 [`docs/ops/im-server-patch.md`](./im-server-patch.md)**
+（im-server 是独立仓库，课安不会提交进去）。要点：
+
+1. **封禁 / 踢线：无需适配** ✓
+   * 封禁校验是**上游自带**的 —— `LoginProcessor.java:51` 在验签后读
+     `im:user:denied:{userId}`，命中就 `ctx.channel().close()`，
+     **连接不会注册、也不会写在线槽位键** → 天然「阻止重连」；
+   * 强制下线的消费者 `PullForceLogoutTask.java:16` **在 im-server 进程里**
+     （不是 im-platform）→ **只要 im-server 在跑，踢线就生效**；
+   * 课安侧**唯一要做的就是写对键名**：`im:user:denied:{userId}`
+     （`ImKickService.BANNED_KEY_PREFIX`），**不得自造键**。
 2. **密钥**：`jwt.accessToken.secret` 必须与 kean 的 `IM_JWT_SECRET` 完全一致且 **≥32 字节**。
-   box 示例值 `MIIBIjANBgkq` 只有 12 字节 —— im-server 侧不报错，但会让 kean 卡在 `enabled=false`。
+   box 示例值 `MIIBIjANBgkq` 只有 12 字节 —— im-server 侧不报错，
+   但会让 kean 卡在 `enabled=false`。
+   **本轮实测**：两边 `sha256` 前 16 位一致（`1aa7a016cacd65ad`）。
 3. **Redis**：必须与 kean 共用同一个实例、**同一个库**（kean 永远是 0 号库，
    所以 im-server 不要配 `spring.data.redis.database`）。
-4. **nginx**：加 `location /im` → `172.17.0.1:8878`，`Upgrade`/`Connection`/`proxy_read_timeout 3600s`
-   与既有 `location /ws/` 一致；**路径不能 rewrite**。
-   片段与校验命令见 [`im-server-patch.md` §4](./im-server-patch.md)；
-   **已同步落到** [`nginx.conf.example`](./nginx.conf.example) 的 `api.kean.college` server 块（3.2 节），
-   两份文件里的 `/im` 写法必须保持一致。
+   **本轮实测**：`127.0.0.1:26739` / 0 号库。
+4. **nginx + ufw**：加 `location /im` → `172.17.0.1:8878`，
+   `Upgrade`/`Connection`/`proxy_read_timeout 3600s` 与既有 `location /ws/` 一致；
+   **路径不能 rewrite**。⚠️ 还必须 **`ufw allow from 172.17.0.0/16 to any port 8878 proto tcp`**
+   —— 本轮实测：漏了这条，nginx 反代 `/im` 返回 **504**（kean 的 8080 当时已放行）。
+   片段与校验命令见 [`im-server-patch.md` §3.3](./im-server-patch.md)；
+   **已同步落到** [`nginx.conf.example`](./nginx.conf.example) 的 `api.kean.college` server 块（3.2 节）
+   与第 5 节 ufw 规则，两份文件里的 `/im` 写法与 ufw 规则必须保持一致。
 
 ### 6.6 2026-02 复核修正（4 项，只修 bug 与补做，未新增功能阶段）
 
@@ -314,7 +373,14 @@ kean V34 是**课安自己的**增强迁移，不对应 box-im 某个具体 SQL 
 
 **处理**：`ImKickService` **彻底不再写这枚键**；封禁时改为**删掉**该用户可能残留的忙线键
 （`im:user:state:{userId}`，纯粹是清理 box 自己的临时状态，避免「被踢下线后别人打给他仍提示对方正忙」）。
-封禁态的唯一权威仍是 `kean:im:banned:{userId}`（**行为未动**）与 `sys_user.status`。
+封禁态的唯一权威仍是 **`im:user:denied:{userId}`**（上游 `IMRedisKey.IM_USER_DENIED` 的键名，
+`ImKickService.BANNED_KEY_PREFIX`，**行为未动**）与 `sys_user.status`。
+
+> 🔁 **键名更正（本轮）**：这里原先写的是自造键 `kean:im:banned:{userId}` ✗。
+> 已核实：**上游 im-server 自带封禁校验**，读的就是 `im:user:denied:{userId}`
+> （`LoginProcessor.java:51`），自造键 im-server 完全不认。
+> kean 代码里已改为上游键名（`ImKickService.BANNED_KEY_PREFIX = "im:user:denied:"`），
+> 本轮文档也已全部同步 —— 详见 [`im-server-patch.md` §0](./im-server-patch.md#0-事实更正曾经的错误结论-vs-实测事实)。
 
 **② `GET /api/im/token` 补封禁前置校验**
 
@@ -323,6 +389,14 @@ kean V34 是**课安自己的**增强迁移，不对应 box-im 某个具体 SQL 
 **403 / `Result` 信封（code 40301）**，与 `JwtAuthFilter` 拦住被封用户时**同码同形状**。
 封禁口径复用既有的 `kean:user:banned:{userId}`，**没有另造一套**，`AccountBanServiceImpl` **零改动**。
 顺序是先判 `enabled()` 再判封禁（IM 未启用时返回 `enabled=false` 空壳，不抛 403）。
+
+> ⚠️ **别把两个封禁键搞混**（本轮特地澄清）：
+> * `kean:user:banned:{userId}` —— **课安自己的**封禁口径（`TokenRevokeService.BAN_PREFIX`），
+>   由 `JwtAuthFilter` / `ChatAuthService` / `ImController.isBanned()` 读，管的是**课安 HTTP 接口**；
+> * `im:user:denied:{userId}` —— **给 im-server 看的镜像键**（上游 `IMRedisKey.IM_USER_DENIED`），
+>   由 `LoginProcessor` 读，管的是**能不能连 im-server 的 WS**。
+>
+> 两者都由 `AccountBanServiceImpl` 在封禁时写入、解封时删除，但**语义与读取方完全不同**，不可互换。
 
 > 注：`/api/im/token` 不在 `JwtAuthFilter` 的匿名放行清单里，所以当前**过滤器已先拦一道**；
 > 本项是**纵深防御**（票源不流出），也是对将来任何放行路径变化的兜底。
@@ -348,4 +422,26 @@ im-server 对 `IMRecvInfo.data` **只透传不解析**，所以多出来的字�
 `RealtimePublisher` 上那个**同名但不同类**的 `broadcast` 未动）。
 `scanKnownServerIds()` 与其常量 `MAX_BROADCAST_SERVER_ID` 保留 —— 它们服务于
 `sendSystem(null, data)` 这条**仍在使用**的广播分支。
+
+### 6.7 封禁键的序列化差异（现在够用，将来要改）
+
+`im:user:denied:{userId}` 这枚键，**上游与我们写进去的「值类型」不一样**：
+
+| | 上游 im-platform | 课安 kean |
+|---|---|---|
+| 写入方 | `UserBannedConsumerTask:38` | `ImKickService.markBanned` |
+| Redis 模板 | `RedisTemplate<String,Object>` | `StringRedisTemplate` |
+| **写入的值** | **数字**（`AuthInterceptor:51` 读取时会 `(Integer)` 强转） | **字符串 `"1"`** |
+
+**对当前部署形态完全够用 ✓**：im-platform **未部署**，读这枚键的只有 im-server，
+而 `LoginProcessor.java:51` 用的是 `redisMQTemplate.hasKey(...)` —— **只判断键是否存在，不看值**。
+
+> ⚠️ **将来若部署 im-platform，必须改用 `RedisTemplate<String,Object>` 写数字**，
+> 否则 im-platform 取票/鉴权会抛**类型转换异常**（`String` 无法强转成 `Integer`）。
+> 这段事实同样写在 `ImKickService.markBanned` 的方法注释里，文档与此保持一致。
+>
+> 📌 还有一条**无关**但容易连带踩的坑：`ImKickService` 注入的是
+> `StringRedisTemplate`，所以它写的所有值都是字符串。
+> 目前它只写这一枚键（外加 `im:user:force_logout:{serverId}` 的 String JSON），
+> 两者都不涉及数字强转，所以当前没有其它风险点。
 

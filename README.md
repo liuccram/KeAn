@@ -304,8 +304,8 @@ npm run dev                  # http://localhost:5174/login
 | [`docs/ops/rustfs.md`](docs/ops/rustfs.md) | 对象存储运维 |
 | [`docs/ops/nginx.conf.example`](docs/ops/nginx.conf.example) | 线上 Nginx 反代配置（三域名分站 + Cloudflare 回源 + nginx 容器注意事项） |
 | [`docs/sql/README.md`](docs/sql/README.md) | `docs/sql/` 是历史存档；`im-platform.sql` 属于独立库 `im_platform` |
-| [`docs/ops/im-migration.md`](docs/ops/im-migration.md) | IM 迁移：两个库的边界、执行与回滚 |
-| [`docs/ops/im-server-patch.md`](docs/ops/im-server-patch.md) | im-server 侧补丁与部署验收（阶段 3） |
+| [`docs/ops/im-migration.md`](docs/ops/im-migration.md) | IM 迁移：两个库的边界、执行与回滚；阶段 3 状态与启用步骤 |
+| [`docs/ops/im-server-patch.md`](docs/ops/im-server-patch.md) | im-server 运维与对接说明（阶段 3）：**上游自带封禁/踢线，无需任何补丁**；含「曾经的错误结论 vs 实测事实」更正表、实测部署步骤、验收清单、回滚 |
 | [`docs/engineering-plan.md`](docs/engineering-plan.md) | 工程化改进计划 |
 
 ## ❓ 常见问题

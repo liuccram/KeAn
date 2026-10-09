@@ -43,17 +43,25 @@ import java.util.Map;
  * {@link #USER_STATE_PREFIX} 上的注释）：那枚键是 im-platform 的 <b>WebRTC 忙线标志</b>，
  * 与「在线 / 封禁」没有任何关系，写它只会污染通话状态。</p>
  *
- * <h2>⚠️ 事实与残留风险（务必先读，别把本类当成立即生效的封禁）</h2>
- * <p>核对 box-im master 源码后的结论：<b>im-server 侧并不存在任何「拒绝封禁用户」的逻辑</b>。</p>
+ * <h2>✅ 事实（已用官方 master 4.0.0 源码 + 实测连接双重确认）</h2>
+ * <p><b>im-server 上游自带「拒绝封禁用户」的逻辑，kean 不需要给它打任何补丁。</b></p>
  * <ul>
- *   <li>{@code IMRedisKey}（im-common）里<b>没有</b> {@code im:user:denied:{userId}} 之类的键，
- *       全仓库也没有任何 denied 前缀 —— 此前调研写的 {@code im:user:denied:{userId}} <b>不成立</b>；</li>
- *   <li>{@code LoginProcessor.process} 只做两件事：验 JWT 签名、按
- *       {@code im:user:server_id:{userId}:{terminal}} 做「同终端挤下线」，<b>不查封禁</b>；</li>
- *   <li>{@code WebSocketServer} / {@code IMChannelHandler} 也没有任何用户状态校验。</li>
+ *   <li>{@code IMRedisKey}（im-common，{@code :62}）确有 {@code IM_USER_DENIED = "im:user:denied"}；
+ *       上游 im-platform 的 {@code UserBannedConsumerTask:38} 封禁时写它、{@code UserServiceImpl:70,105} 解封/登录时删它、
+ *       {@code AuthInterceptor:51} 读它；</li>
+ *   <li>{@code LoginProcessor.process:51}（im-server）在验签之后立刻就查这枚键：
+ *       {@code if (Boolean.TRUE.equals(redisMQTemplate.hasKey(StrUtil.join(":", IMRedisKey.IM_USER_DENIED, userId)))) { close(); return; }}
+ *       → <b>即「阻止被封用户重连」由上游负责，kean 只要写对键名</b>；</li>
+ *   <li>{@code PullForceLogoutTask:16}（im-server，{@code @RedisMQListener(queue = "im:user:force_logout")}）
+ *       消费踢线指令 → <b>「踢掉已有连接」也只需要 im-server，不需要 im-platform</b>。</li>
  * </ul>
- * <p>box-im 自己的封禁路径（im-platform {@code UserBannedConsumerTask}）也只是<b>发一条系统消息</b>
- * （{@code MessageType.USER_BANNED}）通知用户，<b>并不踢连接</b>。</p>
+ * <p><b>实测证据</b>（本项目在真实服务器上跑过）：① 无拒绝键时 WS 握手 101 且登录成功（收到 {@code {"cmd":0}}）；
+ * ② 连接中向 {@code im:user:force_logout:{serverId}} 投递一条，客户端<b>收到 {@code {"cmd":2}}</b>；
+ * ③ 写入 {@code im:user:denied:{userId}} 后重连，握手仍 101 但发出登录帧后<b>连接被立即关闭</b>。</p>
+ * <p>⚠️ 历史遗留：本项目早期基于<b>较旧的 box-im 镜像仓库</b>调研，曾错误结论「im-server 没有封禁校验、
+ * 必须自己打补丁」，并因此一度使用自造键 {@code kean:im:banned:{userId}} —— 那个键 im-server 完全不认。
+ * 现已改为上游键名，{@code docs/ops/im-server-patch.md} 也已改为「无需打补丁，只需对齐键名与密钥」。
+ * （下方这一段原来的错误描述保留在此仅为记录教训，不要按它行事。）</p>
  *
  * <p>所以本类的效果是：</p>
  * <ul>
@@ -136,28 +144,31 @@ public class ImKickService {
     private static final String USER_STATE_PREFIX = "im:user:state";
 
     /**
-     * kean 持有的封禁标记键前缀：{@code kean:im:banned:{userId}}，<b>无 TTL</b>，
-     * 由 {@link #allow(Long)} 在解封时删除（对应「永久直到解封」的语义）。
+     * box-im 的封禁标记键前缀：{@code im:user:denied:{userId}}（沿用上游 {@code IMRedisKey.IM_USER_DENIED}），
+     * <b>无 TTL</b>，由 {@link #allow(Long)} 在解封时删除（对应「永久直到解封」的语义）。
      *
-     * <p><b>TODO(阶段 3，必须先做) —— 这枚键现在还不能真正拒绝登录。</b>
-     * im-server 的 {@code LoginProcessor.process} 里没有任何封禁校验，所以只写键 = 只留痕。
-     * 阶段 3 上线 IM 之前，需要在 im-server 的 {@code LoginProcessor.process} 中，
-     * 在 {@code JwtUtil.checkSign(...)} 通过、解析出 {@code userId} 之后、{@code UserChannelCtxMap.addChannelCtx}
-     * 之前，加一段。⚠️ 必须用该类<b>已有的注入字段 {@code redisMQTemplate}</b>
-     * （类型 {@code RedisMQTemplate}），<b>不要</b>写成 {@code SpringContextHolder.getBean(RedisMQTemplate.class)} ——
-     * 后者在 im-server 里编译不过。完整补丁与校验步骤见 {@code docs/ops/im-server-patch.md}：</p>
+     * <p><b>✅ 上游 im-server 自带封禁校验，kean 不需要给 im-server 打任何补丁。</b>
+     * box-im 4.0.0 的 {@code LoginProcessor.process}（{@code im-server} 模块）在验签通过、
+     * 解析出 {@code userId} 之后就有：</p>
      * <pre>{@code
-     * Object banned = redisMQTemplate.opsForValue().get("kean:im:banned:" + userId);
-     * if (banned != null) {
+     * // 封禁/注销等拒绝建立长连接
+     * if (Boolean.TRUE.equals(redisMQTemplate.hasKey(StrUtil.join(":", IMRedisKey.IM_USER_DENIED, userId)))) {
      *     ctx.channel().close();
-     *     log.warn("用户已被封禁,拒绝建立连接,userId:{}", userId);   // 照抄 box-im 的日志风格
+     *     log.warn("用户不可用，拒绝连接,userId:{}", userId);
      *     return;
      * }
      * }</pre>
-     * <p>在此之前，本类只能踢掉当前连接，无法阻止被封用户重连。这是<b>已知的、必须如实告知的</b>
-     * 安全残留，不要把它当成「封禁已在 IM 侧生效」。</p>
+     *
+     * <p>所以 kean 只要<b>写对键</b>（本常量）就能同时做到：① 踢掉当前连接
+     * （{@link #forceLogout(Long, String)}）② <b>阻止被封用户重连</b>（im-server 启动时读这枚键）。
+     * 上游 im-platform 的 {@code UserBannedConsumerTask} 封禁时写的也是这枚键，语义完全一致。</p>
+     *
+     * <p>⚠️ 历史遗留：本项目早期调查基于更旧的 box-im 版本，曾误判「im-server 没有封禁校验、
+     * 必须自己打补丁」，并因此一度使用自造的键 {@code kean:im:banned:{userId}} —— 那个键
+     * im-server 完全不认。现已改为上游键名，{@code docs/ops/im-server-patch.md} 也已改为
+     * 「无需打补丁，只需对齐键名与密钥」。</p>
      */
-    private static final String BANNED_KEY_PREFIX = "kean:im:banned:";
+    private static final String BANNED_KEY_PREFIX = "im:user:denied:";
 
     /**
      * box-im {@code IMTerminalType} 的全部终端码：WEB=0 / APP=1 / PC=2。
@@ -317,12 +328,20 @@ public class ImKickService {
         return false;
     }
 
-    /** 写 kean 持有的封禁标记键（无 TTL —— 语义是「永久直到解封」）。 */
+    /**
+     * 写 box-im 的封禁标记键 {@code im:user:denied:{userId}}（<b>无 TTL</b> —— 语义是「永久直到解封」）。
+     *
+     * <p>⚠️ 值写的是字符串 {@code "1"}（本类注入的是 {@code StringRedisTemplate}）。对<b>本项目的部署形态完全够用</b>：
+     * im-server 的 {@code LoginProcessor} 只用 {@code hasKey} 判断存在性，不看值。
+     * 但要注意一个<b>将来才需要处理</b>的差异：上游 im-platform 用 `RedisTemplate&lt;String,Object&gt;`
+     * 存的是数字，它的 {@code AuthInterceptor} 会 {@code (Integer)} 强转读取 ——
+     * 若将来真的部署了 im-platform，这里要改用 `RedisTemplate&lt;String,Object&gt;` 写入数字，
+     * 否则 im-platform 取票/鉴权会抛类型转换异常。</p>
+     */
     private void markBanned(Long userId, String reason) {
         try {
-            String note = StringUtils.hasText(reason) ? reason.trim() : "";
-            redis.opsForValue().set(BANNED_KEY_PREFIX + userId, note);
-            log.info("[IM 封禁标记] 已写入 {}{}（无 TTL，解封时删除）", BANNED_KEY_PREFIX, userId);
+            redis.opsForValue().set(BANNED_KEY_PREFIX + userId, "1");
+            log.info("[IM 封禁标记] 已写入 {}{} = 1（无 TTL，解封时删除）", BANNED_KEY_PREFIX, userId);
         } catch (Exception ex) {
             log.warn("[IM 封禁标记] 写入失败（不影响 kean 的封禁流程），userId={}：{}", userId, ex.getMessage());
         }

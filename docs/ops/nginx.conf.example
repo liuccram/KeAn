@@ -77,7 +77,8 @@
 #     （`kean/src/main/java/com/kean/controller/HealthController.java` 无类级 @RequestMapping）
 #   · 自研 WebSocket 在 `/ws/chat`（`uni-kean/src/utils/ws.ts` 拼 `${apiBase}/ws/chat`）
 #   · box-im im-server 的 WS 在 `/im`，上游端口 **8878**，路径**写死不能 rewrite**
-#     （详见 `docs/ops/im-server-patch.md` §4，与本文件保持一致）
+#     （详见 `docs/ops/im-server-patch.md` §3.3，与本文件 3.2 节 + 第 5 节 ufw 规则保持一致）
+#     ⚠️ 上游 8878 还要 ufw 单独放行，漏了会得到 **504**（见第 5 节）
 #   · 上传上限：后端 `spring.servlet.multipart` = max-file-size **5MB** / max-request-size **6MB**
 #     （`kean/src/main/resources/application.yml:20-22`），故此处 `client_max_body_size 10m` 留余量
 #   · 图片经后端 `/api/files/**` 鉴权代理读出（对象存储是私有桶），**不要**把存储服务反代到公网
@@ -289,6 +290,9 @@ server {
     #     ⚠️ 端口 **8878**，且 **不要把它暴露到公网**：它没有 TLS，也没有 kean 的
     #        JwtAuthFilter，只有 im-server 自己的 checkSign。对外一律走本 location。
     #     ⚠️ 8879（TCP socket，im-server 的 `tcpsocket.enable: false`）同样不要暴露。
+    #     ✅ 实测：本 location 的 WS 握手返回 `HTTP/1.1 101 Switching Protocols`。
+    #     ⚠️ 返回 **504** = ufw 没放行 `172.17.0.0/16 → 8878`（见文件末尾第 5 节），
+    #        与「im-server 没起来」的 502 是两种不同故障，别查错方向。
     # ------------------------------------------------------------------
     location /im {
         proxy_pass http://172.17.0.1:8878;
@@ -358,12 +362,18 @@ server {
 # =====================================================================
 
 # =====================================================================
-# 5) ufw：必须放行「nginx 容器 → 宿主机 8080 / 8878」这一条
+# 5) ufw：必须放行「nginx 容器 → 宿主机 8080 / 8878」这两条（缺任一条都出问题）
 # =====================================================================
 # 后端只监听 docker 网桥，容器内访问宿主机的 172.17.0.1:8080 属于「从 docker0 进来」的流量。
 # 如果 ufw 默认 deny incoming，这条会被挡掉（表现为超时/拒连，很容易误判成后端没起）。
 #
-# 宿主机上执行（一条即可覆盖所有容器）：
+# ⚠️ **8878（im-server）单独一条，不要以为放行了 8080 就够**：
+#    实测踩过这个坑 —— kean 的 8080 放行了、8878 漏了，nginx 反代 /im 返回 **504**
+#    （不是 502，所以很容易往「im-server 没起来」的方向误查）。
+#    8878 = box-im im-server 的 WS 端口，见上面 3.2 节的 `location /im`
+#    与 `docs/ops/im-server-patch.md` §2.5。
+#
+# 宿主机上执行（两条都要，一条覆盖所有容器）：
 #
 #     ufw allow from 172.17.0.0/16 to any port 8080 proto tcp comment 'nginx container -> kean backend'
 #     ufw allow from 172.17.0.0/16 to any port 8878 proto tcp comment 'nginx container -> im-server'
@@ -378,4 +388,6 @@ server {
 #     ufw delete allow 443/tcp
 #     ufw status numbered
 #
-# ⚠️ 8878（im-server）**不要**对公网开放，只对 docker 网桥开放。
+# ⚠️ 8878（im-server）**不要**对公网开放（只对 docker 网桥开放）：它没有 TLS，
+#    也没有 kean 的 JwtAuthFilter，只有 im-server 自己的 checkSign。对外一律走 3.2 节的 /im。
+# ⚠️ 8879（im-server 的 TCP socket，`tcpsocket.enable: false`）同样不要暴露。
