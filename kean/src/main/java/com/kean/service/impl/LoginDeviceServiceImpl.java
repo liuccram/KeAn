@@ -17,6 +17,9 @@ import com.kean.utils.IpUtils;
 import com.kean.vo.LoginDeviceVO;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -28,8 +31,47 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * 登录设备管理：记录设备、列出设备、手动下线条设备，以及「仅允许一台设备在线」的顶号。
+ *
+ * <h2>「仅允许一台设备在线」现在是双开关，默认整体关闭</h2>
+ * <p>顶号动作（把该用户其他设备的 jti 拉黑 + 软删 login_device 行）受<b>两道</b>条件约束，
+ * 任何一道不满足都不会踢人：</p>
+ * <ol>
+ *   <li><b>全局配置开关</b> {@code kean.security.single-device.enabled}
+ *       （环境变量 {@code KEAN_SECURITY_SINGLE_DEVICE_ENABLED}），<b>默认 {@code false}</b>
+ *       —— 见 {@link #singleDeviceFeatureEnabled}。false 时本类<b>不做任何</b>互踢动作：
+ *       不读 {@code sys_user.single_device} 列、不拉黑 jti、不软删设备行、不发顶号通知；</li>
+ *   <li>用户自己的 {@code sys_user.single_device} 列（1 = 开启）。</li>
+ * </ol>
+ * <p>默认（false）下多端可同时在线，与引入该功能之前的行为逐字节一致。</p>
+ *
+ * <p><b>本类里不受该开关影响、必须保持原样的动作</b>（刻意区分，别一起关掉）：</p>
+ * <ul>
+ *   <li>{@link #recordLogin}：设备记录 + 新设备登录提醒 + 「<b>同一台设备换了 jti</b>」时
+ *       拉黑自己那条旧 jti —— 这是设备记录的自清理，不是互踢；</li>
+ *   <li>{@link #revokeAll}：注销账号时让<b>全部</b>设备（含当前这台）失效；</li>
+ *   <li>{@link #kick}：用户在「管理登录设备」页主动把某台设备下线。</li>
+ * </ul>
+ *
+ * <h2>⚠️ 边界：即便这里全部放开，box-im 的 im-server 仍会按 devId 挤下线</h2>
+ * <p>迁移到 box-im 的多端模型后，本类的互踢已默认关闭，但 <b>im-server 侧的限制依然存在</b>：
+ * 同一 {@code (userId, terminal)} 再来一条连接时，im-server 的 {@code LoginProcessor} 会按
+ * <b>终端码 {@code devId}</b> 判断「是不是同一台设备」—— 同一个 devId = 挤掉旧连接；
+ * <b>不同 devId = 给旧 server 投一条 {@code im:user:force_logout:{serverId}}</b>（把旧设备踢下线）。
+ * 详见 {@code docs/ops/im-server-patch.md} §1.5。</p>
+ * <p>因此实际可达的状态是：</p>
+ * <ul>
+ *   <li>✅ <b>手机 A + 电脑</b> 可以并存（{@code terminal} 不同）；</li>
+ *   <li>❌ <b>两台手机</b>（同一个 {@code terminal}、不同 {@code devId}）仍会互踢 ——
+ *       <b>这是 box-im 上游的既有行为，不是课安的 bug，也不是本开关没生效</b>。</li>
+ * </ul>
+ * <p>要真正支持「两台手机同时在线」，必须改 im-server（独立仓库，本次不动）。</p>
+ */
 @Service
 public class LoginDeviceServiceImpl implements LoginDeviceService {
+
+    private static final Logger log = LoggerFactory.getLogger(LoginDeviceServiceImpl.class);
 
     private final LoginDeviceMapper loginDeviceMapper;
     private final SysUserMapper sysUserMapper;
@@ -37,18 +79,46 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
     private final TokenBlacklistService tokenBlacklistService;
     private final NotificationService notificationService;
 
+    /**
+     * 「仅允许一台设备在线」的<b>全局</b>开关，默认 {@code false}（即默认不启用单设备限制）。
+     *
+     * <p>与项目其余开关写法一致：默认值写在 {@code @Value} 占位符里，
+     * <b>不写进 {@code application*.yml}</b>。可用环境变量
+     * {@code KEAN_SECURITY_SINGLE_DEVICE_ENABLED=true}（Spring relaxed binding →
+     * {@code kean.security.single-device.enabled}）打开。</p>
+     *
+     * <p>为 {@code false} 时 {@link #enforceSingleDevice(Long, String)} 第一行就返回，
+     * 「顶号」整条链路完全不执行。</p>
+     */
+    private final boolean singleDeviceFeatureEnabled;
+
     public LoginDeviceServiceImpl(
             LoginDeviceMapper loginDeviceMapper,
             JwtService jwtService,
             TokenBlacklistService tokenBlacklistService,
             NotificationService notificationService,
-            SysUserMapper sysUserMapper
+            SysUserMapper sysUserMapper,
+            @Value("${kean.security.single-device.enabled:false}") boolean singleDeviceFeatureEnabled
     ) {
         this.loginDeviceMapper = loginDeviceMapper;
         this.jwtService = jwtService;
         this.tokenBlacklistService = tokenBlacklistService;
         this.notificationService = notificationService;
         this.sysUserMapper = sysUserMapper;
+        this.singleDeviceFeatureEnabled = singleDeviceFeatureEnabled;
+        // 启动即把「单设备限制到底开没开」打出来（照 ImSenderService 的启动日志风格）。
+        // 目的：运维能一眼确认配置有没有被 Spring 读到 —— 只看 /proc/<pid>/environ 或 .env.prod
+        // 只能证明「变量注入了」，不能证明「@Value 解析成功」（键名拼错会静默沿用默认 false）。
+        // 我们踩过「以为是关的、其实是开的」的坑，所以开启/关闭都要打，且都带配置项全名。
+        String hint = "（配置项 kean.security.single-device.enabled / 环境变量 KEAN_SECURITY_SINGLE_DEVICE_ENABLED，"
+                + "默认 false）";
+        if (singleDeviceFeatureEnabled) {
+            log.warn("[单设备限制] singleDeviceFeatureEnabled=true{} → 顶号互踢已启用："
+                    + "对 sys_user.single_device=1 的用户，每次登录都会把其他设备顶下线", hint);
+        } else {
+            log.info("[单设备限制] singleDeviceFeatureEnabled=false{} → 顶号互踢已停用："
+                    + "不读 sys_user.single_device、不拉黑其他设备、不软删 login_device 行，多端可同时在线", hint);
+        }
     }
 
     @Override
@@ -80,10 +150,15 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
             notifyNewDevice(userId, deviceName, ip, now);
             // 原来这条分支直接 return；顶号处理必须在「记录完本次设备」之后接上，
             // 否则首次登录（设备表里还没有这台设备）时不会踢掉其他设备。
+            // 注意：该方法自己会先查全局开关（默认 false = 直接返回），此处不做前置判断，
+            // 保证「判定只有一处」，不会出现两地口径不一致。
             enforceSingleDevice(userId, jti);
             return;
         }
         if (!Objects.equals(existing.getJti(), jti)) {
+            // ⚠️ 这不是「单设备互踢」，不要跟着开关一起关掉：
+            // 同一台设备（设备名 + IP 相同）换了一次 jti，说明它自己上一次的登录态已经失效，
+            // 这里拉黑的是**自己那条旧 jti**，不影响其他设备，也不受单设备开关约束。
             blacklistJti(existing.getJti(), existing.getExpireAt());
             existing.setJti(jti);
             existing.setLoginCount(nextCount(existing.getLoginCount()));
@@ -138,10 +213,14 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
      * {@code AuthServiceImpl.updateSingleDevice} 传当前请求所在设备的 jti
      * （打开开关时立刻生效，不必等下次登录）。方法本身不关心触发场景。
      *
-     * <p><b>先判断再执行</b>：只有 {@code sys_user.single_device = 1} 时才做任何事。
-     * 开关为 0（默认值，也是引入本开关之前所有用户的状态）时，这里只多一次按主键读
-     * 用户记录，不会拉黑、不会删设备行 —— 关闭态与历史行为逐字节一致。
-     * 因此「把开关关掉」这条路径天然什么都不做。
+     * <p><b>先判断再执行，且判断两道</b>：
+     * <ol>
+     *   <li>{@link #singleDeviceFeatureEnabled}（{@code kean.security.single-device.enabled}，
+     *       <b>默认 false</b>）为 false 时<b>第一行就返回</b> —— 连 {@code sys_user} 都不查，
+     *       更不会拉黑 jti、软删设备行、发顶号通知。即「模块级关闭」；</li>
+     *   <li>该开关为 true 时，再看用户自己的 {@code sys_user.single_device} 是否为 1。
+     *       为 0（默认值）时同样什么都不做，只多一次按主键读用户记录。</li>
+     * </ol>
      *
      * <p>拉黑对象：该用户当前未被软删的 {@code login_device} 行里，jti 与 {@code keepJti}
      * 不同的那些（即其他设备）。传入的这台设备永远排除在外 —— 与 {@link #kick(Long)}
@@ -156,9 +235,16 @@ public class LoginDeviceServiceImpl implements LoginDeviceService {
      * {@code deleted = 1}）：{@link #listMine()} 只查未删除的行，所以开启开关后用户在
      * 「登录设备」页看到的就只有当前这一台，不会留下一排已经被踢掉、点「退出登录」
      * 还会报错的僵尸设备。记录不做物理删除，{@code login_count}、最后在线时间等历史仍可查。
+     *
+     * <p><b>⚠️ 只关掉互踢，不动设备记录本身</b>：{@link #listMine()}「管理登录设备」页
+     * 与 {@link #kick(Long)} 手工下线<b>不依赖本方法</b>，关掉开关后它们照常工作。
      */
     @Override
     public void enforceSingleDevice(Long userId, String keepJti) {
+        // 全局开关默认 false = 不启用单设备限制：整段逻辑（含读 sys_user 那一步）直接跳过。
+        if (!singleDeviceFeatureEnabled) {
+            return;
+        }
         if (userId == null) {
             return;
         }

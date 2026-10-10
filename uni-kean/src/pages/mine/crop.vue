@@ -314,6 +314,15 @@ function onImageError() {
     return;
   }
   reMaterializing.value = true;
+  // ⚠️ uni.compressImage 是 App/小程序专有 API，H5 上不存在 ✗ —— 直接调用会抛
+  // "uni.compressImage is not a function" ✗。这台是兜底重试路径 ✓ 若平台没有该能力 ✓
+  // 就直接如实提示"图片无法显示" ✓ 而不是抛一个 JS 异常出来 ✓
+  const compressImage = (uni as unknown as { compressImage?: unknown }).compressImage;
+  if (typeof compressImage !== "function") {
+    reMaterializing.value = false;
+    uni.showToast({ title: "图片无法显示", icon: "none" });
+    return;
+  }
   console.warn("[crop] <image> 渲染失败，改用 compressImage 转存到应用沙箱后重试");
   uni.compressImage({
     src: src.value,

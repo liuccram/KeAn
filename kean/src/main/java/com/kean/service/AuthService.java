@@ -37,6 +37,11 @@ public interface AuthService {
 
     /**
      * 切换「仅允许一台设备在线」。0 = 关闭（默认，多端可同时在线），1 = 打开。
+     *
+     * <p>⚠️ 该功能现已被全局配置停用：{@code kean.security.single-device.enabled}
+     * <b>默认 {@code false}</b>。此时本方法只写 {@code sys_user.single_device} 列、
+     * <b>不顶号</b>（踢人判定集中在 {@code LoginDeviceServiceImpl.enforceSingleDevice}，
+     * 那里第一行就按全局开关返回）。接口与列都保留，恢复只需改环境变量。</p>
      */
     UserVO updateSingleDevice(Integer singleDevice);
 

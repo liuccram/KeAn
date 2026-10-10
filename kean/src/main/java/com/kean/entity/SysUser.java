@@ -90,11 +90,18 @@ public class SysUser {
 
     /**
      * 1 = 仅允许一台设备在线。默认 0 = 关闭。
-     * <p>关闭时（默认）：多端可同时在线，新设备登录只发「新设备登录提醒」，不踢任何设备，
-     * 与引入本开关之前的行为完全一致。
-     * <p>打开后：每次登录成功都会把该用户<b>其他</b>登录态的 jti 拉黑（当前设备除外），
-     * 被踢的设备下一次请求就会收到 40102，客户端提示后回到登录页。
-     * 生效点为 {@code LoginDeviceServiceImpl.recordLogin}。
+     *
+     * <p>⚠️ <b>本列现在只是「用户的意愿」，不再单独决定行为</b>：顶号还受一道全局配置约束
+     * —— {@code kean.security.single-device.enabled}（环境变量
+     * {@code KEAN_SECURITY_SINGLE_DEVICE_ENABLED}），<b>默认 {@code false}</b>。
+     * 全局关闭时这一列<b>被完全忽略</b>（连读都不读），多端可同时在线。
+     * 恢复方式见 {@code docs/ops/security-hardening.md}。</p>
+     *
+     * <p>全局开关打开后：1 = 每次登录成功都会把该用户<b>其他</b>登录态的 jti 拉黑
+     * （当前设备除外），被踢的设备下一次请求就会收到 40102，客户端提示后回到登录页。</p>
+     *
+     * <p>列本身<b>不动</b>（仍是 TINYINT NOT NULL DEFAULT 0）：不做迁移、不删列，
+     * 将来要恢复单设备限制只需改环境变量。</p>
      */
     private Integer singleDevice;
 

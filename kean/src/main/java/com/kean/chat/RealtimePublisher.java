@@ -1,6 +1,7 @@
 package com.kean.chat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kean.im.ImRealtimeRoleService;
 import com.kean.im.ImSenderService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,12 +27,25 @@ public class RealtimePublisher {
      */
     private final ImSenderService imSenderService;
 
+    /**
+     * 阶段 C-4：自研 WS 实时推送的<b>总闸</b>（{@code kean.im.legacy-ws-enabled}，<b>默认 true</b>）。
+     *
+     * <p>⚠️ 它<b>只被 {@link #read} 读取</b>（{@code READ} 事件），<b>不</b>被 {@link #notice} /
+     * {@link #send} / {@link #broadcast} 读取 —— 这是刻意的边界：
+     * 通知 / 公告 / 封禁提示（{@code NOTICE} 类）没有 box 对等物，
+     * 必须继续走自研 WS（见 {@code docs/ops/im-platform-migration.md} §1.4 与
+     * {@link ImRealtimeRoleService} 类注释的边界表）。</p>
+     */
+    private final ImRealtimeRoleService imRealtimeRoleService;
+
     public RealtimePublisher(ChatSessionHub chatSessionHub,
                              ObjectMapper objectMapper,
-                             ImSenderService imSenderService) {
+                             ImSenderService imSenderService,
+                             ImRealtimeRoleService imRealtimeRoleService) {
         this.chatSessionHub = chatSessionHub;
         this.objectMapper = objectMapper;
         this.imSenderService = imSenderService;
+        this.imRealtimeRoleService = imRealtimeRoleService;
     }
 
     public void notice(Long userId, String noticeType, String bizType, Long bizId) {
@@ -64,6 +78,22 @@ public class RealtimePublisher {
      * 语义与字段都要另外对齐 —— 留到下一阶段，避免现在就把没把握的映射写进协议层。</p>
      */
     public void read(Long userId, Long sessionId, Long maxSeq, Long readerId) {
+        // 阶段 C-4：自研 WS 的实时推送总闸（kean.im.legacy-ws-enabled，默认 true）。
+        // false 时本方法整体 no-op —— 这是【行为等价】的：
+        //   · READ 事件的唯一出口就是这个 send(...)（legacy WS 的 chatSessionHub）；
+        //   · send(...) 里的 im-server 镜像对这个事件本来就是跳过的
+        //     （systemMessageData 对 "READ" 返回 null），所以这里提前返回
+        //     【不会】少推任何一条 box 消息。
+        // 关掉之后「对方已读」的实时性由「客户端轮询（≤8s）+ 数据推导」承担：
+        // 增量拉取的 ChatMessageVO 里【已经】带 status（3 = 已读），两条读路径都带
+        // （kean 的 chat_message.status / box 的 im_private_message.status），见
+        // ImRealtimeRoleService 类注释「关掉之后已读靠什么」。
+        if (!imRealtimeRoleService.legacyWsPushEnabled()) {
+            imRealtimeRoleService.recordSuppressedPush();
+            log.debug("skip legacy ws READ push ({} disabled), userId={}, sessionId={}, maxSeq={}",
+                    ImRealtimeRoleService.PROPERTY_LEGACY_WS_ENABLED, userId, sessionId, maxSeq);
+            return;
+        }
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "READ");
         payload.put("sessionId", sessionId == null ? 0 : sessionId);

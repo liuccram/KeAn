@@ -6,6 +6,8 @@ import com.kean.exception.BizException;
 import com.kean.security.SecurityUtils;
 import com.kean.security.TokenRevokeService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -60,6 +62,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/im")
 public class ImController {
 
+    private static final Logger log = LoggerFactory.getLogger(ImController.class);
+
     private final ImTokenService imTokenService;
 
     /**
@@ -68,9 +72,23 @@ public class ImController {
      */
     private final TokenRevokeService tokenRevokeService;
 
-    public ImController(ImTokenService imTokenService, TokenRevokeService tokenRevokeService) {
+    /**
+     * 影子用户物化（阶段 A 新增）。取票成功之后<b>追加</b>一次调用，
+     * 让「用户真的活着并且要用 IM」这个天然时机顺带把名片补进 {@code im_user}
+     * （见 {@code docs/ops/im-platform-migration.md} §3 阶段 A 与 §10 第 4 处改动）。
+     *
+     * <p>⚠️ 它是<b>可选、默认关闭</b>的旁路动作：{@link ImShadowUserService#enabled()} 为
+     * {@code false}（默认）时整个调用是 no-op；即使打开，{@link ImShadowUserService#ensureShadowUser(Long)}
+     * 内部也自己 try/catch，<b>任何失败都只记一行 WARN，不会影响取票</b>。</p>
+     */
+    private final ImShadowUserService imShadowUserService;
+
+    public ImController(ImTokenService imTokenService,
+                        TokenRevokeService tokenRevokeService,
+                        ImShadowUserService imShadowUserService) {
         this.imTokenService = imTokenService;
         this.tokenRevokeService = tokenRevokeService;
+        this.imShadowUserService = imShadowUserService;
     }
 
     /**
@@ -94,9 +112,35 @@ public class ImController {
         if (tokenRevokeService.isBanned(userId)) {
             throw new BizException(ErrorCode.ACCOUNT_BANNED, bannedMessage(userId));
         }
+        // 终端的推断规则已抽到 ImTerminalResolver（阶段 C-3 的「跳过当前终端」必须与取票用同一套规则，
+        // 见该类注释）。这里只是换个调用点，行为与抽取前逐字节一致。
         ImTokenService.ImTokenPair pair =
-                imTokenService.issue(userId, resolveTerminal(terminal, request));
+                imTokenService.issue(userId, ImTerminalResolver.resolve(terminal, request));
+        materializeShadowUser(userId);
         return Result.ok(new ImTokenVO(true, pair.accessToken(), pair.refreshToken(), pair.accessExpireAt()));
+    }
+
+    /**
+     * 取票成功后<b>追加</b>一次影子用户物化（阶段 A）。
+     *
+     * <p>三条约束（都不可放宽）：</p>
+     * <ul>
+     *   <li><b>顺序</b>：必须在 {@code issue(...)} 之后、{@code return} 之前 ——
+     *       取票本身是主路径，物化只是顺路，绝不能因为它改变「票能不能拿到」；</li>
+     *   <li><b>吞异常</b>：这里再包一层 try/catch。<b>即使</b> {@code ensureShadowUser} 将来被改成会外抛，
+     *       取票也不会因此 500（它内部本来也已经 try/catch，这里是纵深防御）；</li>
+     *   <li><b>默认关闭</b>：开关是 {@code kean.im.shadow-user-enabled}（默认 {@code false}，
+     *       见 {@code ImShadowUserService}）—— 不配这一行就等于不存在，不查库、不写库、无日志噪声。</li>
+     * </ul>
+     *
+     * <p>⚠️ 物化失败<b>不代表</b>取票失败，所以这里<b>不</b>抛任何异常、也<b>不</b>改响应体。</p>
+     */
+    private void materializeShadowUser(Long userId) {
+        try {
+            imShadowUserService.ensureShadowUser(userId);
+        } catch (Exception ex) {
+            log.warn("[IM 影子用户] 取票时物化失败（已忽略，不影响取票），userId={}：{}", userId, ex.getMessage());
+        }
     }
 
     /**
@@ -111,48 +155,14 @@ public class ImController {
         return StringUtils.hasText(stored) ? stored : ErrorCode.ACCOUNT_BANNED.getMessage();
     }
 
-    /**
-     * 决定写进 token 的 {@code info.terminal}。
-     *
-     * <p>优先级：显式 query 参数 → {@code X-Kean-Device} 请求头里的平台关键字 → 默认 app。</p>
-     *
-     * <p><b>为什么默认 app 而不是 web：</b>box-im 的 {@code im-uniapp} 客户端用的就是
-     * {@code IMTerminalType.APP}/{@code PC}，本仓 {@code uni-kean} 同样是 uni-app，
-     * 所以默认值按 APP=1 更贴近事实。这个值只影响 box-im 服务端
-     * {@code UserChannelCtxMap} 里 {@code (userId, terminal)} 的槽位划分与
-     * “同终端重复登录才挤下线”的判定，选错不会导致连接失败。</p>
+    /*
+     * ⚠️ 这里原有两个私有方法 resolveTerminal / parseTerminal。阶段 C-3 把它们<b>原样搬进</b>
+     * {@link ImTerminalResolver}（连同「显式参数 → X-Kean-Device → 默认 APP」的优先级与
+     * 「先 web、再 pc/windows/mac、最后 android/ios/app」的判断顺序），本类改为调用它：
+     *   · 原因是 C-3 的「给自己其它终端推送」也必须知道发送者当前终端，
+     *     而它<b>必须与取票时写进 JWT 的那个值相同</b>（box 的 sendToSelf 是拿
+     *     JWT 里的 sender.terminal 去跳过当前终端的）；两处各写一份迟早会漂移；
+     *   · 顺带把「ImTokenService.issue 需要一个 Integer」这层装箱消掉了：
+     *     resolver 返回 int，autobox 由编译器完成，取值完全相同。
      */
-    private static Integer resolveTerminal(String terminal, HttpServletRequest request) {
-        Integer explicit = parseTerminal(terminal);
-        if (explicit != null) {
-            return explicit;
-        }
-        String device = request == null ? null : request.getHeader("X-Kean-Device");
-        if (device != null) {
-            String normalized = device.toLowerCase();
-            if (normalized.contains("web")) {
-                return 0;
-            }
-            if (normalized.contains("pc") || normalized.contains("windows") || normalized.contains("mac")) {
-                return 2;
-            }
-            if (normalized.contains("android") || normalized.contains("ios") || normalized.contains("app")) {
-                return 1;
-            }
-        }
-        return 1;
-    }
-
-    private static Integer parseTerminal(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        String value = raw.trim().toLowerCase();
-        return switch (value) {
-            case "web", "0" -> 0;
-            case "app", "1" -> 1;
-            case "pc", "2" -> 2;
-            default -> null;
-        };
-    }
 }

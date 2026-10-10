@@ -3,6 +3,8 @@ package com.kean.im;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -27,14 +29,16 @@ import java.util.Map;
  * </ul>
  * <p>结果：被封用户不解封期间仍然能通过 im-server 收发消息。</p>
  *
- * <h2>本类做什么（三个动作，全部「尽力而为」）</h2>
+ * <h2>本类做什么（两个动作，全部「尽力而为」）</h2>
  * <ol>
  *   <li>{@link #deny(Long, String)} 写一个 <b>kean 持有</b>的封禁标记键
  *       {@value #BANNED_KEY_PREFIX}{@code {userId}}（<b>无 TTL，永久直到解封</b>）。
  *       这是「封禁状态的持久位置」在 kean 侧的落点 —— 注意 box-im 自带的
- *       {@code im_user.is_banned} 是 im-platform 自己的库表（{@code db/im-platform.sql}），
- *       且它的 {@code id} 与 kean 的 {@code sys_user.id} 不是同一套编号，
- *       <b>不能直接写</b>，所以封禁态以「kean 的库 + 这枚 Redis 键」为准；</li>
+ *       {@code im_user.is_banned} 是 im-platform 自己的库表（{@code docs/sql/im-platform.sql}）；
+ *       ⚠️ 它的 {@code id} <b>就是</b> kean 的 {@code sys_user.id}（同 id 复用，见
+ *       {@code docs/ops/im-platform-migration.md} §1.5 铁律 L1 与 {@code com.kean.im.ImShadowUserService}），
+ *       所以两张表是「同 id 对齐」而不是「两套编号」；不过<b>封禁态的权威仍然是
+ *       「kean 的库 + 这枚 Redis 键」</b>，{@code im_user.is_banned} 只是镜像（投影见阶段 B/D）；</li>
  *   <li>{@link #forceLogout(Long, String)} 按 box-im 的 {@code FORCE_LOGOUT(2)} 通道
  *       推一条强制下线指令，踢掉该用户在各个终端上的<b>在线长连接</b>。</li>
  * </ol>
@@ -68,8 +72,10 @@ import java.util.Map;
  *   <li>{@link #forceLogout(Long, String)}：<b>只要 im-server 在跑</b>（{@code PullForceLogoutTask}
  *       就在 im-server 进程里，是 {@code @RedisMQListener} 消费者）就能真正踢掉已建立的连接 ——
  *       不需要 im-platform ✓（此处此前写反过，已按源码更正）；</li>
- *   <li>封禁标记键：目前<b>没有任何服务端会读它</b>，因此它<b>不具备「拒绝再次登录」的强制力</b>，
- *       只是为阶段 3 的 im-server 改造准备好契约（见 {@link #BANNED_KEY_PREFIX} 的 TODO）。</li>
+ *   <li>封禁标记键：im-server <b>会读它</b>（{@code LoginProcessor} 用 {@code hasKey} 拒绝重连，
+ *       已实测），因此它<b>具备「拒绝被封用户重连」的强制力</b>；部署 im-platform 之后，
+ *       它的 {@code AuthInterceptor} 也会读同一枚键（并且看<b>值</b>：{@code Integer}，
+ *       见 {@link #markBanned}）—— 所以本类的值类型必须与 upstream 对齐。</li>
  * </ul>
  *
  * <h2>IM 未启用时零影响</h2>
@@ -183,15 +189,58 @@ public class ImKickService {
     /** box-im {@code IMTerminalType} 名字，仅用于日志。 */
     private static final String[] TERMINAL_NAMES = {"WEB", "APP", "PC"};
 
+    /**
+     * box-im {@code IMForceLogoutType} 的两个取值（im-platform 的 {@code AuthInterceptor}
+     * 只用它来选提示语）。
+     *
+     * <ul>
+     *   <li>{@code BANNED = 1} → 「账号已被封禁」（{@link #markBanned}）</li>
+     *   <li>{@code UNREG = 2} → 「账号已注销」（{@link #markUnregistered}）</li>
+     * </ul>
+     *
+     * <p>⚠️ 这两个数字必须与上游一致：{@code AuthInterceptor} 里写的是
+     * {@code type.equals(IMForceLogoutType.UNREG.code()) ? "账号已注销" : "账号已被封禁"}，
+     * 所以<b>任何非 2 的非空值都表现为「已被封禁」</b>。</p>
+     */
+    private static final int DENIED_TYPE_BANNED = 1;
+
+    private static final int DENIED_TYPE_UNREG = 2;
+
     private final ImTokenService imTokenService;
+
+    /**
+     * kean 全站的字符串模板：本类<b>其余所有键</b>都继续用它写/读，
+     * 保持与改造前<b>逐字节一致</b>（见 {@link #imDeniedRedis}）。
+     */
     private final StringRedisTemplate redis;
+
+    /**
+     * <b>只用于封禁键</b> {@code im:user:denied:{userId}} 的 {@code RedisTemplate<String,Object>}
+     * （Bean 名 {@code imDeniedRedisTemplate}，定义见 {@code RedisConfig}）。
+     *
+     * <p>为什么要单独一个模板：这枚键的<b>值必须是数字</b>（{@code Integer}），
+     * 因为 im-platform 的 {@code AuthInterceptor} 会
+     * {@code Integer type = (Integer) redisTemplate.opsForValue().get(key)} <b>强转</b>读取；
+     * {@code StringRedisTemplate} 只能写字符串，写进去会让 im-platform
+     * <b>每一个 REST 调用都抛 {@code ClassCastException}</b>（500）。</p>
+     *
+     * <p>⚠️ <b>不要拿它去写别的键</b>：它的值序列化是「带类型信息的 Jackson JSON」，
+     * 与全站 {@code StringRedisTemplate} 的写法不同。本类里
+     * {@code im:user:server_id:{userId}:{terminal}}（读）、{@code im:user:force_logout:{serverId}}（写）
+     * 与 {@code im:user:state:{userId}}（删）<b>一律继续用 {@link #redis}</b>，
+     * 保证与改造前完全一致。</p>
+     */
+    private final RedisTemplate<String, Object> imDeniedRedis;
+
     private final ObjectMapper objectMapper;
 
     public ImKickService(ImTokenService imTokenService,
                          StringRedisTemplate redis,
+                         @Qualifier("imDeniedRedisTemplate") RedisTemplate<String, Object> imDeniedRedis,
                          ObjectMapper objectMapper) {
         this.imTokenService = imTokenService;
         this.redis = redis;
+        this.imDeniedRedis = imDeniedRedis;
         this.objectMapper = objectMapper;
     }
 
@@ -329,21 +378,69 @@ public class ImKickService {
     }
 
     /**
-     * 写 box-im 的封禁标记键 {@code im:user:denied:{userId}}（<b>无 TTL</b> —— 语义是「永久直到解封」）。
+     * 写 box-im 的封禁标记键 {@code im:user:denied:{userId}}（<b>无 TTL</b> —— 语义是「永久直到解封」），
+     * 值为 <b>{@code Integer 1}</b>（{@code IMForceLogoutType.BANNED}）。
      *
-     * <p>⚠️ 值写的是字符串 {@code "1"}（本类注入的是 {@code StringRedisTemplate}）。对<b>本项目的部署形态完全够用</b>：
-     * im-server 的 {@code LoginProcessor} 只用 {@code hasKey} 判断存在性，不看值。
-     * 但要注意一个<b>将来才需要处理</b>的差异：上游 im-platform 用 `RedisTemplate&lt;String,Object&gt;`
-     * 存的是数字，它的 {@code AuthInterceptor} 会 {@code (Integer)} 强转读取 ——
-     * 若将来真的部署了 im-platform，这里要改用 `RedisTemplate&lt;String,Object&gt;` 写入数字，
-     * 否则 im-platform 取票/鉴权会抛类型转换异常。</p>
+     * <h3>⚠️ 为什么值必须是 {@code Integer} 而不是字符串</h3>
+     * <p>上游 im-platform 的 {@code AuthInterceptor} 读这枚键时是<b>强转</b>：</p>
+     * <pre>{@code
+     * Integer type = (Integer) redisTemplate.opsForValue().get(
+     *         StrUtil.join(":", IMRedisKey.IM_USER_DENIED, userSession.getUserId()));
+     * if (type != null) { ... throw new GlobalException(tip); }
+     * }</pre>
+     * <p>强转<b>不做类型转换</b>：值若是字符串 {@code "1"}，这行会抛
+     * {@code ClassCastException}（String 不能转 Integer）⇒ <b>im-platform 的每个 REST 调用都变 500</b>，
+     * 而且这个拦截器在最前面，所以是「全站不可用」级别的坑。因此这里改用
+     * {@link #imDeniedRedis}（序列化与 box-im 对齐）写入数字。</p>
+     * <p>im-server 侧不受影响：它的 {@code LoginProcessor} 只用 {@code hasKey} 判断存在性，
+     * 不看值 —— 也就是说改成数字对现有部署<b>只有好处、没有行为变化</b>。</p>
+     *
+     * <p>⚠️ 本方法<b>只写封禁键</b>；{@code im:user:server_id} / {@code im:user:force_logout}
+     * 等其余键仍由 {@link #redis}（String 模板）处理，写法与改造前一致。</p>
      */
     private void markBanned(Long userId, String reason) {
         try {
-            redis.opsForValue().set(BANNED_KEY_PREFIX + userId, "1");
-            log.info("[IM 封禁标记] 已写入 {}{} = 1（无 TTL，解封时删除）", BANNED_KEY_PREFIX, userId);
+            imDeniedRedis.opsForValue().set(BANNED_KEY_PREFIX + userId, Integer.valueOf(DENIED_TYPE_BANNED));
+            log.info("[IM 封禁标记] 已写入 {}{} = {}（Integer，无 TTL，解封时删除）",
+                    BANNED_KEY_PREFIX, userId, DENIED_TYPE_BANNED);
         } catch (Exception ex) {
             log.warn("[IM 封禁标记] 写入失败（不影响 kean 的封禁流程），userId={}：{}", userId, ex.getMessage());
+        }
+    }
+
+    /**
+     * 写 box-im 的「<b>已注销</b>」标记：{@code im:user:denied:{userId}} = <b>{@code Integer 2}</b>
+     * （{@code IMForceLogoutType.UNREG}）。
+     *
+     * <p>与 {@link #markBanned} 同一枚键、同一套语义（值为 {@code Integer}、无 TTL、
+     * 由 <b>解封/恢复</b>路径的 {@link #allow(Long)} 删除），只有<b>取值</b>不同：</p>
+     * <ul>
+     *   <li>{@code 1} = 封禁 → im-platform 回「账号已被封禁」（{@link #markBanned}，{@code deny} 已调用）；</li>
+     *   <li>{@code 2} = 注销 → im-platform 回「账号已注销」（本方法）。</li>
+     * </ul>
+     *
+     * <h3>⚠️ 本轮（阶段 A）刻意不接业务链路</h3>
+     * <p>kean 的注销流程在 {@code AuthServiceImpl#deleteAccount}，<b>本轮一行不改</b>：
+     * 只提供方法，等<b>阶段 F</b>（账号真相收尾 / 双轨一致性）再接上调用点
+     * （见 {@code docs/ops/im-platform-migration.md} §2.4 的联动矩阵「注销」行
+     * 与 §10.5 终态对照表第 4 项）。所以现在<b>没有任何调用方</b>，
+     * 它的存在只为「注销态的同步」预留一个与封禁同形的入口。</p>
+     *
+     * @param userId 课安用户 id（= box 侧 userId，因为 token 是 kean 自己签的）
+     */
+    public void markUnregistered(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        if (!active()) {
+            return;
+        }
+        try {
+            imDeniedRedis.opsForValue().set(BANNED_KEY_PREFIX + userId, Integer.valueOf(DENIED_TYPE_UNREG));
+            log.info("[IM 注销标记] 已写入 {}{} = {}（Integer，无 TTL；阶段 F 接入注销流程）",
+                    BANNED_KEY_PREFIX, userId, DENIED_TYPE_UNREG);
+        } catch (Exception ex) {
+            log.warn("[IM 注销标记] 写入失败（不影响 kean 的注销流程），userId={}：{}", userId, ex.getMessage());
         }
     }
 
@@ -364,6 +461,42 @@ public class ImKickService {
         } catch (Exception ex) {
             log.debug("[IM 封禁标记] 清理忙线标记 {}{} 失败（可忽略）：{}",
                     USER_STATE_PREFIX + ":", userId, ex.getMessage());
+        }
+    }
+
+    /**
+     * 读<b>三个终端各自的</b> im-server 槽位（阶段 C-3 起的第二个调用方 = {@code ImMultiTerminalEchoService}）。
+     *
+     * <p>⚠️ 这是「照抄既有读法」而不是新写一套的落点：键名
+     * {@code im:user:server_id:{userId}:{terminal}} 的拼法（含 {@code {}} hash tag）、
+     * 键不存在 = 离线、值必须是正整数、脏值只 WARN 的取舍，全部与
+     * {@link #readServerIds(Long)} 同源 —— 本方法只是把它<b>暴露</b>出去，一行拼键逻辑都没有新增。</p>
+     *
+     * <p><b>为什么暴露的是 Map 而不是「单个终端的读法」</b>：C-3 需要「每个终端各自的 serverId」
+     * （它要按终端跳过当前终端），而 {@link #readServerIds(Long)} 用的是一次 {@code multiGet}
+     * 拿三个键。如果只暴露单键读法，调用方为了看三个终端就得调三次，
+     * 每次都退化成一次 {@code multiGet}（3 次往返 × 每端 3 个键 = 9 次读）。
+     * 返回整个 Map 让调用方一次拿到全部，且语义与 {@code forceLogout} 的用法完全一致。</p>
+     *
+     * <p>⚠️ IM 未启用（{@code IM_JWT_SECRET} 不合格）时返回<b>空 Map</b>（而不是抛异常或返回 null）：
+     * 调用方只需按「取不到 = 离线」处理即可，与 {@link #forceLogout} 的既有取舍一致。</p>
+     *
+     * @return 终端码字符串（{@code "0"}/{@code "1"}/{@code "2"}）→ serverId；
+     *         <b>键一定存在</b>，值为 {@code null} 表示该终端离线
+     */
+    public Map<String, String> onlineServerIds(Long userId) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (!active() || userId == null) {
+            return result;
+        }
+        try {
+            return readServerIds(userId);
+        } catch (Exception ex) {
+            // 与 forceLogout 的读槽位同一处理：读不到就当「没有在线终端」，
+            // 绝不让一个 Redis 抖动外溢到调用方的发送路径上。
+            log.warn("[IM 在线槽位] 读取 im:user:server_id 失败（按无在线终端处理），userId={}：{}",
+                    userId, ex.getMessage());
+            return result;
         }
     }
 

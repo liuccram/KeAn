@@ -180,16 +180,83 @@ age -d -i /path/to/key.txt kean-<日期>.sql.gz.enc | gunzip | \
 
 ---
 
-## 6. 总验证清单
+## 8. 单设备限制已被配置开关关闭（默认关闭）
 
-- [ ] 6 个口令全部轮换，旧口令已失效
-- [ ] `SHOW GRANTS` 只看到 `kean.*` 上的 DML + DDL
-- [ ] 从外网探测 `13306` / `26739` / `19000` 均不可达
-- [ ] 备份脚本跑通，产物是**加密**的，且异地上传成功
-- [ ] 完成一次恢复演练，数据条数核对一致
-- [ ] `https://<域名>/health` 正常，http 自动跳转 https
+「仅允许一台设备在线」（一个账号同时只允许一台设备在线，换设备就把旧设备踢下线）**已暂时停用**：
+后续要迁到 box-im 的多端模型（box 原生支持多端在线），先把这个限制放开。
 
-> 本文档只覆盖**安全加固**。业务合规项（用户协议与隐私政策正文、注册同意勾选、账号注销、内容审核）另行处理。
+### 8.1 开关与当前值
+
+| 项 | 值 |
+|---|---|
+| 配置项（Spring） | `kean.security.single-device.enabled` |
+| 环境变量 | `KEAN_SECURITY_SINGLE_DEVICE_ENABLED` |
+| **默认值** | **`false`**（= 不启用单设备限制，多端可同时在线） |
+| 值写在哪 | `@Value("${kean.security.single-device.enabled:false}")` 的默认值里，**不写进 `application*.yml`**（与本项目其余开关一致） |
+| 代码位置 | `LoginDeviceServiceImpl#enforceSingleDevice`（第一行短路，唯一的踢人判定点）+ `AuthServiceImpl#updateSingleDevice` |
+| 启动日志 | `LoginDeviceServiceImpl` 启动时打一条：关闭时 INFO（`顶号互踢已停用`）、开启时 **WARN**（`顶号互踢已启用`），都带配置项全名 |
+
+关闭时（默认）**完全不执行**踢人逻辑：不读 `sys_user.single_device` 列、不拉黑其他设备的 jti、
+不软删 `login_device` 行、不发顶号通知。**登录本身不受影响**（`recordLogin` 照常记录设备 + 新设备登录提醒）。
+
+**刻意没有关掉的三件事**（它们不是「互踢」，与本开关无关）：
+
+| 动作 | 位置 | 说明 |
+|---|---|---|
+| 同一台设备换 jti 时拉黑自己那条旧 jti | `LoginDeviceServiceImpl.recordLogin` | 设备记录自清理，只影响这台设备自己 |
+| 注销账号时让**全部**设备（含当前这台）失效 | `LoginDeviceServiceImpl.revokeAll` | 注销语义要求，必须保留 |
+| 「登录设备」页手动把某台设备下线 | `LoginDeviceServiceImpl.kick` + `DELETE /api/me/devices/{id}` | 用户主动操作，保留 |
+
+> 「管理登录设备」页面（`uni-kean/src/pages/mine/devices.vue`）**保留展示**：
+> 它只依赖 `GET /api/me/devices`，不依赖单设备限制逻辑；关掉限制后列表会同时显示多台在线设备，
+> 这正好是多端并存的观测手段。只去掉了「限制」相关的那个开关入口
+> （`uni-kean/src/pages/mine/security.vue` 的 `wd-switch`，及 `uni-kean/src/api/user.ts` 的调用函数）。
+> 后端 `PUT /api/me/single-device` 接口与 `sys_user.single_device` 列**都没删**（不写迁移、不动数据库）。
+
+### 8.2 恢复单设备限制（一键）
+
+```bash
+# 服务器 /opt/kean/.env.prod 追加一行
+KEAN_SECURITY_SINGLE_DEVICE_ENABLED=true
+# 重启后端
+systemctl restart kean
+```
+
+恢复后注意两点：
+
+1. **需要用户自己去开**：全局开关只解开「功能可用」，真正生效还要 `sys_user.single_device = 1`。
+   客户端开关入口已下线，所以恢复时要**先把前端开关加回来**（`pages/mine/security.vue` 的 `wd-switch`
+   + `api/user.ts` 的 `updateSingleDevice`，可从 git 历史取回），或由管理端直接改这一列。
+2. **启动日志要以 WARN 出现为准**：`[单设备限制] singleDeviceFeatureEnabled=true ... 顶号互踢已启用`。
+   只看 `.env.prod` 里写了这行**不能证明** Spring 读到了（键名拼错会静默沿用默认 `false`）——
+   这正是启动日志存在的意义。若重启后日志仍是 `false`，先检查变量名拼写。
+
+### 8.3 ⚠️ 边界：放开 kean 不等于「任意多端都能并存」
+
+即使 kean 这边全部放开，**box-im 的 im-server 仍会按终端码 `devId` 挤下线**：
+同一 `(userId, terminal)` 再来一条连接时，im-server 的 `LoginProcessor` 会判断
+「是不是同一个设备」—— 同一个 `devId` = 挤掉旧连接，**不同 `devId` = 给旧 server 投一条
+`im:user:force_logout:{serverId}`，把旧设备踢下线**（详见
+[`im-server-patch.md` §1.5](./im-server-patch.md)）。所以：
+
+| 组合 | 能否同时在线 |
+|---|---|
+| 手机 + 电脑（`terminal` 不同） | ✅ 可以 |
+| 两台手机（同一个 `terminal`、不同 `devId`） | ❌ **仍会互踢** |
+
+**这是 box-im 上游的既有行为，不是课安的 bug，也不是开关没生效。**
+要真正支持「两台手机同时在线」，必须改 im-server —— 那是**独立仓库**，本次未动。
+
+### 8.4 安全影响（遗留建议）
+
+关掉单设备限制 = **弱化了「账号被盗用后仅一处在线」的检测能力**：同一账号可以在多台设备
+同时在线，用户不容易通过「我在别处被登出」察觉异常。作为补偿，建议（本次未做）：
+
+- **登录通知**：已有基础 —— `LoginDeviceServiceImpl.notifyNewDevice` 会在**首次见到一台设备**时
+  发一条 `SYSTEM` 站内通知（含设备名、IP、时间）。可考虑改成「每次登录都通知」或加开关；
+- **异地 / 异常登录提醒**：按 IP 归属地变化提醒（需要 IP 地理位置数据源，属新依赖，需单独评估）；
+- **登录设备页的可发现性**：「我的 → 账号与安全 → 管理登录设备」保留展示全部在线设备，
+  并支持手动下线任意一台 —— 这是当前**唯一**的异常登录自查手段，不要一并下掉。
 
 ---
 
@@ -214,3 +281,18 @@ age -d -i /path/to/key.txt kean-<日期>.sql.gz.enc | gunzip | \
 - 尚未加密：`chat_message.content`（图片消息的 content 是对象键，被聊天图片鉴权按等值查询使用，
   需按「只加密文字消息、图片键保持明文」的方案单独做）与 `chat_session.last_content`（正文预览，
   会泄露消息内容，需与前者一并处理）
+
+---
+
+## 9. 总验证清单
+
+- [ ] 6 个口令全部轮换，旧口令已失效
+- [ ] `SHOW GRANTS` 只看到 `kean.*` 上的 DML + DDL
+- [ ] 从外网探测 `13306` / `26739` / `19000` 均不可达
+- [ ] 备份脚本跑通，产物是**加密**的，且异地上传成功
+- [ ] 完成一次恢复演练，数据条数核对一致
+- [ ] `https://<域名>/health` 正常，http 自动跳转 https
+- [ ] 启动日志出现 `[单设备限制] singleDeviceFeatureEnabled=false`（见第 8 节）
+
+> 本文档只覆盖**安全加固**。业务合规项（用户协议与隐私政策正文、注册同意勾选、账号注销、内容审核）另行处理。
+

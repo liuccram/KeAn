@@ -249,6 +249,13 @@ Cloudflare 官方测试密钥（`1x`/`2x`/`3x` 开头、后跟一长串 `0` 的 
 
 需登录。切换「仅允许一台设备在线」开关。
 
+> ⚠️ **2026-02 起：该功能已被全局配置停用，客户端入口已从 `uni-kean` 下线。**
+> 全局开关 `kean.security.single-device.enabled`（环境变量 `KEAN_SECURITY_SINGLE_DEVICE_ENABLED`）
+> **默认 `false`**。为 `false` 时本接口**只写 `sys_user.single_device` 列、不顶号**，
+> 且没有客户端调用方。接口与列都保留，恢复方式见
+> [`docs/ops/security-hardening.md`](../ops/security-hardening.md) 的「8. 单设备限制已被配置开关关闭」。
+> 下面「语义」一节的 `1` 分支描述的是**全局开关打开后**的行为。
+
 请求：
 
 ```json
@@ -257,7 +264,7 @@ Cloudflare 官方测试密钥（`1x`/`2x`/`3x` 开头、后跟一长串 `0` 的 
 
 `singleDevice` 只能为 `0`（关闭，默认）或 `1`（打开）。成功 `200`，`data` 为最新用户对象（含 `singleDevice`）。
 
-**语义：**
+**语义（仅在全局开关 `kean.security.single-device.enabled=true` 时成立）：**
 
 - `0`（默认）：多端可同时在线；新设备登录只发「新设备登录提醒」，不踢任何设备。与引入本开关之前的行为完全一致。
   关闭开关本身不做任何清理，不会踢掉任何设备。

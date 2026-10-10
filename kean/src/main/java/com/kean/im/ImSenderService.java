@@ -352,6 +352,85 @@ public class ImSenderService {
         return sendSystem(one, data);
     }
 
+    /**
+     * <b>阶段 C-3</b>：把一条私聊消息按 box 的 {@code sendToSelf} 语义投给<b>指定的终端</b>
+     * （调用方 = {@link ImMultiTerminalEchoService}，收件人 = 发送者自己的其它终端）。
+     *
+     * <p><b>为什么复用本类而不是另写一个投递方法</b>：队列键、{@code serverId} 去重、
+     * {@code rightPush}、异常吞掉与计数这几件事与 {@link #sendPrivate} <b>完全相同</b>；
+     * 而且「同一条消息的队列体」必须只有一个构造点（见 {@link #privateRecvInfoJsonTo}），
+     * 否则 C-3 的自我同步会与 B 阶段的镜像体逐渐分叉，客户端按字段名读就会读坏。</p>
+     *
+     * <p>与 {@link #sendPrivate} 的<b>唯一</b>区别：</p>
+     * <ul>
+     *   <li>收件人不是「接收方的三个终端」，而是调用方给的那几个 {@code (userId, terminal)}
+     *       —— box 那边是 {@code List.of(new IMUserInfo(senderId, selfOtherTerminals.get(i)))}；</li>
+     *   <li>data 里的 {@code recvId} 是调用方给的（自我同步时就是发送者自己）；</li>
+     *   <li>⚠️ {@code sendResult} 仍然固定 {@code false}（与 box 的 {@code sendToSelf} 一致，
+     *       那条路径强制不回执），因此不会产生 kean 没有消费者的
+     *       {@code im:result:private:kean} 队列。</li>
+     * </ul>
+     *
+     * <p>⚠️ <b>本方法不做「跳过当前终端」的判断</b>：那是调用方（echo 服务）的职责，
+     * 因为「当前终端」的知识来自 HTTP 请求头 / JWT，不在投递层。
+     * 本方法只保证「你给我的终端，我投出去；给空的，我什么都不做」。</p>
+     *
+     * <p>⚠️ 队列体里 {@code sender.terminal} 仍由 {@link #sender(Long)} 固定写成 {@code APP(1)}，
+     * 与 B 阶段的镜像体<b>逐字节一致</b>。这一处<b>刻意不改</b>：im-server 对
+     * {@code IMRecvInfo.sender} 只用于拼接日志与「发送结果」回执（我们 {@code sendResult=false}），
+     * <b>不参与「送到哪个终端」的路由</b>（路由只认 {@code receivers} 里的
+     * {@code {id, terminal}}）—— 所以它不影响 C-3 的「跳过当前终端」。</p>
+     *
+     * @param targetServerIds   已按「目标终端」解析好的 im-server 槽位值（<b>非空</b>；
+     *                          空集合 = 没有在线目标终端，直接返回 0）
+     * @param targetTerminals   与 {@code targetServerIds} 无对应关系，仅用于构造 receivers
+     *                          （每个终端的 {@code {id, terminal}}）
+     * @param recvId           写进 data 的 {@code recvId}（自我同步 = 发送者自己）
+     * @param sendId           写进 data 与 {@code sender} 的发送者 id
+     * @param channelDesc      日志用的描述（例如 {@code "多端自我同步 userId=7 其它终端=[WEB]"})
+     * @return 实际投递的队列个数（按 serverId 去重）；IM 未启用 / 参数不全时为 {@code 0}
+     */
+    public int pushPrivateToTerminals(Set<String> targetServerIds, List<Integer> targetTerminals,
+                                      Long recvId, Long sendId, Long sessionId,
+                                      String msgType, String content, String localId, Long seqNo,
+                                      LocalDateTime createdAt, String channelDesc) {
+        if (!enabled()) {
+            deliverySkipped.increment();
+            log.debug("[IM 镜像投递跳过] IM 通道未就绪，{} 不投递（kean 现有链路不受影响）", channelDesc);
+            return 0;
+        }
+        if (targetServerIds == null || targetServerIds.isEmpty()
+                || targetTerminals == null || targetTerminals.isEmpty()
+                || recvId == null || sendId == null || !StringUtils.hasText(content)) {
+            // 参数不全 / 没有在线目标终端：既不是投递尝试也不是故障，刻意不计数
+            // （与 sendPrivate 的参数校验同一取舍：脏调用不该把失败率打起来）。
+            return 0;
+        }
+        deliveryAttempts.increment();
+        try {
+            List<Map<String, Object>> receivers = new ArrayList<>(targetTerminals.size());
+            for (Integer terminal : targetTerminals) {
+                if (terminal == null) {
+                    continue;
+                }
+                Map<String, Object> receiver = new LinkedHashMap<>();
+                receiver.put("id", sendId);
+                receiver.put("terminal", terminal);
+                receivers.add(receiver);
+            }
+            if (receivers.isEmpty()) {
+                return 0;
+            }
+            String body = privateRecvInfoJsonTo(receivers, recvId, sendId, sessionId, msgType, content,
+                    localId, seqNo, createdAt == null ? LocalDateTime.now() : createdAt);
+            return push(targetServerIds, PRIVATE_QUEUE_PREFIX, body, channelDesc);
+        } catch (Exception ex) {
+            deliveryFailed.increment();
+            log.warn("[IM 镜像投递] {} 投递失败（不影响 kean 现有业务）：{}", channelDesc, ex.getMessage());
+            return 0;
+        }
+    }
+
     // ------------------------------------------------------------------
     // 内部实现
     // ------------------------------------------------------------------
@@ -454,8 +533,30 @@ public class ImSenderService {
     }
 
     /**
+     * 私聊 JSON 的构造（<b>收件人 = 该接收方的三个终端</b>）—— 阶段 3 以来的既有行为。
+     *
+     * <p>阶段 C-3 起，真正的构造逻辑搬到了 {@link #privateRecvInfoJsonTo}，本方法只是
+     * 「收件人取全部三个终端」的那一次调用。<b>写出的 JSON 与拆分之前逐字节相同</b>
+     * （字段插入顺序、每个字段的取值都没变），因此 B 阶段已经验过的队列体不受影响。</p>
+     */
+    private String privateRecvInfoJson(Long recvId, Long sendId, Long sessionId, String msgType, String content,
+                                       String localId, Long seqNo, LocalDateTime createdAt) {
+        return privateRecvInfoJsonTo(receivers(recvId), recvId, sendId, sessionId, msgType, content,
+                localId, seqNo, createdAt);
+    }
+
+    /**
      * {@code IMRecvInfo} 的 JSON（cmd=PRIVATE_MESSAGE(3)），data 为
-     * {@code PrivateMessageVO} <b>同构对象</b>。
+     * {@code PrivateMessageVO} <b>同构对象</b>；<b>收件人由调用方给定</b>。
+     *
+     * <p>两个调用方（阶段 C）：</p>
+     * <ul>
+     *   <li>{@link #sendPrivate}：收件人 = 接收方的三个终端（既有行为）；</li>
+     *   <li>{@link #pushPrivateToTerminals}：收件人 = <b>发送者自己的其它终端</b>
+     *       （box 的 {@code sendToSelf} 语义，见 {@link ImMultiTerminalEchoService}）。</li>
+     * </ul>
+     * <p>⚠️ 抽这一层是为了让「同一条消息的队列体」永远只有一个构造点 ——
+     * C-3 的自我同步如果另写一份 JSON，两边字段迟早会漂移，而客户端是按字段名读的。</p>
      *
      * <h3>为什么 data 里要额外塞 {@code sessionId} / {@code msgType} / {@code createdAt}</h3>
      * <p>box 的 {@code PrivateMessageVO} <b>没有</b> {@code sessionId} 字段（box 的私聊会话靠
@@ -479,9 +580,13 @@ public class ImSenderService {
      * <b>两条通道给客户端的 {@code createdAt} 是同一个格式</b>。
      * 写成 {@code Instant.now().toEpochMilli()} 的数字会让 {@code Date.parse} 拿到
      * {@code "1767..."} 而得到 {@code NaN}。</p>
+     *
+     * @param receivers 收件人列表（{@code {id, terminal}} 的列表，由调用方决定是哪些终端）
+     * @param recvId    写进 data 的 {@code recvId}（box 的 VO 字段）
      */
-    private String privateRecvInfoJson(Long recvId, Long sendId, Long sessionId, String msgType, String content,
-                                       String localId, Long seqNo, LocalDateTime createdAt) {
+    private String privateRecvInfoJsonTo(List<Map<String, Object>> receivers, Long recvId, Long sendId,
+                                         Long sessionId, String msgType, String content,
+                                         String localId, Long seqNo, LocalDateTime createdAt) {
         Map<String, Object> data = new LinkedHashMap<>();
         // 字段名逐一对齐 box 的 com.bx.implatform.vo.PrivateMessageVO（Lombok @Data → Jackson 小驼峰）。
         // id 缺席是刻意的：kean 的消息主键与 im_platform.im_private_message 不是同一套编号，
@@ -517,7 +622,7 @@ public class ImSenderService {
         Map<String, Object> recvInfo = new LinkedHashMap<>();
         recvInfo.put("cmd", CMD_PRIVATE_MESSAGE);
         recvInfo.put("sender", sender(sendId));
-        recvInfo.put("receivers", receivers(recvId));
+        recvInfo.put("receivers", receivers);
         recvInfo.put("serviceName", SERVICE_NAME);
         // false：不生成「发送结果」回执。box 把回执写到 im:result:private:{serviceName}，
         // 而那个队列的消费者在 im-platform 里；kean 没有消费者，设 true 只会让 Redis 无界增长。

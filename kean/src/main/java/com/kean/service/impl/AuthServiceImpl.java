@@ -50,6 +50,7 @@ import com.kean.vo.UserVO;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -100,6 +101,20 @@ public class AuthServiceImpl implements AuthService {
     private final TurnstileService turnstileService;
     private final AuthRateLimitService authRateLimitService;
 
+    /**
+     * 「仅允许一台设备在线」的<b>全局</b>开关（{@code kean.security.single-device.enabled}），
+     * <b>默认 {@code false} = 不启用单设备限制</b>。
+     *
+     * <p>与 {@code LoginDeviceServiceImpl} 里同名的开关是同一个配置项：那边负责在请求链路上
+     * 拦住顶号动作，这边负责在「用户打开开关」时不再触发一次顶号。
+     * 真正的踢人判定只在 {@code LoginDeviceServiceImpl.enforceSingleDevice} 一处
+     * （它自己会再查这个开关），这里只用于「跳过那一次调用 + 写一条 WARN」。</p>
+     *
+     * <p>默认值写在 {@code @Value} 占位符里、<b>不写进 {@code application*.yml}</b>，
+     * 与项目其余开关一致。恢复方式见 {@code docs/ops/security-hardening.md}。</p>
+     */
+    private final boolean singleDeviceFeatureEnabled;
+
     public AuthServiceImpl(
             SysUserMapper sysUserMapper,
             SchoolMapper schoolMapper,
@@ -116,7 +131,8 @@ public class AuthServiceImpl implements AuthService {
             PresenceService presenceService,
             LoginDeviceService loginDeviceService,
             TurnstileService turnstileService,
-            AuthRateLimitService authRateLimitService
+            AuthRateLimitService authRateLimitService,
+            @Value("${kean.security.single-device.enabled:false}") boolean singleDeviceFeatureEnabled
     ) {
         this.sysUserMapper = sysUserMapper;
         this.schoolMapper = schoolMapper;
@@ -134,6 +150,7 @@ public class AuthServiceImpl implements AuthService {
         this.loginDeviceService = loginDeviceService;
         this.turnstileService = turnstileService;
         this.authRateLimitService = authRateLimitService;
+        this.singleDeviceFeatureEnabled = singleDeviceFeatureEnabled;
     }
 
     @Override
@@ -305,17 +322,24 @@ public class AuthServiceImpl implements AuthService {
     /**
      * 「仅允许一台设备在线」开关。写法与 {@link #updatePrivacy(Integer)} 完全一致。
      *
-     * <p>打开时（写入 1）会<b>立刻</b>顶掉该用户其他设备的登录态，不必等下一次登录 ——
+     * <p>⚠️ <b>2026-02 起该功能已被全局配置关闭</b>（{@code kean.security.single-device.enabled}
+     * 默认 {@code false}）：客户端的开关入口已下线，本接口保留只是为了「将来恢复时不必再动后端」。
+     * 全局关闭时本方法变成<b>只写 {@code sys_user.single_device} 列、不踢人</b>：
+     * 顶号判定集中在 {@code LoginDeviceServiceImpl.enforceSingleDevice} 一处，
+     * 那里第一行就按全局开关返回，所以这里也不再调用它，只留一条 WARN 说明「写了但不生效」。
+     * 恢复方式见 {@code docs/ops/security-hardening.md}。</p>
+     *
+     * <p>全局开关打开时：写入 1 会<b>立刻</b>顶掉该用户其他设备的登录态，不必等下一次登录 ——
      * 否则别的设备还活着，用户会以为这个开关没作用。当前这台设备保留：
      * 取当前请求的 jti（{@link SecurityUtils#currentUserOrNull()} 的 {@code jti()}，
      * 与 {@code LoginDeviceServiceImpl} 里取当前设备 jti 的方式一致）传给
-     * {@link LoginDeviceService#enforceSingleDevice(Long, String)}。
+     * {@link LoginDeviceService#enforceSingleDevice(Long, String)}。</p>
      *
      * <p>关闭时（写入 0）<b>什么都不做</b>：不拉黑、不删设备行、不发通知，
-     * 与引入本开关之前的行为完全一致。
+     * 与引入本开关之前的行为完全一致。</p>
      *
      * <p>顺序是先写库再顶号，且顶号整段 try/catch：开关没写进库就谈不上顶号；
-     * 而顶号失败（Redis 抖动、删行失败等）绝不能把已经写好的开关回滚掉。
+     * 而顶号失败（Redis 抖动、删行失败等）绝不能把已经写好的开关回滚掉。</p>
      */
     @Override
     @Transactional
@@ -329,6 +353,16 @@ public class AuthServiceImpl implements AuthService {
         }
         user.setSingleDevice(singleDevice != null && singleDevice == 1 ? 1 : 0);
         sysUserMapper.updateById(user);
+        if (!singleDeviceFeatureEnabled) {
+            // 全局关闭：只落库、绝不顶号。这一分支同时也保证了「关掉开关后打开单设备设置」
+            // 不会有任何副作用（不会误踢其他设备）。
+            if (user.getSingleDevice() == 1) {
+                log.warn("单设备限制已被全局配置停用（kean.security.single-device.enabled=false），"
+                                + "本次只写入 sys_user.single_device={}，不顶号：userId={}",
+                        user.getSingleDevice(), user.getId());
+            }
+            return toUserVo(user);
+        }
         if (user.getSingleDevice() == 1) {
             LoginUser current = SecurityUtils.currentUserOrNull();
             String keepJti = current == null ? null : current.jti();

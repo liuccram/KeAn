@@ -99,6 +99,18 @@ public class MeController {
         return Result.ok(authService.updatePrivacy(request.privateAccount()));
     }
 
+    /**
+     * 「仅允许一台设备在线」开关（保留接口，为将来恢复单设备限制留口子）。
+     *
+     * <p>⚠️ <b>当前默认不生效</b>：全局配置 {@code kean.security.single-device.enabled}
+     * 默认 {@code false}，此时本接口只把值写进 {@code sys_user.single_device} 列、
+     * <b>不顶掉任何设备</b>（顶号判定集中在 {@code LoginDeviceServiceImpl.enforceSingleDevice}，
+     * 那里第一行就按全局开关返回）。</p>
+     *
+     * <p>客户端 {@code uni-kean} 的开关入口已随本次改动下线，所以正常情况下没有调用方；
+     * 之所以不删接口/不删列：将来要恢复单设备限制时只需把环境变量打开即可，
+     * 不必再改代码、也不必做数据库迁移。详见 {@code docs/ops/security-hardening.md}。</p>
+     */
     @PutMapping("/single-device")
     public Result<UserVO> updateSingleDevice(@Valid @RequestBody UpdateSingleDeviceRequest request) {
         return Result.ok(authService.updateSingleDevice(request.singleDevice()));

@@ -14,7 +14,12 @@ import com.kean.enums.ChatMessageStatus;
 import com.kean.enums.UserRole;
 import com.kean.enums.UserStatus;
 import com.kean.exception.BizException;
+import com.kean.im.ImMessageMirrorService;
+import com.kean.im.ImMultiTerminalEchoService;
+import com.kean.im.ImOfflineQueryService;
 import com.kean.im.ImSenderService;
+import com.kean.im.ImTerminalResolver;
+import com.kean.im.ImUnreadQueryService;
 import com.kean.mapper.ChatMessageMapper;
 import com.kean.mapper.ChatSessionMapper;
 import com.kean.mapper.SysUserMapper;
@@ -37,6 +42,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -73,6 +79,67 @@ public class ChatServiceImpl implements ChatService {
      */
     private final ImSenderService imSenderService;
 
+    /**
+     * 阶段 B-1：把 kean 的消息「物化镜像」进 box 的 {@code im_platform.im_private_message}
+     * （<b>纯追加</b>，与上面的 {@link ImSenderService} 是两条互不相干的通道 ——
+     * 那条写 Redis 队列给 im-server 推客户端，这条写 MySQL 表给 im-platform 读）。
+     *
+     * <p>默认关闭（{@code kean.im.message-mirror-enabled=false}）：关闭时
+     * {@link ImMessageMirrorService#mirrorQuietly} 第一行就 return，
+     * <b>一条 SQL 都不发</b>，本类的行为与新增之前逐字节一致。</p>
+     *
+     * <p>⚠️ 它在 {@link #send} 的 {@code @Transactional} 体内被调用，但
+     * <b>不会影响事务语义</b>：镜像方法自己 try/catch 掉一切异常并返回 boolean，
+     * <b>永不外抛</b>；而且它内部用 {@code REQUIRES_NEW} 把 box 的写挂到<b>独立事务</b>上
+     * （见 {@code ImMessageMirrorService} 类注释「失败策略」），
+     * 所以 box 写失败不可能回滚 kean 已经落库的消息（用户明确选择「kean 为主」）。</p>
+     */
+    private final ImMessageMirrorService imMessageMirrorService;
+
+    /**
+     * 阶段 B-3：未读/已读的<b>来源切换</b>（{@code kean.im.unread-source}，默认 {@code kean}）。
+     *
+     * <p>它只在开关为 {@code box} 时说话，且<b>只读写 box 的 {@code im_platform.im_private_message}</b>：</p>
+     * <ul>
+     *   <li>{@link #listMine} / {@link #unreadCount} / {@link #detail} 的未读数改由它计算
+     *       （按 box 的 {@code status < 3} 数条数）；</li>
+     *   <li>{@link #markRead} 在写 kean 位点之前，先通过它把 box 侧该会话中
+     *       「发给我的、seq_no &lt;= maxSeq」的行置成已读。</li>
+     * </ul>
+     * <p>⚠️ 两条硬约定（见 {@link ImUnreadQueryService} 类注释）：</p>
+     * <ol>
+     *   <li><b>它绝不替本类做决定</b>：查不出/写不成时返回 {@code null} / {@code false}，
+     *       本类<b>照旧</b>维护 kean 的 {@code a_unread/b_unread}、位点与
+     *       {@code chat_message.status=3} —— 这是「回退时数据是热的」的唯一保证；</li>
+     *   <li>开关为 {@code kean}（默认）时它<b>一条 SQL 都不发</b>，
+     *       本类的行为与新增它之前逐字节一致。</li>
+     * </ol>
+     */
+    private final ImUnreadQueryService imUnreadQueryService;
+
+    /**
+     * 阶段 C-2：增量拉取的<b>读取来源切换</b>（{@code kean.im.read-source}，默认 {@code kean}）。
+     *
+     * <p>它只在开关为 {@code box} 时说话，且<b>只读</b> box 的
+     * {@code im_platform.im_private_message}：{@link #catchUp} 会先问它要一批消息，
+     * 它返回 {@code null}（开关未开 / 数据源不可用 / 该用户不是会话参与者 / 查询失败 / box 侧没查到）
+     * 时本类<b>照旧</b>走既有的 {@code afterSeq} 实现 —— 这就是「box 挂了聊天页照样能打开」的落点。</p>
+     *
+     * <p>⚠️ 它与 B-3 的 {@link #imUnreadQueryService} 是<b>两个独立开关</b>（不合并）：
+     * 一个管「消息内容从哪读」，一个管「未读数从哪算 / 已读往哪写」，便于分别灰度与分别回退。</p>
+     */
+    private final ImOfflineQueryService imOfflineQueryService;
+
+    /**
+     * 阶段 C-3：把消息同步给发送者<b>自己的其它终端</b>（{@code kean.im.multi-terminal-echo-enabled}，
+     * 默认 <b>false</b>）—— box 的 {@code sendToSelf} 语义。
+     *
+     * <p>它只在 {@link #send} 里、<b>kean 的消息落库之后</b>被追加调用一次（位置与 B-1 的镜像相邻）；
+     * 开关关闭时它第一行就返回 0，<b>不读 Redis、不写队列</b>，本类的行为与新增它之前逐字节一致。
+     * 失败也只 WARN + 计数，绝不影响发送（见 {@link ImMultiTerminalEchoService} 类注释）。</p>
+     */
+    private final ImMultiTerminalEchoService imMultiTerminalEchoService;
+
     public ChatServiceImpl(
             ChatSessionMapper chatSessionMapper,
             ChatMessageMapper chatMessageMapper,
@@ -81,7 +148,11 @@ public class ChatServiceImpl implements ChatService {
             BlacklistService blacklistService,
             ChatSeqService chatSeqService,
             RealtimePublisher realtimePublisher,
-            ImSenderService imSenderService
+            ImSenderService imSenderService,
+            ImMessageMirrorService imMessageMirrorService,
+            ImUnreadQueryService imUnreadQueryService,
+            ImOfflineQueryService imOfflineQueryService,
+            ImMultiTerminalEchoService imMultiTerminalEchoService
     ) {
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
@@ -91,6 +162,10 @@ public class ChatServiceImpl implements ChatService {
         this.chatSeqService = chatSeqService;
         this.realtimePublisher = realtimePublisher;
         this.imSenderService = imSenderService;
+        this.imMessageMirrorService = imMessageMirrorService;
+        this.imUnreadQueryService = imUnreadQueryService;
+        this.imOfflineQueryService = imOfflineQueryService;
+        this.imMultiTerminalEchoService = imMultiTerminalEchoService;
     }
 
     @Override
@@ -101,12 +176,17 @@ public class ChatServiceImpl implements ChatService {
                 .orderByDesc(ChatSession::getLastMessageAt)
                 .orderByDesc(ChatSession::getId));
         Set<Long> blocked = blacklistService.relatedUserIds(userId);
-        return sessions.stream()
+        List<ChatSession> visible = sessions.stream()
                 .filter(session -> {
                     Long peerId = Objects.equals(session.getUserAId(), userId) ? session.getUserBId() : session.getUserAId();
                     return !blocked.contains(peerId);
                 })
-                .map(session -> toSessionVo(session, userId))
+                .toList();
+        // 阶段 B-3：开关为 box 时，一次 SQL 把整页会话的未读算出来
+        // （开关为 kean / 查询失败时这里返回空 Map，下面逐会话回退到 kean 的计数器）。
+        Map<Long, Long> boxUnread = imUnreadQueryService.unreadCounts(userId, visible);
+        return visible.stream()
+                .map(session -> toSessionVo(session, userId, boxUnread))
                 .toList();
     }
 
@@ -127,13 +207,14 @@ public class ChatServiceImpl implements ChatService {
             throw new BizException(ErrorCode.FORBIDDEN, "对方已设置隐私账号，无法发起私聊");
         }
         ChatSession session = existed == null ? createSession(userId, peerUserId) : existed;
-        return toSessionVo(session, userId);
+        return toSessionVo(session, userId, boxUnreadOf(userId, List.of(session)));
     }
 
     @Override
     public ChatSessionVO detail(Long sessionId) {
         Long userId = SecurityUtils.currentUserId();
-        return toSessionVo(requireOwnedSession(sessionId, userId), userId);
+        ChatSession session = requireOwnedSession(sessionId, userId);
+        return toSessionVo(session, userId, boxUnreadOf(userId, List.of(session)));
     }
 
     /**
@@ -171,6 +252,21 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private PageResult<ChatMessageVO> catchUp(Long sessionId, long afterSeq, Long userId) {
+        // 阶段 C-2：先问 box 通道（开关 kean.im.read-source=box 时才真正说话）。
+        // 它返回 null 的每一种情况（开关未开 / 数据源不可用 / 推不出 convKey / SQL 失败 /
+        // box 侧 0 行 / box 缺行）都落到下面那段【一行未改】的既有实现上 ——
+        // 这就是「box 的任何失败都不影响聊天页」的落点。
+        // ⚠️ 先判 active() 再查会话：默认（read-source=kean）下本方法【一次额外的查库都不做】，
+        //    行为与新增 C-2 之前逐字节一致（连 selectById 都不会发生）。
+        // 注意：这里【不】把 afterSeq 直接当 box 的 minId 用，映射规则（翻译而不是赋值）见
+        // ImOfflineQueryService 类注释「游标映射规则」以及 §6.3.2 第 2 步。
+        if (imOfflineQueryService.active()) {
+            ChatSession session = chatSessionMapper.selectById(sessionId);
+            PageResult<ChatMessageVO> fromBox = imOfflineQueryService.catchUpAfterSeq(session, userId, afterSeq);
+            if (fromBox != null) {
+                return fromBox;
+            }
+        }
         // seq_no > afterSeq：seq_no 为 NULL 的历史行天然不参与（NULL 与任何值比较都不成立），
         // 与 box 侧"历史消息靠 seq_no 游标"的语义一致。没有 seq_no 的历史数据仍能用历史分页模式拿到。
         List<ChatMessage> records = chatMessageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
@@ -291,6 +387,48 @@ public class ChatServiceImpl implements ChatService {
         imSenderService.sendPrivate(peerId, userId, session.getId(), type, text, idemKey, seqNo,
                 message.getCreatedAt());
 
+        // 阶段 B-1：把同一条消息再幂等镜像一份到 box 的 MySQL 表
+        // im_platform.im_private_message（与上一条「写 Redis 队列」完全无关的第二条通道）。
+        //   · 开关默认关闭（kean.im.message-mirror-enabled=false）→ 不建 JdbcTemplate、不发任何 SQL；
+        //   · 位置：必须在 chatMessageMapper.insert(message) 成功之后 —— 镜像要用落库后的
+        //     真实 seqNo / localId / created_at（AuditMetaObjectHandler 填的），
+        //     这样 box 侧影子行与 HTTP 路径返回给客户端的 ChatMessageVO 完全同源；
+        //   · 事务：镜像在【REQUIRES_NEW 的独立事务】里写 box 库（外层 kean 事务被挂起），
+        //     并且内部吞掉一切异常（只 log.warn + 计数）⇒ box 写失败【不会】回滚 kean 的消息
+        //     （用户明确选择「kean 为主」：box 抖一下不能让用户发不出消息）；
+        //   · 这里的 try/catch 是纵深防御：即使 mirrorQuietly 将来被改成会外抛，也不会影响发送。
+        try {
+            imMessageMirrorService.mirrorQuietly(message, session);
+        } catch (Exception ex) {
+            log.warn("[IM 消息镜像] 镜像调用异常（已忽略，不影响发送），messageId={}：{}",
+                    message.getId(), ex.getMessage());
+        }
+
+        // 阶段 C-3：把同一条消息按 box 的 sendToSelf 语义再投给【发送者自己的其它终端】
+        // （多端同步；kean 现在的多端同步靠 8 秒增量拉取"追"，这里补上实时那一段）。
+        //   · 开关默认关闭（kean.im.multi-terminal-echo-enabled=false）→ 第一行就返回 0，
+        //     不读 Redis、不写队列，行为与新增之前逐字节一致；
+        //   · 位置：必须在 insert 成功之后 —— data 里的 localId/seqNo/createdAt 要是落库后的真值
+        //     （客户端按 localId 去重、按 seqNo 推游标，用插入前的值会造成多端重复或游标倒退）；
+        //   · 当前终端由 ImTerminalResolver 推（与取 box token 时写进 JWT 的 terminal 同一份规则），
+        //     它会被【跳过】，因此不会出现"自己收到自己的消息"的重复气泡；
+        //   · 单端在线时它内部直接返回 0（只多一次 Redis 的 multiGet）；
+        //   · 失败只在内部 log.warn + 计数，绝不影响本次发送（更不会回滚上面的落库）。
+        try {
+            imMultiTerminalEchoService.echoAfterSend(
+                    userId,
+                    session.getId(),
+                    type,
+                    text,
+                    idemKey,
+                    seqNo,
+                    message.getCreatedAt(),
+                    ImTerminalResolver.currentRequestTerminal());
+        } catch (Exception ex) {
+            log.warn("[IM 多端同步] 自我同步调用异常（已忽略，不影响发送），messageId={}：{}",
+                    message.getId(), ex.getMessage());
+        }
+
         return toMessageVo(message, userId);
     }
 
@@ -299,14 +437,24 @@ public class ChatServiceImpl implements ChatService {
      *
      * <p>收到 maxSeq 时：
      * <ol>
+     *     <li><b>阶段 B-3（新增，仅当 {@code kean.im.unread-source=box} 时真正执行）</b>：
+     *         先把 box 侧该会话中"发给我、seq_no &lt;= maxSeq"的行 status 置 3
+     *         （权威侧先推进；写在 REQUIRES_NEW 的独立事务里，失败只 WARN，
+     *         <b>绝不</b>影响下面的 kean 写入）；</li>
      *     <li>按 V1 的 user_a_id(较小) / user_b_id(较大) 约定，写自己那一侧的 a_read_seq / b_read_seq，
      *         只前进不回退（GREATEST 幂等），顺带把自己那侧未读数清零；</li>
      *     <li>把该会话中"对方发给我的、seq_no &lt;= maxSeq"的消息 status 置 3（已读）并写 read_at；</li>
      *     <li>通过既有 RealtimePublisher 给<b>对方</b>推一个 READ 事件（新事件类型）。</li>
      * </ol>
+     * <p>⚠️ 第 1 步与第 2)/3) 步是「单向投影」关系：<b>box 是权威，但 kean 侧照旧写</b>
+     * （即使 box 写失败）。目的是回退时数据是热的 —— 把开关设回 {@code kean} 后
+     * 未读/已读立刻就是正确的，不需要回填（见 {@code docs/ops/im-platform-migration.md} §3.B 的 B-3 段）。</p>
+     * <p>第 4 步的事件形状<b>完全没变</b>（{@code {type:"READ",sessionId,maxSeq,readerId}}），
+     * 客户端一行都不用改。</p>
      *
      * <p>不传 maxSeq（老客户端）时保持改动前的行为：只把自己那一侧未读数清零、不推事件，
-     * 也不分配/推进任何 seq 位点。这条分支纯粹是向后兼容，新客户端请始终带 maxSeq。
+     * 也不分配/推进任何 seq 位点。<b>这条分支不会碰 box</b>（没有 maxSeq 就没有可投影的位点）。
+     * 新客户端请始终带 maxSeq。
      */
     @Override
     @Transactional
@@ -330,6 +478,24 @@ public class ChatServiceImpl implements ChatService {
 
         long cursor = Math.max(maxSeq, 0L);
         LocalDateTime now = LocalDateTime.now();
+
+        // 0) 阶段 B-3：box 优先 —— 先把权威侧（box 的消息 status）推进到 maxSeq。
+        //    顺序刻意是「先 box 后 kean」（见 ImUnreadQueryService.markReadInBox 的注释）：
+        //      · box 是权威，先写它能让中间态只出现在「可自愈」的方向上（同一条 UPDATE 幂等重放）；
+        //      · 它在 REQUIRES_NEW 的独立事务里，且异常被本服务内部吞掉（只返回 false + WARN）
+        //        ⇒ box 挂了/表没了/没权限，都不会污染下面 kean 的 @Transactional 事务；
+        //      · 无论它返回 true 还是 false，下面的 1)/2)/3) 一步都不会少
+        //        ⇒ kean 的位点、chat_message.status、a_unread/b_unread 始终是「热」的，回退可用；
+        //      · 开关 kean.im.unread-source=kean（默认）时它第一行就 return false，一条 SQL 都不发。
+        //    这里的 try/catch 是纵深防御：即使 markReadInBox 将来被改成会外抛，
+        //    「用户点开会话却报错」这条路径也不会出现。
+        try {
+            imUnreadQueryService.markReadInBox(userId, session, cursor);
+        } catch (Exception ex) {
+            log.warn("[IM 未读来源] box 已读回写调用异常（已忽略，kean 侧照旧写入），sessionId={}，maxSeq={}：{}",
+                    sessionId, cursor, ex.getMessage());
+        }
+
         // 1) 读位点 + 未读清零：一条 UPDATE 搞定。
         //    位点用 setSql + GREATEST 而不是「读出来比较再写」，并发 markRead 时只会前进不会回退
         //    （COALESCE 兼容历史会话 a_read_seq/b_read_seq 为 NULL）。
@@ -371,10 +537,13 @@ public class ChatServiceImpl implements ChatService {
         Long userId = SecurityUtils.currentUserId();
         List<ChatSession> sessions = chatSessionMapper.selectList(new LambdaQueryWrapper<ChatSession>()
                 .and(w -> w.eq(ChatSession::getUserAId, userId).or().eq(ChatSession::getUserBId, userId)));
+        // 阶段 B-3：与 listMine 用同一套口径（一次 SQL 算整批），逐会话回退。
+        // ⚠️ 这里刻意不再像改动前那样直接读 a_unread/b_unread，而是统一走 unreadOf，
+        //    否则会出现「列表角标按 box、总数角标按 kean」的两套口径（那正是本轮要消灭的分叉）。
+        Map<Long, Long> boxUnread = imUnreadQueryService.unreadCounts(userId, sessions);
         long total = 0;
         for (ChatSession session : sessions) {
-            Integer unread = Objects.equals(session.getUserAId(), userId) ? session.getAUnread() : session.getBUnread();
-            total += unread == null ? 0 : unread;
+            total += unreadOf(session, userId, boxUnread);
         }
         return total;
     }
@@ -456,10 +625,9 @@ public class ChatServiceImpl implements ChatService {
         return peer;
     }
 
-    private ChatSessionVO toSessionVo(ChatSession session, Long userId) {
+    private ChatSessionVO toSessionVo(ChatSession session, Long userId, Map<Long, Long> boxUnread) {
         Long peerId = Objects.equals(session.getUserAId(), userId) ? session.getUserBId() : session.getUserAId();
         SysUser peer = sysUserMapper.selectById(peerId);
-        Integer unread = Objects.equals(session.getUserAId(), userId) ? session.getAUnread() : session.getBUnread();
         return new ChatSessionVO(
                 session.getId(),
                 peerId,
@@ -467,11 +635,48 @@ public class ChatServiceImpl implements ChatService {
                 peer == null ? null : FileUrls.of(peer.getAvatarUrl()),
                 session.getLastContent(),
                 session.getLastMessageAt(),
-                unread == null ? 0 : unread,
+                unreadOf(session, userId, boxUnread),
                 UserRestrictions.muted(peer),
                 peer != null && UserStatus.BANNED.name().equals(peer.getStatus()),
                 session.getLastSeqNo()
         );
+    }
+
+    /**
+     * 该用户在某个会话上的未读数 —— <b>口径切换的唯一落点</b>（阶段 B-3）。
+     *
+     * <p>取值顺序（不可颠倒）：</p>
+     * <ol>
+     *   <li>{@code boxUnread} 里有这个会话 ⇒ 用 box 算出来的值
+     *       （调用方已按 {@code kean.im.unread-source} 决定是否去查 box）；</li>
+     *   <li>没有 ⇒ 回退到 kean 的 {@code chat_session.a_unread / b_unread}
+     *       —— 这正是开关未打开、以及「box 查询失败」两种情况下的<b>同一条</b>路径，
+     *       所以「切到 box 一半失败」不会让聊天页出现空洞或 500。</li>
+     * </ol>
+     * <p>⚠️ 注意缺失（键不存在）与 0 是<b>不同</b>的：box 明确算出 0 时 {@code boxUnread}
+     * 里会有这个键，此时<b>不会</b>回退 —— 否则「box 说已读、kean 计数器还没清零」
+     * 这个中间态会把角标又显示出来。</p>
+     */
+    private static int unreadOf(ChatSession session, Long userId, Map<Long, Long> boxUnread) {
+        if (boxUnread != null) {
+            Long fromBox = boxUnread.get(session.getId());
+            if (fromBox != null) {
+                return fromBox > Integer.MAX_VALUE ? Integer.MAX_VALUE : fromBox.intValue();
+            }
+        }
+        Integer unread = Objects.equals(session.getUserAId(), userId) ? session.getAUnread() : session.getBUnread();
+        return unread == null ? 0 : unread;
+    }
+
+    /**
+     * 只查一个/一小批会话的 box 未读数（会话详情、开会话用）。
+     *
+     * <p>{@link ImUnreadQueryService#unreadCounts} 在开关为 {@code kean} 时直接返回空 Map，
+     * <b>不产生任何 SQL</b>；失败时同样返回空 Map（并已自行 WARN）。</p>
+     */
+    private Map<Long, Long> boxUnreadOf(Long userId, List<ChatSession> sessions) {
+        Map<Long, Long> counts = imUnreadQueryService.unreadCounts(userId, sessions);
+        return counts == null ? Collections.emptyMap() : counts;
     }
 
     private ChatMessageVO toMessageVo(ChatMessage message, Long viewerId) {

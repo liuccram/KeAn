@@ -29,6 +29,16 @@ function imageType(filePath: string): Promise<string> {
 
 function compress(filePath: string, quality: number): Promise<string> {
   return new Promise((resolve) => {
+    // ⚠️ uni.compressImage 是【App / 小程序】专有 API，H5 上根本不存在 ✗
+    // 直接调用会抛 "uni.compressImage is not a function" ✗ 导致图片发不出去 ✓
+    // （线上真实报错：私聊里发图片直接失败）
+    // H5 没有压缩能力 → 跳过压缩、原样上传 ✓（服务端 multipart 限 5MB ✓ 相册图多半够 ✓；
+    // 真的过大时由上传接口报错，用户会看到明确提示 ✓ 而不是一个 JS 异常 ✗）
+    const compressImage = (uni as unknown as { compressImage?: unknown }).compressImage;
+    if (typeof compressImage !== "function") {
+      resolve(filePath);
+      return;
+    }
     uni.compressImage({
       src: filePath,
       quality,

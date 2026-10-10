@@ -1,5 +1,4 @@
 import { request } from "@/utils/request";
-import type { AuthUser } from "@/utils/storage";
 
 export interface PublicReview {
   id: number;
@@ -49,11 +48,8 @@ export function updatePrivacy(privateAccount: 0 | 1) {
   });
 }
 
-/** 切换「仅允许一台设备在线」。0 = 关闭（多端可同时在线），1 = 打开（新设备登录顶掉其他设备）。 */
-export function updateSingleDevice(singleDevice: 0 | 1) {
-  return request<AuthUser>({
-    url: "/api/me/single-device",
-    method: "PUT",
-    data: { singleDevice }
-  });
-}
+// 「仅允许一台设备在线」的开关接口 updateSingleDevice（PUT /api/me/single-device）已随
+// 「暂时去掉单设备入口」一起从客户端移除：该功能在后端已被全局配置停用
+// （kean.security.single-device.enabled 默认 false，详见 docs/ops/security-hardening.md）。
+// 后端接口与 sys_user.single_device 列都保留着，将来要恢复时只需改环境变量，
+// 再把这里的调用函数与 pages/mine/security.vue 的开关加回来即可。
