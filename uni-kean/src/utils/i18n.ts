@@ -124,6 +124,10 @@ const DICT = {
     msgPreviewImage: "[图片]",
     msgPreviewRecall: "[已撤回]",
     msgPreviewNone: "暂无消息",
+    // 聊天页内置表情面板（表情**名字**是数据、不 i18n；这里只翻译 UI 文案）
+    chatEmojiToggle: "表情",
+    chatEmojiTitle: "内置表情",
+    chatEmojiRecent: "最近使用",
     // —— 通知定型文案（按后端 type + bizType + 给定 title 渲染；未命中的类型一律回退原样显示）——
     // ⚠️ 每条都必须回答：谁 / 对哪个对象 / 发生了什么 / 我要不要动手。
     // ⚠️ 不要和后端已有的自由正文重复：正文里的「处理结果 / 回复 / 变更如下」几行由
@@ -370,6 +374,10 @@ const DICT = {
     msgPreviewImage: "[Photo]",
     msgPreviewRecall: "[Recalled]",
     msgPreviewNone: "No messages yet",
+    // chat page built-in emoji panel (emoji NAMES are data, not translated; only UI copy is)
+    chatEmojiToggle: "Emoji",
+    chatEmojiTitle: "Emoji",
+    chatEmojiRecent: "Recent",
     msgActorPublisher: "the publisher",
     msgActorApplicant: "the substitute",
     msgActorStudent: "your classmate",

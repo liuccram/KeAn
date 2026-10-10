@@ -28,7 +28,8 @@ public class RealtimePublisher {
     private final ImSenderService imSenderService;
 
     /**
-     * 阶段 C-4：自研 WS 实时推送的<b>总闸</b>（{@code kean.im.legacy-ws-enabled}，<b>默认 true</b>）。
+     * 阶段 C-4：自研 WS 实时推送的<b>总闸</b>（{@code kean.im.legacy-ws-enabled}，<b>默认 true</b>）；
+     * 本轮起它<b>还</b>提供一把更窄的 {@code READ} 闸（{@code kean.im.read-receipt-enabled}，<b>默认 true</b>）。
      *
      * <p>⚠️ 它<b>只被 {@link #read} 读取</b>（{@code READ} 事件），<b>不</b>被 {@link #notice} /
      * {@link #send} / {@link #broadcast} 读取 —— 这是刻意的边界：
@@ -58,7 +59,7 @@ public class RealtimePublisher {
     }
 
     /**
-     * 已读回执（本轮新增的事件类型）。推给<b>发送方</b>：告诉它"你的消息已经被对方读到 maxSeq 了"。
+     * 已读回执。推给<b>发送方</b>：告诉它"你的消息已经被对方读到 maxSeq 了"。
      *
      * <p>payload 字段（与 NOTICE 一样扁平放在顶层，不套 data）：
      * <pre>
@@ -76,8 +77,35 @@ public class RealtimePublisher {
      * <p><b>本方法不做 IM 镜像</b>（刻意的范围限定）：阶段 3 只要求镜像 {@code send()} / {@code notice()}，
      * 而 READ 是课安自己的已读位点事件，box 协议的对应物是 {@code MessageType.RECEIPT(12)}，
      * 语义与字段都要另外对齐 —— 留到下一阶段，避免现在就把没把握的映射写进协议层。</p>
+     *
+     * <h2>⭐ 本轮起的两道闸（优先级：{@code read-receipt-enabled} &gt; {@code legacy-ws-enabled}）</h2>
+     * <ol>
+     *   <li><b>{@code kean.im.read-receipt-enabled=false}</b>（本轮新增，<b>默认 true</b>）：
+     *       本方法整体 no-op，<b>只</b>影响这一个推送点。
+     *       ⚠️ 调用方 {@code ChatServiceImpl.markRead} 的 box 已读回写、位点、
+     *       {@code chat_message.status=3}、{@code a_unread/b_unread} 清零<b>一行都不受影响</b>，
+     *       也不影响客户端每一次已读<b>上报</b>（那条链路服务的是「自己的未读角标」）；</li>
+     *   <li><b>{@code kean.im.legacy-ws-enabled=false}</b>（C-4 既有开关，默认 true）：
+     *       照旧 no-op，语义与新增第 1 条之前完全一致。</li>
+     * </ol>
+     * <p>两道闸的「提前返回」都是<b>行为等价</b>的：READ 事件的唯一出口就是这个
+     * {@code send(...)}（自研 WS 的 chatSessionHub），而 {@code send(...)} 里的 im-server 镜像
+     * 对这个事件本来就是跳过的（{@link #systemMessageData} 对 {@code "READ"} 返回 {@code null}），
+     * 所以提前返回<b>不会</b>少推任何一条 box 消息。</p>
+     * <p><b>为什么本轮要新增第 1 条</b>：客户端已不再展示「对方已读」（双勾移除），
+     * READ 事件于是<b>没有任何消费方</b>；而 {@code legacy-ws-enabled} 是一把同时管
+     * {@code MESSAGE} 的总闸，用它来关 READ 会连带关掉消息实时推送。两件事的退役节奏不同，
+     * 所以要一把<b>只管 READ</b> 的更窄的闸。</p>
      */
     public void read(Long userId, Long sessionId, Long maxSeq, Long readerId) {
+        // 本轮新增的窄闸：只关 READ 这一个事件。
+        // 默认 true（保持现状，仍然推），切换由部署后改 KEAN_IM_READ_RECEIPT_ENABLED=false 完成。
+        if (!imRealtimeRoleService.readReceiptEnabled()) {
+            imRealtimeRoleService.recordSuppressedReadReceipt();
+            log.debug("skip legacy ws READ push ({} disabled), userId={}, sessionId={}, maxSeq={}",
+                    ImRealtimeRoleService.PROPERTY_READ_RECEIPT_ENABLED, userId, sessionId, maxSeq);
+            return;
+        }
         // 阶段 C-4：自研 WS 的实时推送总闸（kean.im.legacy-ws-enabled，默认 true）。
         // false 时本方法整体 no-op —— 这是【行为等价】的：
         //   · READ 事件的唯一出口就是这个 send(...)（legacy WS 的 chatSessionHub）；

@@ -219,26 +219,12 @@ export function mergeIncoming(
   return sortTimeline(merged);
 }
 
-/** 把「我发出的、seqNo ≤ maxSeq」的消息标为已读（READ 事件到达时用） */
-export function markMineRead(list: ChatMessageItem[], maxSeq: number): ChatMessageItem[] {
-  const limit = positive(maxSeq);
-  if (!limit || !list.length) {
-    return list;
-  }
-  let touched = false;
-  const next = list.map((item) => {
-    if (!item.mine) {
-      return item;
-    }
-    const seq = positive(item.seqNo);
-    if (seq <= 0 || seq > limit || item.status === 3) {
-      return item;
-    }
-    touched = true;
-    // status 用服务端口径的字面量（chat.ts 的 ChatMessageStatus）：3 = 已读。
-    // 同时清掉 sendState —— 有 seqNo 说明服务端已确认落库，
-    // 它绝不该再压着 outgoingStatus 显示"发送中"而盖住双勾（防御性兜底）。
-    return { ...item, status: 3, sendState: undefined };
-  });
-  return touched ? next : list;
-}
+/**
+ * ⚠️ 本轮已删除 `markMineRead(list, maxSeq)`：
+ * 它唯一的用途是「收到 READ 事件 → 把我发出的、seqNo ≤ maxSeq 的消息标成 status=3」，
+ * 也就是气泡上的**双勾**。客户端本轮已移除双勾（气泡只剩 发送中 / 单勾 / 失败），
+ * 调用方（`chat.vue` 的 `applyReadReceipt`）也已一并删除 ⇒ 它是彻头彻尾的死代码。
+ *
+ * ⚠️ 与它无关、**必须保留**的是 `status` 字段本身（撤回判据 status===2 仍在用，
+ * 且服务端仍在写 status=3；客户端只是不再把它渲染成「对方已读」）。
+ */

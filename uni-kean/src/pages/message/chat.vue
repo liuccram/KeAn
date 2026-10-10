@@ -14,7 +14,6 @@ import { refreshMessageBadge } from "@/utils/messageBadge";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import {
   isOptimistic,
-  markMineRead,
   maxCreatedAtOf,
   maxSeqOf,
   mergeConfirm,
@@ -49,6 +48,16 @@ import FallbackImage from "@/components/FallbackImage.vue";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { useUploadProgress } from "@/composables/useUploadProgress";
 import { useUserStore } from "@/store/user";
+import {
+  EMOJI_NAME_LIST,
+  emojiPathOf,
+  formatEmoji,
+  listRecentEmoji,
+  rememberRecentEmoji,
+  splitEmoji,
+  type EmojiSegment
+} from "@/utils/emoji";
+import { t } from "@/utils/i18n";
 import { onHide, onLoad, onShow, onUnload } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
 import { computed, nextTick, onMounted, ref } from "vue";
@@ -117,6 +126,106 @@ function logSend(step: string, detail: Record<string, unknown> = {}) {
   console.log(`[kean-send] ${step}`, detail);
 }
 
+/* ===========================================================================
+ * 内置表情（纯前端；消息体里存的仍是**纯文本短代码** `[微笑]`）
+ * ---------------------------------------------------------------------------
+ * · 短代码格式与映射表来自 box-im 的 utils/emotion.web.ts（formatEmoji → `[名字]`），
+ *   素材与版权声明见 src/static/emoji/（LICENSE.txt + README.md）。
+ * · 这里**只往输入框里插文字**，绝不改消息结构、请求体或后端契约：
+ *   发送走的还是 handleSend → createOutboxPayload(text, "TEXT")，一个字没动。
+ * · 面板刻意不用 backdrop-filter / transform / filter / will-change / contain /
+ *   perspective：本页有 fixed 弹层与 fixed 输入区，这些属性会创建 containing block
+ *   把 fixed 后代劫持住（见仓库铁律 3）。面板本身也放在 .composer **之外**，
+ *   不参与 fixed 元素做 containing block。
+ * =========================================================================== */
+const emojiOpen = ref(false);
+/** 展开次数：面板每次重开都重新算一次「最近使用」（不引 watch，也不动其它状态） */
+const emojiSessions = ref(0);
+const recentEmoji = ref<string[]>([]);
+const emojiRecentList = computed(() => (emojiSessions.value ? recentEmoji.value : []));
+
+function emojiCellKey(name: string, index: number) {
+  return `${index}-${name}`;
+}
+
+function refreshRecentEmoji() {
+  recentEmoji.value = listRecentEmoji();
+}
+
+function toggleEmojiPanel() {
+  emojiOpen.value = !emojiOpen.value;
+  if (emojiOpen.value) {
+    emojiSessions.value += 1;
+    refreshRecentEmoji();
+  }
+}
+
+/**
+ * 点表情 → 把短代码插到输入框**光标处**；拿不到光标位置就追加到末尾。
+ *
+ * <p>⚠️ 绝不整段替换：任何取不到光标/选区的情况（小程序端原生 input 就没有
+ * setSelectionRange）都退化成「追加到末尾」，已输入的内容一个字都不会丢。</p>
+ */
+function insertEmoji(name: string) {
+  const code = formatEmoji(name);
+  const value = String(content.value || "");
+  let caret = value.length;
+  // H5 的 <input> 是原生 DOM：优先按用户的真实光标位置插入
+  const input = document.querySelector(".composer .input") as HTMLInputElement | null;
+  const start = input && typeof input.selectionStart === "number" ? input.selectionStart : null;
+  if (input && start !== null && start <= value.length) {
+    caret = start;
+  }
+  const next = value.slice(0, caret) + code + value.slice(caret);
+  content.value = next;
+  // 复原光标到插入内容之后（小程序端 setSelectionRange 不存在 → 走追加，同样正确）
+  if (input && typeof input.setSelectionRange === "function") {
+    const at = caret + code.length;
+    nextTick(() => {
+      try {
+        input.focus();
+        input.setSelectionRange(at, at);
+      } catch {
+        // 某些内核会在失焦时抛错：忽略即可，输入框内容已经是对的
+      }
+    });
+  }
+  refreshRecentEmoji();
+  recentEmoji.value = rememberRecentEmoji(name);
+}
+
+/** 打开图片选择器前收起面板：否则面板会一直悬在系统弹层上面 */
+function closeEmojiPanel() {
+  emojiOpen.value = false;
+}
+
+/**
+ * 消息正文 → 渲染片段（纯文本里只把**已知**短代码换成内联小图）。
+ *
+ * <p>性能：切好的片段按「id/localId + 正文」缓存，列表重渲染不会重复切；
+ * 正则与「名字 → 下标」查表都在 utils/emoji.ts 里预编译，渲染路径上不做编译。
+ * 缓存条目数有上限，超了整体清空（只是一次重算，不会泄漏内存）。</p>
+ */
+const emojiSegmentCache = new Map<string, EmojiSegment[]>();
+
+function messageSegments(item: ChatMessageItem): EmojiSegment[] {
+  const text = String(item.content || "");
+  if (!text) {
+    return [];
+  }
+  const key = `${item.localId || item.id || 0}|${text}`;
+  const cached = emojiSegmentCache.get(key);
+  if (cached) {
+    return cached;
+  }
+  const segments = splitEmoji(text);
+  if (emojiSegmentCache.size > 600) {
+    emojiSegmentCache.clear();
+  }
+  emojiSegmentCache.set(key, segments);
+  return segments;
+}
+
 const displayMessages = computed<ChatDisplayMessage[]>(() => {
   const list = messages.value;
   logSend("render", { messagesLen: list.length, sendingIds: sendingIds.value.length });
@@ -132,15 +241,16 @@ const displayMessages = computed<ChatDisplayMessage[]>(() => {
  * 角标状态：服务端口径优先，本地「正在重发」只在服务端还没结论时才显示为发送中。
  *
  * <p>为什么不能无条件压成 sending：重发时 localId 会留在 {@code sendingIds} 直到重发结束，
- * 而重发成功后服务端已给了 seqNo/status=3 —— 无条件压实会把刚拿回来的 ✓✓ 打回「发送中」，
- * 表现为「双钩要刷新才回来」。</p>
+ * 而重发成功后服务端已给了 seqNo/status —— 无条件压实会把刚拿回来的对勾打回「发送中」，
+ * 表现为「角标要刷新才回来」。</p>
  */
 function resolveSendState(item: ChatMessageItem): ChatSendState | undefined {
   if (sendingIds.value.indexOf(String(item.localId || "")) < 0) {
     return item.sendState;
   }
   const server = outgoingStatus({ ...item, mine: resolveMine(item) });
-  // 服务端已经给出结论（已发送/已读）时不再覆盖；本地还是 sending/failed/未知才显示为发送中
+  // 服务端已经给出结论（已发送；历史取值 "read" 现在也只显示单勾）时不再覆盖；
+  // 本地还是 sending/failed/未知才显示为发送中
   return server === "sent" || server === "read" ? item.sendState : "sending";
 }
 
@@ -197,9 +307,12 @@ function reportRead(seq: number, immediate = false) {
 
 /**
  * 进会话（以及每次全量刷新后）无条件上报一次已读：
- * - 有 seqNo 就带 maxSeq（服务端会清未读 + 把对方发给我的消息置已读 + 推 READ 双勾）；
+ * - 有 seqNo 就带 maxSeq（服务端会清未读 + 把对方发给我的消息置已读）；
  * - 一条 seqNo 都拿不到（老后端 / 序号字段缺失）时不发 maxSeq=0（那等于"读到第 0 条"，
  *   服务端会当成位点 0 处理），改为走不带 body 的老口径，只清自己那侧未读数。
+ *
+ * <p>⚠️ 这条上报链路只服务于「自己的未读角标」，<b>本轮一行未动</b>：
+ * 与气泡上的对勾无关，也不能因为去掉双勾而删掉（删了未读就永远不清零）。</p>
  */
 function chatRead(): void {
   const seq = unreadMaxSeq();
@@ -599,7 +712,7 @@ function markResendUnavailable(localId: string) {
 /**
  * 发送成功回执：用服务端版本按 localId 替换本地那条乐观消息（清掉 sendState）。
  * 不走 upsertMessages —— 那条路径会按 sessionId 过滤，老后端不回 sessionId 时会整行丢弃，
- * 本地那条就永远停在"发送中"并盖住单/双勾。
+ * 本地那条就永远停在"发送中"并盖住对勾。
  */
 function confirmIncoming(message?: ChatMessageItem) {
   if (!message || typeof message !== "object") {
@@ -767,6 +880,8 @@ async function handleSend() {
   }
   const payload = createOutboxPayload(text, "TEXT");
   content.value = "";
+  // 发送后收起表情面板：输入框已清空，还挂着面板没有意义
+  closeEmojiPanel();
   // ⭐ 乐观插入在任何 await / 任何守卫之前：点一下必然出现气泡
   enqueueLocalMessage(payload);
   if (!sessionId.value) {
@@ -784,6 +899,8 @@ function handleSendImage() {
     toast.error(sendBlocked.value);
     return;
   }
+  // 系统选图弹层起来之前先收面板（面板是 fixed 的，留着会和系统弹层打架）
+  closeEmojiPanel();
   uni.chooseImage({
     count: 1,
     sizeType: ["original"],
@@ -935,33 +1052,17 @@ async function resendMessage(localId: string, item: ChatMessageItem) {
   }
 }
 
-function markMineReadLocal(limit: number): void {
-  const next = markMineRead(messages.value, limit);
-  if (next !== messages.value) {
-    messages.value = next;
-    console.log("[kean-rt] read-status applied", { maxSeq: limit, len: messages.value.length });
-  } else {
-    console.log("[kean-rt] read-status unchanged", { maxSeq: limit });
-  }
-}
-
-/** READ 事件：把「我发出的、seqNo ≤ maxSeq」的消息标为已读（气泡双勾） */
-function applyReadReceipt(payload?: { sessionId?: number; readerId?: number; maxSeq?: number }) {
-  const targetSession = Number(payload?.sessionId || 0);
-  console.log("[kean-rt] applyReadReceipt", { targetSession, current: sessionId.value, maxSeq: payload?.maxSeq });
-  if (!targetSession || targetSession !== sessionId.value) {
-    return;
-  }
-  // 自己别端上报的已读不需要处理（那边已经处理过了）
-  if (Number(payload?.readerId || 0) === myUserId.value) {
-    return;
-  }
-  const limit = Number(payload?.maxSeq || 0);
-  if (!Number.isFinite(limit) || limit <= 0) {
-    return;
-  }
-  markMineReadLocal(limit);
-}
+/**
+ * ⚠️ 本轮已删除 `markMineReadLocal` / `applyReadReceipt` 两个函数
+ * （以及 `useLiveUpdates` 里的 `READ` 分支）：
+ *
+ * 它们的**唯一**作用是「收到对方已读 → 把我发出的气泡标成双勾」，
+ * 也就是「对方已读」这条信息的渲染。气泡不再展示它之后，这两个函数与
+ * `chatMerge.markMineRead` 一起成为死代码，留着只会让人误以为「已读还在驱动界面」。
+ *
+ * ⚠️ 刻意**不删**的是「已读上报」（`createReadReporter` / `chatRead` / `readReporter.note`）：
+ * 它服务于**自己的未读角标**，与双勾是两条完全不同的链路。
+ */
 
 function handleReportUser() {
   const peerId = session.value?.peerUserId;
@@ -1041,10 +1142,12 @@ onShow(() => {
 });
 
 onHide(() => {
+  closeEmojiPanel();
   readReporter.flush();
 });
 
 onUnload(() => {
+  closeEmojiPanel();
   readReporter.flush();
 });
 
@@ -1080,14 +1183,11 @@ useLiveUpdates((event) => {
     handleMessageEvent(event.data, event.sessionId);
     return;
   }
-  if (event.type === "READ") {
-    applyReadReceipt({
-      sessionId: event.sessionId ?? event.data?.sessionId,
-      readerId: event.readerId ?? event.data?.readerId,
-      maxSeq: event.maxSeq ?? event.data?.maxSeq
-    });
-    return;
-  }
+  // ⚠️ 本轮<b>移除</b> READ 分支（原来调 applyReadReceipt → markMineRead 标双勾）：
+  //    气泡不再展示「对方已读」，收到 READ 事件就<b>不做任何事</b>（落到函数末尾自然结束）。
+  //    这里刻意不留空分支、也不打日志：一是「不订阅/不处理」才是不再依赖实时已读的证据，
+  //    二是这两条通道的 READ 本来就只来自自研 WS（box 的 imSocket 恒定不产生 READ），
+  //    服务端 READ 推送另有 kean.im.read-receipt-enabled 单独把关（默认仍推）。
   if (event.type === "NOTICE" && (event.noticeType === "PEER_BANNED" || event.noticeType === "PEER_UNBANNED")) {
     if (!event.bizId || Number(event.bizId) === sessionId.value) {
       loadSession();
@@ -1135,7 +1235,7 @@ onMounted(() => {
 <template>
   <view class="page" :class="{ 'has-peer-status': Boolean(peerNotice) }">
     <view v-if="peerNotice" class="peer-status" :class="{ banned: peerBanned }">{{ peerNotice }}</view>
-    <view class="list">
+    <view class="list" @click="closeEmojiPanel">
       <view v-for="item in displayMessages" :key="item.id">
         <view v-if="item.showTime" class="stamp">{{ formatChatTime(item.createdAt) }}</view>
         <view class="row" :class="{ mine: item.mine }">
@@ -1160,7 +1260,19 @@ onMounted(() => {
               mode="widthFix"
               @click="previewImage(item.url, item.content)"
             />
-            <view v-else class="text">{{ item.content }}</view>
+            <!-- 文字气泡：已知短代码（如 [微笑]）渲染成与行高对齐的内联小图，
+                 未知的方括号内容、URL、@ 之类一律原样显示（只有 image 段走图） -->
+            <view v-else class="text">
+              <template v-for="(segment, segIndex) in messageSegments(item)" :key="segIndex">
+                <FallbackImage
+                  v-if="segment.type === 'emoji'"
+                  class="text-emoji"
+                  :src="segment.path"
+                  mode="aspectFit"
+                />
+                <template v-else>{{ segment.text }}</template>
+              </template>
+            </view>
           </view>
           <view
             v-if="item.mine && statusClass(item)"
@@ -1180,11 +1292,45 @@ onMounted(() => {
     <view v-else class="composer">
       <wd-button size="small" plain @click="handleSendImage">{{ uploading ? uploadLabel : "图片" }}</wd-button>
       <input v-model="content" class="input" confirm-type="send" placeholder="输入消息" @confirm="handleSend" />
+      <!-- 表情面板开关：文案走 t()（zh/en 同序），表情**名字**不 i18n（它们是数据，且以图呈现） -->
+      <text class="emoji-toggle" :class="{ active: emojiOpen }" @click.stop="toggleEmojiPanel">{{ t("chatEmojiToggle") }}</text>
       <!-- 「发送中」只做展示，不吞点击：wd-button 在 loading=true 时不会派发 click，
            所以这个提示必须放在按钮外面，按钮本身永远保持可点（重复提交由清空输入框
            + 服务端 localId 幂等兜住，绝不靠丢弃用户的点击来防） -->
       <text v-if="sendingHint" class="sending-tip">{{ sendingHint }}</text>
       <wd-button size="small" type="primary" @click="handleSend">发送</wd-button>
+    </view>
+    <!-- 表情面板：刻意放在 .composer **外面**（composer 是 position:fixed，
+         面板留在里面就会跟着 fixed 定位一起跑），只贴住 composer 上沿，
+         面板自身不含任何会创建 containing block 的属性 -->
+    <view v-if="emojiOpen && !sendBlocked" class="emoji-panel" @click.stop @mousedown.prevent>
+      <view class="emoji-panel__title">{{ t("chatEmojiTitle") }}</view>
+      <scroll-view class="emoji-scroll" scroll-y>
+        <template v-if="emojiRecentList.length">
+          <view class="emoji-group-title">{{ t("chatEmojiRecent") }}</view>
+          <view class="emoji-grid">
+            <view
+              v-for="(name, index) in emojiRecentList"
+              :key="emojiCellKey(name, index)"
+              class="emoji-cell"
+              @click="insertEmoji(name)"
+            >
+              <FallbackImage class="emoji-face" :src="emojiPathOf(name)" mode="aspectFit" />
+            </view>
+          </view>
+        </template>
+        <view class="emoji-group-title">{{ t("chatEmojiTitle") }}</view>
+        <view class="emoji-grid">
+          <view
+            v-for="(name, index) in EMOJI_NAME_LIST"
+            :key="emojiCellKey(name, index)"
+            class="emoji-cell"
+            @click="insertEmoji(name)"
+          >
+            <FallbackImage class="emoji-face" :src="`/static/emoji/${index}.png`" mode="aspectFit" />
+          </view>
+        </view>
+      </scroll-view>
     </view>
     <wd-toast />
   </view>
@@ -1281,10 +1427,20 @@ onMounted(() => {
   line-height: 1.5;
   word-break: break-word;
 }
+/* 气泡里的表情：内联小图，vertical-align: middle 让它与 1.5 行高的文字对齐 */
+.text-emoji {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  margin: 0 1px;
+  vertical-align: middle;
+}
 .row.mine .text {
   color: #1e3a5c;
 }
-/* 我发出的消息的送达状态：发送中 / 单勾已发送 / 双勾已读 / ! 失败可重发 */
+/* 我发出的消息的送达状态：发送中 / 单勾已发送 / ! 失败可重发
+   ⚠️ 本轮移除 `.st-read`（双勾）样式：status 3 与 status 1 一样落到 .st-sent 单勾，
+   见 utils/chatSync.ts 的 outgoingStatus / outgoingStatusLabel。 */
 .status {
   align-self: flex-end;
   margin-bottom: 2px;
@@ -1299,9 +1455,6 @@ onMounted(() => {
 }
 .status.st-sent {
   color: #8a9bb0;
-}
-.status.st-read {
-  color: var(--kean-primary-active);
 }
 .status.st-failed {
   min-width: 18px;
@@ -1357,6 +1510,74 @@ onMounted(() => {
   border-radius: 18px;
   padding: 0 12px;
   font-size: 14px;
+}
+/* 表情开关：和「图片」按钮同高，按下态只改颜色 */
+.emoji-toggle {
+  flex-shrink: 0;
+  height: 36px;
+  line-height: 36px;
+  padding: 0 4px;
+  color: var(--kean-primary);
+  font-size: 14px;
+}
+.emoji-toggle.active {
+  color: var(--kean-primary-active);
+  font-weight: 600;
+}
+/* ===========================================================================
+ * 表情面板（纯前端装饰，不含任何会创建 containing block 的属性）
+ * ---------------------------------------------------------------------------
+ * ⚠️ 面板固定在输入区上沿：bottom = composer 高度 56px（10+36+10）+ 安全区，
+ *    因此**永远不会盖住输入框、表情按钮和发送按钮**；关掉时是 v-if，不占位。
+ * ⚠️ 高度 232px + 内部 scroll-view 滚动：73 个表情一屏放不下，滚动由 scroll-view 负责。
+ * =========================================================================== */
+.emoji-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(56px + env(safe-area-inset-bottom));
+  z-index: 60;
+  height: 232px;
+  padding: 8px 10px 6px;
+  box-sizing: border-box;
+  background: var(--kean-card);
+  border-top: 1px solid var(--kean-line);
+}
+.emoji-panel__title {
+  font-size: 12px;
+  line-height: 16px;
+  color: #9aa4b2;
+  padding: 0 2px 6px;
+}
+.emoji-scroll {
+  height: 196px;
+}
+.emoji-group-title {
+  font-size: 12px;
+  line-height: 16px;
+  color: #9aa4b2;
+  padding: 4px 2px 6px;
+}
+/* 8 列网格：73 个表情排 10 行，交给 scroll-view 滚 */
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+}
+.emoji-cell {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+.emoji-cell:active {
+  background: var(--kean-bg);
+}
+.emoji-face {
+  width: 30px;
+  height: 30px;
+  display: block;
 }
 /* 发送中的文字提示：替代会吞点击的按钮 loading */
 .sending-tip {

@@ -116,17 +116,32 @@ async function toggleFavorite(item: TaskItem) {
   }
 }
 
-async function loadList(reset = false) {
+/**
+ * 自动刷新（回到页面 / 轮询兜底）的作废序号：静默刷新还在飞的时候用户发起了新请求，
+ * 序号就会被 +1，随后到达的旧结果整包丢弃 —— 否则旧筛选的数据会盖掉用户刚切的新筛选结果。
+ */
+let autoSeq = 0;
+
+/**
+ * @param reset 按首次加载处理：回到第一页并整体替换列表
+ * @param silent 静默刷新（回到页面 / 轮询兜底用）：不置 loading、不弹轻提示，只更新数据
+ */
+async function loadList(reset = false, silent = false) {
   if (loading.value) {
     return;
   }
+  const seq = ++autoSeq;
   const first = list.value.length === 0;
   if (reset) {
     page.value = 1;
     finished.value = false;
   }
-  loading.value = true;
-  error.value = "";
+  // 静默刷新刻意不置 loading：ListState 只在「没有内容」时接管渲染，但空列表时
+  // 置了 loading 就会闪一次骨架 —— 回到页面和 30 秒轮询都不该闪。
+  if (!silent) {
+    loading.value = true;
+    error.value = "";
+  }
   try {
     const data = await listTasks({
       keyword: keyword.value.trim() || undefined,
@@ -137,20 +152,32 @@ async function loadList(reset = false) {
       page: page.value,
       size: 10
     });
+    if (silent && seq !== autoSeq) {
+      return;
+    }
+    // 静默刷新只在拿到结果后清错误：先把「上次加载失败」闪成「暂无数据」再变回来更糟
+    error.value = "";
     total.value = data.total;
     list.value = reset ? data.list : list.value.concat(data.list);
     finished.value = list.value.length >= data.total;
   } catch (err) {
+    if (silent && seq !== autoSeq) {
+      return;
+    }
     const message = (err as Error).message || "加载失败";
     error.value = message;
     // 已经有内容时只用轻提示：这时若让失败态顶掉列表，比不提示更糟。
     // 没有内容时交给 ListState 显示原因和「重新加载」。
-    if (!first) {
+    // 静默刷新不弹提示：这是后台自动重试，断网时每 30 秒弹一次会盖满屏幕。
+    if (!first && !silent) {
       toast.error(message);
     }
   } finally {
-    loading.value = false;
-    uni.stopPullDownRefresh();
+    // 静默刷新从未置过 loading、也没拉过下拉指示器，所以也不负责复位它们
+    if (!silent) {
+      loading.value = false;
+      uni.stopPullDownRefresh();
+    }
   }
 }
 
@@ -199,14 +226,22 @@ function countdownOf(item: TaskItem) {
 }
 
 onShow(() => {
-  loadList(true);
+  // 静默刷新：任务列表 + 进行中两块数据都刷，但不显示加载骨架、不把已有列表顶掉
+  loadList(true, true);
   loadOngoing();
   refreshMessageBadge();
   loadAnnouncement();
 });
 
+// pollMs = 30000：首页是列表页，30 秒足够「新任务最多滞后半分钟出现」，
+// 再快会把首页请求量放大数倍而收益很小（用户主动下拉/切页本来就会立即刷新）。
 useLiveUpdates((event) => {
   if (!event) {
+    // 轮询兜底（不依赖 NOTICE、也不依赖自研 WS）：两块数据一起刷
+    // 只在「没有翻页」时重拉列表 —— 用户已上拉加载过更多页时把列表截回第一页会顶掉他的位置
+    if (page.value === 1) {
+      loadList(true, true);
+    }
     loadOngoing();
     return;
   }
@@ -214,7 +249,7 @@ useLiveUpdates((event) => {
     loadList(true);
     loadOngoing();
   }
-}, 0);
+}, 30000);
 
 onPullDownRefresh(() => {
   loadList(true);

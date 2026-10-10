@@ -227,7 +227,11 @@
  *   发送状态（.msg-bubble__status，只在"自己发的"那一侧出现）
  *     发送中 → 转圈（复用 kit 的 .mine-loading 同款 keyframes，18px→14px）
  *     已发送 → 单勾 `✓`，色 #8a9bb0
- *     已读   → 双勾 `✓✓`，色 --kean-primary-active（主色）
+ *     ⚠️ 已读 → **本轮起不再有独立视觉**：气泡上**不再出现双勾**，
+ *        `status=3`（服务端已读）与 `status=1` 一样显示单勾。
+ *        （规范里原来写的「已读 → 双勾 `✓✓`，色 --kean-primary-active」已作废 ——
+ *          这是产品决策：不再向发送方展示「对方已读」，见 utils/chatSync.ts 的
+ *          outgoingStatus / outgoingStatusLabel。**不是**样式没跟上。）
  *     失败   → 红色感叹号胶囊（18px 圆 / --kean-danger 底 / 白字），**可点重发**
  *     ⚠️ 已知事实（chat.vue:73-79 的实测结论）：wot-design-uni 的 `wd-button`
  *     在 `loading=true` 时**根本不派发 click**。所以气泡上的重发按钮**绝不能用

@@ -8,11 +8,17 @@
  *                  --重试仍失败/兜底超时--> failed（红色感叹号，长按/点击手动重发）
  *                  --不可重试错误--> 直接 failed（不做无谓重试）
  *
- * 已读：只有「当前已显示的最大 seqNo 变大」才触发一次 READ 上报，1 秒节流合并；
- * 收到 READ 事件时把「我发出的、seqNo ≤ maxSeq」的消息标为已读（气泡双勾）。
+ * 已读：只有「当前已显示的最大 seqNo 变大」才触发一次 READ 上报，1 秒节流合并。
+ *   ⚠️ 这条**上报**链路服务于「自己的未读角标」，与气泡角标无关，永久保留
+ *   （去掉它未读就永远不清零）。
+ *   本轮**不再**处理（也不订阅）服务端的 READ 事件，气泡上不再出现双勾
+ *   ——「对方已读」不再展示；服务端的 READ 推送由
+ *   `kean.im.read-receipt-enabled` 单独控制（见后端 ImRealtimeRoleService）。
  *
  * 状态角标的口径（{@link outgoingStatus}）：
- *   发送中 / ! 失败 / ✓ 已发送（status 1 或缺省）/ ✓✓ 已读（status 3）/ 撤回不显示。
+ *   发送中 / ! 失败 / ✓ 已发送（status 1 或缺省）/ 撤回不显示。
+ *   ⚠️ status 3（服务端已读）不再有独立角标，与 status 1 一样显示单勾 ——
+ *   服务端字段与 `ChatMessageItem.status` 类型都**一个字没删**，只是不再渲染成双勾。
  *   只有「本地乐观且服务端还没给 seqNo」时才可能显示发送中或失败 ——
  *   服务端一旦回了 seqNo 就说明这条已经落库，绝不能再被本地标记压住对勾。
  */
@@ -51,7 +57,13 @@ const READ_THROTTLE_MS = 1000;
 /** 已读上报失败后的补发延迟 */
 const REPORT_RETRY_MS = 3000;
 
-/** 我发出的消息的本地可读状态（"" = 不显示角标） */
+/**
+ * 我发出的消息的本地可读状态（"" = 不显示角标）。
+ *
+ * <p>⚠️ {@code "read"} 是<b>历史取值，刻意保留</b>（气泡不再渲染双勾，见
+ * {@link outgoingStatusLabel}）：删掉它就要同时改类型、判据与两处调用点，
+ * 而保留它<b>不会</b>让任何界面重新出现「对方已读」。</p>
+ */
 export type ChatOutgoingStatus = ChatSendState | "sent" | "read" | "";
 
 export interface ChatSendContext {
@@ -344,7 +356,7 @@ export function createReadReporter(
       options?.onRead?.(seq);
     };
     const failed = (error?: unknown) => {
-      // 上报失败必须留痕：否则「未读数不清零 / 没有双勾」在 H5 上完全不可见
+      // 上报失败必须留痕：否则「未读数不清零」在 H5 上完全不可见
       console.warn("[chatRead] 已读上报失败", { sessionId: id, maxSeq: seq, error });
       // 失败不回退游标：3 秒后补一次；仍失败就等下一个更大的 maxSeq
       if (retryTimer) {
@@ -437,7 +449,7 @@ export function outgoingStatus(message: ChatMessageItem): ChatOutgoingStatus {
   }
   // 服务端已经给了 seqNo 说明这条消息确实落库并被确认：本地那个"发送中"标记
   // （乐观条目没被回执替换掉、或替换时机晚了）不该再压住状态角标 —— 否则
-  // 失败/成功都算不出来，还会盖住后面的单/双勾。
+  // 失败/成功都算不出来，还会盖住后面的对勾。
   const confirmed = Number(message.seqNo || 0) > 0;
   if (message.sendState === "sending" && !confirmed) {
     return "sending";
@@ -448,22 +460,25 @@ export function outgoingStatus(message: ChatMessageItem): ChatOutgoingStatus {
   if (message.msgType === "RECALL" || message.status === 2) {
     return "";
   }
-  if (message.status === 3) {
-    return "read";
-  }
+  // status 3 曾经走 "read"（双勾）。本轮气泡不再展示「对方已读」，
+  // 但 status 字段与判据都保留：status 2 仍是撤回（不显示角标），
+  // 其余（1 已发送 / 3 已读 / 缺省）统一落到下面的 "sent" 单勾。
   return "sent";
 }
 
-/** 显示用短标签；样式由 chat.vue 的 class 控制 */
+/**
+ * 显示用短标签；样式由 chat.vue 的 class 控制。
+ *
+ * <p>⚠️ 本轮**不再**返回双勾 `✓✓`：气泡只有「发送中 / 单勾已发送 / ! 失败」三种角标
+ * （"read" 是保留在 {@link ChatOutgoingStatus} 里的历史取值，一旦出现也只显示单勾，
+ * 不会再渲染出「对方已读」这条信息）。</p>
+ */
 export function outgoingStatusLabel(status: ChatOutgoingStatus): string {
   if (status === "sending") {
     return "发送中";
   }
   if (status === "failed") {
     return "!";
-  }
-  if (status === "read") {
-    return "✓✓";
   }
   return "✓";
 }

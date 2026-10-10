@@ -13,6 +13,7 @@ import PageBackdrop from "@/components/PageBackdrop.vue";
 import { usePageWallpaper } from "@/composables/usePageWallpaper";
 import { useUserStore } from "@/store/user";
 import { formatNoticeDay, formatNoticeTime, formatRelativeStamp } from "@/utils/format";
+import { emojiToPlainText, splitEmoji, type EmojiSegment } from "@/utils/emoji";
 import { t, tf } from "@/utils/i18n";
 import { refreshMessageBadge } from "@/utils/messageBadge";
 import { hasNewerSeq, hasViewedSeq, syncViewedSeq } from "@/utils/chatStore";
@@ -279,7 +280,24 @@ function previewKindOf(item: ChatSessionItem): ChatPreviewKind {
 }
 
 function previewTextOf(item: ChatSessionItem): string {
-  return chatPreviews.value.get(item.id)?.text || "";
+  const raw = chatPreviews.value.get(item.id)?.text || "";
+  if (!raw) {
+    return "";
+  }
+  // 预览行是单行省略号的纯文本：先把已知表情短代码换成 `[表情]`，
+  // 免得列表里直接出现 `[微笑]` 这种原文（图片渲染见 previewSegmentsOf）。
+  const plain = emojiToPlainText(raw).trim();
+  return plain || t("msgPreviewNone");
+}
+
+/**
+ * 预览行的渲染片段：已知表情短代码 → 内联小图（与聊天页气泡同一套映射）。
+ * ⚠️ 只处理已知短代码；图片/撤回那两档走的是定型文案（[图片] / [已撤回]），
+ *    它们的方括号内容不在表情表里，所以会原样保留，不会被误替换成图。
+ */
+function previewSegmentsOf(item: ChatSessionItem): EmojiSegment[] {
+  const raw = chatPreviews.value.get(item.id)?.text || "";
+  return raw ? splitEmoji(raw) : [];
 }
 
 // 当前 Tab 的加载状态：通知与私信是两次独立请求，不能共用一个 loading，
@@ -1283,7 +1301,17 @@ onReachBottom(() => {
                         class="msg-chat__ptype"
                         :class="`msg-chat__ptype--${previewKindOf(item)}`"
                       />
-                      <text class="msg-chat__preview-text">{{ previewTextOf(item) }}</text>
+                      <text class="msg-chat__preview-text">
+                        <template v-for="(segment, segIndex) in previewSegmentsOf(item)" :key="`pv-${segIndex}`">
+                          <FallbackImage
+                            v-if="segment.type === 'emoji'"
+                            class="msg-chat__preview-emoji"
+                            :src="segment.path"
+                            mode="aspectFit"
+                          />
+                          <template v-else>{{ segment.text }}</template>
+                        </template>
+                      </text>
                     </view>
                     <view v-if="item.unreadCount > 0" class="msg-chat__badge">{{ item.unreadCount > 99 ? "99+" : item.unreadCount }}</view>
                   </view>
@@ -1365,5 +1393,16 @@ onReachBottom(() => {
   min-width: 0;
   font-size: 11px;
   text-align: right;
+}
+
+/* 会话预览里的表情：内联小图（18px），与 13px 的预览字对齐。
+   ⚠️ 选择器特意写成两层（0,2,0）：全局表里 `.kean-msg .msg-chat__preview-text`
+   是 0,2,0，靠这个特异性压住，不用 !important。 */
+.msg-chat__preview-text .msg-chat__preview-emoji {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  margin: 0 1px;
+  vertical-align: middle;
 }
 </style>

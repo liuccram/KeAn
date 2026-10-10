@@ -1205,6 +1205,7 @@ docker exec -i $MYSQL_CTR sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "
 | **新消息实时到达** | 自研 WS 的 `MESSAGE` **+** box 的 `/im`（两条通道都在推） | ✅ **box 的 `/im` 独立承担**（kean → `im:message:private:{serverId}` → im-server 下行） | 客户端**已经**同时跑两条通道（实测），关掉自研那条不影响 box 那条 |
 | **未读角标** | 按 `kean.im.unread-source` | 不变（与本开关**正交**） | B-3 |
 | **对方已读（双钩）实时性** | 自研 WS 的 `READ`（实时） | ⚠️ **没有实时推送** → **靠客户端轮询（每 ≤8 秒一次增量拉取）+ 数据推导** | 见下「⭐ 增量拉取里到底有没有已读状态」 |
+| **「对方已读」的展示（本轮变更）** | ⚠️ **客户端已移除双勾**（气泡只剩 发送中 / 单勾 / 失败），`READ` 事件**无消费方** | 同上（本来就不展示了）⇒ 这条**不再是「能力」**，`READ` 的开关（`read-receipt-enabled`）因此**关掉也不会少任何东西** | `uni-kean/src/utils/chatSync.ts` 的 `outgoingStatus` / `outgoingStatusLabel`；`chat.vue` 已删除 `applyReadReceipt` / READ 分支 |
 | **通知 / 公告 / 封禁提示**（`NOTICE`） | 自研 WS | ✅ **照旧推**（**本开关不关它**） | 它们没有 box 对等物，§1.4 明确要求保留 |
 | **`AUTH` / `PING`·`PONG` / 握手 / 连接** | 自研 WS | ✅ **完全不动** | 本开关**不是**「停服」，客户端仍可连着，只是收不到聊天推送 |
 
@@ -1221,7 +1222,10 @@ docker exec -i $MYSQL_CTR sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "
 > ⚠️⚠️ **由此推出一个必须写进变更单的陷阱（本轮新发现）**：
 > **`read-source=box` + `unread-source=kean` + `legacy-ws-enabled=false`** 三条同时成立时：
 > box 侧的 `status` **永远是 1**（没人把它改成 3），轮询拉回的 `status` 也永远是 1，
-> 而自研 WS 的 `READ` 又已关 ⇒ **「对方已读」的双钩将永远不出现，且不报任何错**。
+> 而自研 WS 的 `READ` 又已关 ⇒ **旧客户端的「对方已读」双钩将永远不出现，且不报任何错**。
+> ⚠️ **本轮起这只对「回退到旧客户端」有意义**：新客户端已移除双勾（气泡不再展示「对方已读」），
+> 因此该组合**不再产生任何用户可见的缺陷**；下面那条 WARN 也只在 `read-receipt-enabled=true`
+> （即 READ 仍在推）时才会出现，见「本轮新增：`kean.im.read-receipt-enabled`」。
 > 启动时会有一条 **WARN** 把这件事喊出来（见下面的「实时职责汇总」），
 > 切换前请确认 `kean.im.unread-source` 也已切到 `box`（或本开关保持 `true`）。
 
@@ -1232,20 +1236,56 @@ docker exec -i $MYSQL_CTR sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "
 > `RealtimePublisher.send`、`AccountBanServiceImpl.pushBanned`。
 > 本开关包住的是**事件级**的两条聊天推送（下表 ①②），**刻意不包** ③④。
 
-| # | 位置（文件 : 类 : 方法） | 事件 | `legacy-ws-enabled=false` | 本轮动作 |
+| # | 位置（文件 : 类 : 方法） | 事件 | 怎么关 | 本轮动作 |
 |---|---|---|---|---|
-| ① | `kean/.../chat/ChatWebSocketHandler.java` : `ChatWebSocketHandler` : **`pushMessage(Long, ChatMessageVO)`** | `MESSAGE` | **跳过**（第一行返回，只记一次计数） | ✅ **已包住** |
-| ② | `kean/.../chat/RealtimePublisher.java` : `RealtimePublisher` : **`read(Long, Long, Long, Long)`** | `READ` | **跳过**（整个方法 no-op） | ✅ **已包住** |
-| ③ | `kean/.../chat/RealtimePublisher.java` : `RealtimePublisher` : `notice(...)`（经 `send(...)`） | `NOTICE` | **照推** | ❌ 刻意不包（无 box 对等物，§1.4 要求保留） |
-| ④ | `kean/.../service/impl/AccountBanServiceImpl.java` : `AccountBanServiceImpl` : `pushBanned(...)`（直接调 `ChatSessionHub.sendTo`） | `BANNED` | **照推** | ❌ 刻意不包（封禁提示不是聊天推送） |
+| ① | `kean/.../chat/ChatWebSocketHandler.java` : `ChatWebSocketHandler` : **`pushMessage(Long, ChatMessageVO)`** | `MESSAGE` | `legacy-ws-enabled=false` → **跳过**（第一行返回，只记一次计数） | ✅ 已包住（C-4） |
+| ② | `kean/.../chat/RealtimePublisher.java` : `RealtimePublisher` : **`read(Long, Long, Long, Long)`** | `READ` | **① `read-receipt-enabled=false`**（本轮新增，更窄）→ **跳过**；② `legacy-ws-enabled=false` → 同样跳过（第二道闸） | ✅ **本轮加了一道更窄的闸** |
+| ③ | `kean/.../chat/RealtimePublisher.java` : `RealtimePublisher` : **`notice(...)`**（经 `send(...)`） | `NOTICE` | 两个开关**都不关它** | ❌ 刻意不包（无 box 对等物，§1.4 要求保留） |
+| ④ | `kean/.../service/impl/AccountBanServiceImpl.java` : `AccountBanServiceImpl` : **`pushBanned(...)`**（直接调 `ChatSessionHub.sendTo`） | `BANNED` | 两个开关**都不关它** | ❌ 刻意不包（封禁提示不是聊天推送） |
 
 > 说明：`ChatWebSocketHandler.handleTextMessage` 里回的 `PONG` **不算推送**（它是连接级心跳应答），
-> 与 `AUTH` 帧、握手、鉴权一样**一律不受本开关影响**。
+> 与 `AUTH` 帧、握手、鉴权一样**一律不受这两个开关影响**。
 > ② 的「提前返回」是**行为等价**的：`READ` 的**唯一**出口就是 `RealtimePublisher.send(...)` 里的
 > `chatSessionHub.sendTo`，而 `send(...)` 里的 im-server 镜像对 `READ` **本来就是跳过的**
 > （`systemMessageData` 对 `"READ"` 返回 `null`）—— 所以提前返回**不会少推任何一条 box 消息**。
 
-##### 开关：名字 / 默认值 / 开启与回退
+##### ⭐ 本轮新增：`kean.im.read-receipt-enabled`（**默认 `true` = 保持现状**）
+
+> **为什么要多这一把闸**：客户端本轮**已移除双勾**（气泡不再展示「对方已读」，见
+> `uni-kean/src/utils/chatSync.ts` 的 `outgoingStatus` / `outgoingStatusLabel`），
+> 于是 `READ` 事件**没有任何消费方**；而 `legacy-ws-enabled` 是一把同时管 `MESSAGE` 的总闸，
+> 用它关 `READ` 会**连带关掉消息实时推送**。两件事的退役节奏不同 ⇒ 拆出一把**只管 `READ`** 的窄闸。
+>
+> **优先级**：`RealtimePublisher.read` 先判 `read-receipt-enabled`，为 `true` 时才回落到
+> `legacy-ws-enabled` —— 所以两把闸任意一把为 `false`，`READ` 都不再推。
+
+```bash
+# ---- 默认值（不配即此，与新增本开关之前【一字不差】：READ 照推）----
+# kean.im.read-receipt-enabled=true
+#   （等价环境变量 KEAN_IM_READ_RECEIPT_ENABLED；Spring relaxed binding）
+
+# ---- 让自研 WS 不再推 READ（客户端已不看双勾，无消费方）----
+KEAN_IM_READ_RECEIPT_ENABLED=false
+systemctl restart kean
+#    期望日志：READ推送=关（不再推 READ；markRead 的位点/状态/未读清零照旧）（kean.im.read-receipt-enabled=false）
+#    ⚠️ 只有这一把为 false 时不会出现 [IM 实时职责] 的 WARN（READ 已无消费方，双钩不出现不是缺陷）
+
+# ---- ✅ 一键恢复 ----
+KEAN_IM_READ_RECEIPT_ENABLED=true      # 或直接删掉这一行（默认就是 true）
+systemctl restart kean
+```
+
+> ⚠️ **默认值纪律**：本开关默认 **`true`**（= 仍然推），所以**部署本身不改变任何线上行为**；
+> 真正的切换由部署后改环境变量 + 重启完成。这与 `legacy-ws-enabled` / `unread-source` /
+> `read-source` 的既有做法完全一致，出问题一条命令即可回退。
+>
+> ⚠️ **`false` 时到底少了什么**：**只少推一个 `READ` 事件**。
+> `ChatServiceImpl.markRead` 的 box 已读回写、`a_read_seq/b_read_seq` 位点、
+> `chat_message.status=3`、`a_unread/b_unread` 清零，以及客户端每一次已读**上报**
+> （`createReadReporter` → `POST /api/chats/{id}/read`）**全都照旧执行**
+> ⇒ **「自己的未读角标」不受任何影响**，也**不需要回填**。
+
+##### 开关：名字 / 默认值 / 开启与回退（`legacy-ws-enabled`，C-4 既有）
 
 ```bash
 # ---- 默认值（不配即此，行为与实现之前【一字不差】）----
@@ -1257,8 +1297,11 @@ docker exec -i $MYSQL_CTR sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "
 #   ① box 的 /im 通道在客户端上是活的（实测：握手 101 / 心跳 / 重连）——
 #      否则关掉自研 WS 之后新消息将【没有任何】实时推送；
 #   ② kean.im.read-source 与 kean.im.unread-source 都应为 box
-#      （只切 read-source 不切 unread-source ⇒ 双钩永远不出现，见上）；
+#      （只切 read-source 不切 unread-source ⇒ 旧客户端的双钩永远不出现，见上；
+#        客户端本轮已不看双勾，所以这一条只对「回退到旧客户端」有意义）；
 #   ③ IM_JWT_SECRET 已配置（否则 kean.im.mirror-enabled 生效不了，box 队列收不到消息）。
+# ⚠️ 若只想关掉 READ（本轮的目标），用上面那把更窄的 KEAN_IM_READ_RECEIPT_ENABLED=false，
+#    【不要】用这一把 —— 它会连 MESSAGE 一起关掉。
 KEAN_IM_LEGACY_WS_ENABLED=false
 systemctl restart kean
 
@@ -1267,7 +1310,7 @@ KEAN_IM_LEGACY_WS_ENABLED=true      # 或直接删掉这一行（默认就是 tr
 systemctl restart kean
 ```
 
-> **为什么恢复「无需回填」**：本开关**只控制「推不推」**，不控制任何**写入** ——
+> **为什么恢复「无需回填」**：这两个开关**只控制「推不推」**，不控制任何**写入** ——
 > kean 的消息、已读位点、`chat_message.status=3`，以及 B-3 对 box 的已读回写，
 > 都**一直在照常执行**（`markRead` 的逻辑一行未改）。所以关掉期间 kean 侧的数据始终是**热的**，
 > 开关设回 `true` 后自研 WS 的 `MESSAGE` / `READ` 推送**立刻恢复**。
@@ -1291,20 +1334,23 @@ systemctl restart kean
 docker exec -i $REDIS_CTR redis-cli -a "$REDIS_PASSWORD" -n 0 --scan --pattern 'im:message:private:*'
 #    期望：队列最终被消费干净（长度回到 0）；若一直不降 ⇒ box 通道没在消费，立即回退
 
-# ---- ③ 让对方读一下，确认【双钩在 ≤8 秒内出现】----
-#    B 打开会话（触发 markRead）→ 回到 A 的界面看自己那条消息的双钩：
-#    期望：A 侧的双钩在 **≤8 秒**内出现（= 客户端一次增量轮询的间隔），而不是「一直不出现」
-#    ⚠️ 若超过 15 秒仍不出现 ⇒ 多半是 read-source/unread-source 组合不对（见上面的陷阱），
-#       **立即改回 KEAN_IM_LEGACY_WS_ENABLED=true**
+# ---- ③ 让对方读一下，确认【已读位点仍然被推进】（⚠️ 本轮起不再看「双钩」）----
+#    ⚠️ 客户端本轮已移除双勾：A 的界面上【本来就不会】再出现「对方已读」的任何标记，
+#       所以旧版清单里「双钩在 ≤8 秒内出现」这一条【已不适用】——不要照它判定失败。
+#    改为核对【数据面】（这才是真正会被后续依赖的东西）：
+#    B 打开会话（触发 markRead）→ 在服务端核对下面两条 SQL。
 #    服务端侧对照（确认 box 侧的 status 真的被推进到 3）：
 docker exec -i $MYSQL_CTR sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "
   SELECT id, seq_no, send_id, recv_id, status FROM im_platform.im_private_message
    WHERE conv_key = \"<小id>_<大id>\" ORDER BY id DESC LIMIT 5"'
-#    期望：B 读过的那些行 status=3（若恒为 1 ⇒ 未读来源没切到 box，双钩推不出来）
+#    期望：B 读过的那些行 status=3（若恒为 1 ⇒ 未读来源没切到 box；这只影响数据面，
+#          不再影响任何界面显示，但会让「未读口径收敛到 box」这件事不成立）
 docker exec -i $MYSQL_CTR sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "
   SELECT id, seq_no, sender_id, status FROM Kean.chat_message
    WHERE session_id = <sessionId> ORDER BY seq_no DESC LIMIT 5"'
 #    期望：与上面对应（kean 侧 markRead 无条件写，这条【一定】是 3）
+#    ✅ 另外必须确认「自己的未读角标仍然会清零」（这条才是本轮改动的命脉）：
+#       B 打开会话后，B 自己的消息 Tab 角标应当减少/消失（靠的是已读【上报】，与双钩无关）
 
 # ---- ④ 确认没有重复气泡 ----
 #    在 ②③ 的基础上，A 与 B 各发 3 条、互相读一遍，确认：
@@ -1325,21 +1371,30 @@ systemctl restart kean
 **默认态（不配任何开关）—— 期望看到的样子：**
 
 ```text
-[IM 实时职责] 消息实时推送=box（im-server 8878 的 /im；kean→Redis 队列 im:message:private:{serverId}）；已读实时=自研WS（/ws/chat 的 READ 事件；box 不推 READ，故这是唯一实时来源）；未读来源=kean（kean.im.unread-source；实际生效=false）；读取来源=kean（kean.im.read-source；实际生效=false）；自研WS实时推送=开（保持现状）（kean.im.legacy-ws-enabled=true）；被挡掉的自研WS推送=0；回退方式=把 kean.im.legacy-ws-enabled 设为 true（或删掉该行）并重启 kean（纯推送开关，无需回填）
+[IM 实时职责] 消息实时推送=box（im-server 8878 的 /im；kean→Redis 队列 im:message:private:{serverId}）；已读实时=自研WS（/ws/chat 的 READ 事件；box 不推 READ，故这是唯一实时来源）；未读来源=kean（kean.im.unread-source；实际生效=false）；读取来源=kean（kean.im.read-source；实际生效=false）；自研WS实时推送=开（保持现状）（kean.im.legacy-ws-enabled=true）；READ推送=开（保持现状，仍推 READ）（kean.im.read-receipt-enabled=true）；被挡掉的自研WS推送=0；被挡掉的READ推送=0；回退方式=把 kean.im.legacy-ws-enabled / kean.im.read-receipt-enabled 设为 true（或删掉对应那行）并重启 kean（纯推送开关，无需回填）
 ```
+
+**本轮推荐态（只关 READ：`KEAN_IM_READ_RECEIPT_ENABLED=false`，`legacy-ws-enabled` 仍为 `true`）—— 期望看到的样子：**
+
+```text
+[IM 实时职责] 消息实时推送=box（im-server 8878 的 /im；kean→Redis 队列 im:message:private:{serverId}）；已读实时=无实时推送（READ 推送已由 kean.im.read-receipt-enabled 关闭；客户端本轮起已不展示「对方已读」，故无消费方。⚠️ kean 侧已读位点与 chat_message.status=3 照旧写入，可直接回退）；未读来源=kean（kean.im.unread-source；实际生效=false）；读取来源=kean（kean.im.read-source；实际生效=false）；自研WS实时推送=开（保持现状）（kean.im.legacy-ws-enabled=true）；READ推送=关（不再推 READ；markRead 的位点/状态/未读清零照旧）（kean.im.read-receipt-enabled=false）；被挡掉的自研WS推送=0；被挡掉的READ推送=N；回退方式=把 kean.im.legacy-ws-enabled / kean.im.read-receipt-enabled 设为 true（或删掉对应那行）并重启 kean（纯推送开关，无需回填）
+```
+> ⚠️ 这一态**不会**触发 `[IM 实时职责]` 的 WARN：READ 已无消费方，「双钩不出现」不是缺陷。
 
 **关掉之后（`KEAN_IM_LEGACY_WS_ENABLED=false`，且前置条件都满足）—— 期望看到的样子：**
 
 ```text
-[IM 实时职责] 消息实时推送=box（im-server 8878 的 /im；kean→Redis 队列 im:message:private:{serverId}）；已读实时=无实时推送 → 靠客户端轮询（≤8s）+ 数据推导（box 的 im_private_message.status=3，由 markReadInBox 写入）；未读来源=box（kean.im.unread-source；实际生效=true）；读取来源=box（kean.im.read-source；实际生效=true）；自研WS实时推送=关（只保留连接/鉴权/PING，不再推 MESSAGE/READ）（kean.im.legacy-ws-enabled=false）；被挡掉的自研WS推送=0；回退方式=把 kean.im.legacy-ws-enabled 设为 true（或删掉该行）并重启 kean（纯推送开关，无需回填）
+[IM 实时职责] 消息实时推送=box（im-server 8878 的 /im；kean→Redis 队列 im:message:private:{serverId}）；已读实时=无实时推送 → 靠客户端轮询（≤8s）+ 数据推导（box 的 im_private_message.status=3，由 markReadInBox 写入）；未读来源=box（kean.im.unread-source；实际生效=true）；读取来源=box（kean.im.read-source；实际生效=true）；自研WS实时推送=关（只保留连接/鉴权/PING，不再推 MESSAGE/READ）（kean.im.legacy-ws-enabled=false）；READ推送=开（保持现状，仍推 READ）（kean.im.read-receipt-enabled=true）；被挡掉的自研WS推送=0；被挡掉的READ推送=0；回退方式=把 kean.im.legacy-ws-enabled / kean.im.read-receipt-enabled 设为 true（或删掉对应那行）并重启 kean（纯推送开关，无需回填）
 ```
 
 **危险组合 —— 会额外多一条 WARN（这就是这个汇总行最大的价值：把「静默失效」变成日志里看得见的一行）：**
 
 ```text
-[IM 实时职责] 已读实时【推不出来】：读取来源=box 但未读来源≠box，而 box 的 im_private_message.status=3 只由 kean.im.unread-source=box 时的 ImUnreadQueryService.markReadInBox 写 ⇒ 轮询拉回的 status 永远是 1，自研 WS 的 READ 又已关 ⇒ 对方已读的双钩将【永远不出现】。修法：把 kean.im.unread-source 也设为 box，或把 kean.im.legacy-ws-enabled 设回 true。⚠️ 以上均【不报错】，只表现为用户侧静默失效；如需立刻恢复原状，把 kean.im.legacy-ws-enabled 设回 true 并重启 kean。
+[IM 实时职责] 已读实时【推不出来】：读取来源=box 但未读来源≠box，而 box 的 im_private_message.status=3 只由 kean.im.unread-source=box 时的 ImUnreadQueryService.markReadInBox 写 ⇒ 轮询拉回的 status 永远是 1，自研 WS 的 READ 又已关（kean.im.legacy-ws-enabled=false） ⇒ 旧客户端的对方已读双钩将【永远不出现】（新客户端已不展示双钩，无影响）。修法：把 kean.im.unread-source 也设为 box，或把 kean.im.legacy-ws-enabled 设回 true。⚠️ 以上均【不报错】，只表现为用户侧静默失效；如需立刻恢复原状，把 kean.im.legacy-ws-enabled 设回 true 并重启 kean。
 [IM 实时职责] 消息实时推送【没有替代通道】：自研 WS 已关，而 box 通道未就绪（IM_JWT_SECRET 未配置/不足 32 字节，或 kean.im.mirror-enabled=false） ⇒ 新消息将没有【任何】实时推送，只能靠客户端轮询（≤8s）追。⚠️ 以上均【不报错】，只表现为用户侧静默失效；如需立刻恢复原状，把 kean.im.legacy-ws-enabled 设回 true 并重启 kean。
 ```
+> ⚠️ 上面第一条 WARN 只在 `read-receipt-enabled=true`（仍推 READ）时才会出现；
+> 本轮推荐的 `READ推送=关` 一态下**不会再喊它**（那种组合下双钩不出现是预期结果，喊了反而是噪音）。
 
 > 📌 汇总行的**唯一文案来源**是 `ImRealtimeRoleService.summary()`（启动日志读它）。
 > 将来若要在管理端看板上展示，直接读同一个方法即可 ——**不要**在别处另写一份判断，
@@ -1357,10 +1412,34 @@ systemctl restart kean
    （`ChatServiceImpl` 的两处调用完全没碰）。
 4. **只新增一个 Bean 与一行 INFO**：`ImRealtimeRoleService` 是 `@Service`，
    唯一的新输出是启动日志（与 `[IM 镜像投递]` / `[IM 未读来源]` / `[IM 读取来源]` / `[IM 多端同步]` 同一风格）。
-5. **配置面零改动**：只用 `@Value("${kean.im.legacy-ws-enabled:true}")` 的默认值，
+5. **配置面零改动**：只用 `@Value("${kean.im.legacy-ws-enabled:true}")` 与
+   `@Value("${kean.im.read-receipt-enabled:true}")` 的默认值，
    **不动 `.env*` / `application*.yml`**；无 Flyway、无新依赖、无 im-platform 改动。
 6. **不关 NOTICE / BANNED**：通知、公告、封禁提示继续走自研 WS（§1.4 的明确要求），
    所以「非聊天推送」这一类**行为没有任何变化**。
+
+##### ⭐⭐ 自研 WS 退役评估（本轮结论：**不能完整退役**，还差 `NOTICE`）
+
+> 自研 WS 目前承担 **4 类事件**。逐类核对「box 有对等物吗 / 退役后靠什么」：
+
+| 事件 | 推送点 | box 有对等物吗 | 退役后的替代路径 | 结论 |
+|---|---|---|---|---|
+| `MESSAGE` | `ChatWebSocketHandler.pushMessage` | ✅ 有（box `/im`，kean → `im:message:private:{serverId}`） | box 的 `/im` 独立承担 | ✅ 可退役（自有开关 `legacy-ws-enabled`） |
+| `READ` | `RealtimePublisher.read` | ❌ 没有（box 实测不推 READ） | **本轮决策：不再需要**（客户端双勾已移除，无消费方） | ✅ 可退役（新增窄闸 `read-receipt-enabled`） |
+| `NOTICE` | `RealtimePublisher.notice`（全仓 **30 个** `notificationService.notifyUser(...)` 调用点最终都汇到这里） | ⚠️ **部分**：`RealtimePublisher.send` 会把它镜像成 box 的 `SYSTEM_MESSAGE(5)`，**但前提是 `IM_JWT_SECRET` 已配置且 `kean.im.mirror-enabled` 生效** | ①（已有）客户端轮询兜底：`useLiveUpdates` 默认 **8 秒**一次 → `refreshMessageBadge()` + 消息页 `load(true)`；②（已有）`pages/message/index.vue` 的 `onShow` 全量刷新；③（已有）`RealtimePublisher.send` 的 box 镜像 | ⚠️ **尚不能完整退役**：8 秒轮询对「通知红点 / 列表」可接受，但**首页 `pages/home/index.vue` 显式传 `pollMs=0`（不轮询）**，它靠 `NOTICE` 事件刷「任务/申请」列表 ⇒ 关掉自研 WS 后那两块只能靠回到页面/下拉刷新 |
+| `BANNED` | `AccountBanServiceImpl.pushBanned`（直接 `ChatSessionHub.sendTo`） | ✅ 有（box `FORCE_LOGOUT(2)` + kean 心跳 40301 / `handleAccountBanned`） | box 的强制下线 + 既有 40102 口径 | ✅ 可退役（本条**不需要**新开关，它本来就绕开 `RealtimePublisher`） |
+
+> **结论（本轮交付）**：
+> - `READ`：**本轮已经做到「可以被关掉且关掉后功能不缺」**（`kean.im.read-receipt-enabled`，默认 `true`）。
+> - `MESSAGE`：C-4 已做到同一件事（`kean.im.legacy-ws-enabled`）。
+> - `BANNED`：本来就有 box 对等物（`FORCE_LOGOUT` + 心跳 40301），不需要自研 WS。
+> - ⚠️ **`NOTICE` 是唯一还不能退役的一类**：它的替代路径只有「客户端轮询（≤8 秒）」，
+>   而 `pages/home/index.vue` 是 `useLiveUpdates(..., 0)`（**0 = 不轮询**）⇒
+>   真正停掉自研 WS 之前，**必须先给首页补一条 `NOTICE` 的替代刷新路径**
+>   （把 `pollMs` 从 `0` 改成 8000，或改成在 `onShow` 里补一次 `loadList/loadOngoing` 的兜底）。
+>   本轮**刻意不动**那两处（属「只动必要处」的边界，且会影响首页请求频率）。
+> - 📌 因此本轮**不删自研 WS 的任何代码**：目标只是「**可以被关掉且关掉后功能不缺**」。
+>   达到该目标的是 `READ`（本轮）与 `MESSAGE`（C-4）；`NOTICE` 还差上面那一步。
 
 ---
 
