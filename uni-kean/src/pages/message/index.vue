@@ -420,6 +420,38 @@ function extraLines(content?: string | null): string[] {
     .filter(Boolean);
 }
 
+/**
+ * 任何值 → 可显示字符串。**null / undefined 一律变空串**（`String(null)` 会得到
+ * 字面量 "null" 显示给用户，那比空白更糟）。后端字段缺失、词典键缺失都走这里。
+ */
+function text(value: unknown): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+/**
+ * 定型文案的落地：把「标题 key + 正文 key + 占位符取值」渲染成一句能直接显示的文本。
+ *
+ * ⚠️ 整个函数**不可能抛**：i18n 查表（t / tf）整体包在 try/catch 里，
+ *    任何异常（key 缺失、参数值不是字符串、词典被改坏）都当成"这次不渲染定型文案"，
+ *    返回 null，由上层回退到后端原文。绝不允许异常从渲染路径里冒出去 ——
+ *    渲染期一旦抛错，整个列表节点都不会挂载，用户看到的就是"消息描述全部消失"。
+ */
+function noticeTemplate(titleKey: I18nKey, bodyKey: I18nKey, params: Record<string, string> = {}): NoticeTemplate | null {
+  try {
+    const title = text(t(titleKey)).trim();
+    const body = text(tf(bodyKey, params)).trim();
+    if (!title && !body) {
+      return null;
+    }
+    return {
+      title: dropEmptySlots(title) || title,
+      body: dropEmptySlots(body) || body
+    };
+  } catch {
+    return null;
+  }
+}
+
 interface NoticeTemplate {
   titleKey: I18nKey;
   bodyKey: I18nKey;
@@ -834,8 +866,22 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
  * ⚠️ 后端 title 已经写得很清楚（系统通知类），所以**不做**"把 title 也重写一遍"的无谓加工。
  */
 function noticeTitle(item: NotificationItem): string {
-  const template = noticeTemplateFor(item);
-  return template ? template.title : String(item.title || "");
+  try {
+    const template = noticeTemplateFor(item);
+    return (template ? template.title : "") || text(item.title);
+  } catch {
+    // 解析出错也要有字：回退后端 title（宁可显示旧文案，绝不空白）
+    return text(item.title);
+  }
+}
+
+/** 只按后端原文分行：第一行当正文，其余当"结论行"（无定型文案时的口径） */
+function rawBodyLines(content: string): { lead: string; highlights: string[] } {
+  const parts = content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return { lead: parts[0] || "", highlights: parts.slice(1) };
 }
 
 /**
@@ -844,18 +890,85 @@ function noticeTitle(item: NotificationItem): string {
  *   highlights —— 后端正文里的多行结论（"处理结果：… / 回复：… / 变更如下：…"）原样保留
  */
 function noticeBodyLines(item: NotificationItem): { lead: string; highlights: string[] } {
-  const content = String(item.content || "")
+  // 后端原文先算出来：下面任何一个分支出问题，都用它兜底（宁可显示旧文案，绝不空白）
+  let content = "";
+  try {
+    content = text(item.content)
+      .replace(/\r\n/g, "\n")
+      .trim();
+    const extras = extraLines(content);
+    const template = noticeTemplateFor(item);
+    if (!template) {
+      return rawBodyLines(content);
+    }
+    // "changed" 类的定型正文之后必须保留"变更如下：…"，不能丢信息
+    // ⚠️ 定型正文为空（词典缺失等）时回退后端原文首行，绝不返回空串
+    const lead = template.body || content.split("\n")[0] || content || "";
+    return { lead, highlights: extras };
+  } catch {
+    return content ? rawBodyLines(content) : { lead: "", highlights: [] };
+  }
+}
+
+/**
+ * 列表与弹层共用的**预计算**结果：模板里原来对每条通知要调 noticeTitle 一次、
+ * noticeBodyLines 4 次（1193 / 1226 / 1228 / 1233 一带），任何一次抛错都会让
+ * 整个列表节点挂不上。这里改成每条只算一次、整表 try/catch，模板只读 map：
+ *   · 算不出来的那条退回后端 title / content 原文；
+ *   · 计算本身再怎么出问题，也只是这一条降级，不会连累其他行，更不会让整块空白。
+ */
+const noticeTexts = computed(() => {
+  const map = new Map<number, { title: string; lead: string; highlights: string[] }>();
+  visibleNotices.value.forEach((item) => {
+    const rawTitle = text(item.title);
+    const rawContent = text(item.content)
+      .replace(/\r\n/g, "\n")
+      .trim();
+    let title = rawTitle;
+    let lines = rawBodyLines(rawContent);
+    try {
+      title = noticeTitle(item) || rawTitle;
+    } catch {
+      title = rawTitle;
+    }
+    try {
+      lines = noticeBodyLines(item);
+    } catch {
+      lines = rawBodyLines(rawContent);
+    }
+    map.set(item.id, {
+      title,
+      lead: lines.lead || rawContent,
+      highlights: Array.isArray(lines.highlights) ? lines.highlights : []
+    });
+  });
+  return map;
+});
+
+type NoticeText = { title: string; lead: string; highlights: string[] };
+
+function noticeTextOf(item: NotificationItem): NoticeText {
+  const hit = noticeTexts.value.get(item.id);
+  if (hit) {
+    return hit;
+  }
+  // 列表之外的数据（弹层里可能已不在当前筛选结果内）：现算一次，仍然全程兜底
+  const rawContent = text(item.content)
     .replace(/\r\n/g, "\n")
     .trim();
-  const extras = extraLines(content);
-  const template = noticeTemplateFor(item);
-  if (!template) {
-    const parts = content.split("\n").map((line) => line.trim()).filter(Boolean);
-    return { lead: parts[0] || "", highlights: parts.slice(1) };
+  let title = text(item.title);
+  let lines = rawBodyLines(rawContent);
+  try {
+    title = noticeTitle(item) || title;
+  } catch {
+    // 保持后端原文
   }
-  // "changed" 类的定型正文之后必须保留"变更如下：…"，不能丢信息
-  const lead = template.body || content.split("\n")[0] || "";
-  return { lead, highlights: extras };
+  try {
+    lines = noticeBodyLines(item);
+  } catch {
+    // 保持 rawBodyLines
+  }
+  return { title, lead: lines.lead || rawContent, highlights: Array.isArray(lines.highlights) ? lines.highlights : [] };
 }
 
 // 弹层里也要用同一份文案：打开时就冻结，避免列表刷新后弹层内容跟着变
@@ -1040,8 +1153,11 @@ async function openItem(item: NotificationItem) {
   // 系统通知等没有可跳转的任务/会话：弹层展示完整标题、正文和时间
   activeNotice.value = item;
   // 文案在打开时冻结成同一份，避免列表后台刷新后弹层内容跟列表不一致
-  activeTitle.value = noticeTitle(item);
-  activeLines.value = noticeBodyLines(item);
+  // ⚠️ 走与列表同一个预计算结果（noticeTextOf 自带 try/catch 与后端原文兜底）：
+  //    弹层里这两行原是唯一没被兜住的调用点，一旦抛错弹层正文会整块空白。
+  const frozen = noticeTextOf(item);
+  activeTitle.value = frozen.title;
+  activeLines.value = { lead: frozen.lead, highlights: frozen.highlights };
   noticeOpen.value = true;
 }
 
@@ -1187,10 +1303,10 @@ onReachBottom(() => {
                   </view>
                   <view class="msg-notice__main">
                     <view class="msg-notice__top">
-                      <text class="msg-notice__title">{{ noticeTitle(item) }}</text>
+                      <text class="msg-notice__title">{{ noticeTextOf(item).title }}</text>
                       <text class="msg-notice__time">{{ formatNoticeTime(item.createdAt) }}</text>
                     </view>
-                    <view class="msg-notice__body">{{ noticeBodyLines(item).lead }}</view>
+                    <view class="msg-notice__body">{{ noticeTextOf(item).lead }}</view>
                     <view v-if="noticeTodo(item)" class="msg-notice__actions">
                       <text class="msg-chip--todo">{{ t("msgTodo") }}</text>
                     </view>
@@ -1218,19 +1334,19 @@ onReachBottom(() => {
                     </view>
                     <view class="msg-notice__main">
                       <view class="msg-notice__top">
-                        <text class="msg-notice__title">{{ noticeTitle(item) }}</text>
+                        <text class="msg-notice__title">{{ noticeTextOf(item).title }}</text>
                         <text class="msg-notice__time">{{ formatNoticeTime(item.createdAt) }}</text>
                       </view>
                       <view class="msg-notice__body" :class="{ 'msg-notice__body--handle': isHandleNotice(item) }">
                         <template v-if="isHandleNotice(item)">
-                          <view>{{ noticeBodyLines(item).lead }}</view>
+                          <view>{{ noticeTextOf(item).lead }}</view>
                           <view
-                            v-for="(line, index) in noticeBodyLines(item).highlights"
+                            v-for="(line, index) in noticeTextOf(item).highlights"
                             :key="index"
                             class="msg-notice__result"
                           >{{ line }}</view>
                         </template>
-                        <template v-else>{{ noticeBodyLines(item).lead }}</template>
+                        <template v-else>{{ noticeTextOf(item).lead }}</template>
                       </view>
                       <view v-if="noticeTodo(item)" class="msg-notice__actions">
                         <text class="msg-chip--todo">{{ t("msgTodo") }}</text>
