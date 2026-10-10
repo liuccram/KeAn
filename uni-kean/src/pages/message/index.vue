@@ -429,23 +429,55 @@ function text(value: unknown): string {
 }
 
 /**
+ * ⚠️ 未替换的占位符探测器（本轮硬指标：**任何情况下都不许把 {xxx} 显示给用户**）。
+ * 词典是 `{object}`{minutes}`{time}`{name}`{typeLabel}`{mark}` 这套半角花括号，
+ * 这里连全角 `｛｝` 一起认（输入法/后端改写可能带全角）；换行不算，占位符永远是单行的。
+ */
+function hasPlaceholder(value: string): boolean {
+  return /[{}｛｝]/.test(String(value || ""));
+}
+
+/**
  * 定型文案的落地：把「标题 key + 正文 key + 占位符取值」渲染成一句能直接显示的文本。
+ *
+ * ⚠️ 标题与正文**走同一条插值路径**（都用 tf + 同一份 params）。原来的写法是
+ *    `t(titleKey)` —— 标题**不做任何替换**，只在正文里做；于是同一句文案里
+ *    正文的「下课时间 {time}」是好的、标题的「{object}」却原样显示（线上截图就是这个形态）。
+ *    现在两边一致：params 里有 key 就换掉，缺 key 由下面的兜底拦下（绝不外泄花括号）。
  *
  * ⚠️ 整个函数**不可能抛**：i18n 查表（t / tf）整体包在 try/catch 里，
  *    任何异常（key 缺失、参数值不是字符串、词典被改坏）都当成"这次不渲染定型文案"，
  *    返回 null，由上层回退到后端原文。绝不允许异常从渲染路径里冒出去 ——
  *    渲染期一旦抛错，整个列表节点都不会挂载，用户看到的就是"消息描述全部消失"。
+ *
+ * ⚠️ 花括号兜底（治标但必须）：渲染完还要**再验一遍** title 与 body，
+ *    只要还剩 `{object}` / `{minutes}` 这类令牌（或 replace 进来的空值把「」留成空括号），
+ *    就判定"这次定型渲染失败" → 返回 null → 上层显示**后端原文**。
+ *    宁可显示后端原文，也绝不显示花括号。
  */
 function noticeTemplate(titleKey: I18nKey, bodyKey: I18nKey, params: Record<string, string> = {}): NoticeTemplate | null {
   try {
-    const title = text(t(titleKey)).trim();
-    const body = text(tf(bodyKey, params)).trim();
+    const safe = assembleParams(params);
+    const title = text(tf(titleKey, safe)).trim();
+    const body = text(tf(bodyKey, safe)).trim();
     if (!title && !body) {
       return null;
     }
+    // ⚠️ 兜底必须同时覆盖标题与正文：任何一边残留占位符/空括号，整条定型文案作废
+    if (hasPlaceholder(title) || hasPlaceholder(body)) {
+      return null;
+    }
+    const cleanTitle = title ? dropEmptySlots(title) : "";
+    const cleanBody = body ? dropEmptySlots(body) : "";
+    if ((title && !cleanTitle) || (body && !cleanBody)) {
+      return null;
+    }
     return {
-      title: dropEmptySlots(title) || title,
-      body: dropEmptySlots(body) || body
+      titleKey,
+      bodyKey,
+      params: safe,
+      title: cleanTitle,
+      body: cleanBody
     };
   } catch {
     return null;
@@ -455,6 +487,10 @@ function noticeTemplate(titleKey: I18nKey, bodyKey: I18nKey, params: Record<stri
 interface NoticeTemplate {
   titleKey: I18nKey;
   bodyKey: I18nKey;
+  /** 这一条实际用到的占位符取值（noticeTemplate 已过滤空值），调试/审计用 */
+  params: Record<string, string>;
+  title: string;
+  body: string;
 }
 
 /**
@@ -483,9 +519,8 @@ function matches(title: string, patterns: string[]): boolean {
 }
 
 /**
- * 去掉角色前缀只留名字，但与 actorName 不同：**保留空**（取不到就返回空串，
- * 由传入 noticeTemplate 的 params 覆盖默认「同学」时不会被误填）。
- * 这里刻意不用——统一走 actorName 的兜底口径，见文件头注释。
+ * 模板里的 `{object}`（课程名）取值：**取不到就返回空串**（不返回「同学」那类人称兜底 ——
+ * 课程名绝不能用人名顶替）。调用点用 firstText 收敛成非空值，见 roleParams。
  */
 function courseOf(text?: string | null): string {
   return objectName(text) || "";
@@ -579,15 +614,68 @@ interface RoleCopy {
   neutral?: NoticeTemplate;
 }
 
+/** 取第一个非空值（用来把"没抽到"从空串统一收敛成一个值，避免占位符被替换成空） */
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    const one = text(value).trim();
+    if (one) {
+      return one;
+    }
+  }
+  return "";
+}
+
+/** 截断到可见字数（防御后端/词典把超长文本塞进标题占位符），不改任何业务语义 */
+function shortText(value: unknown, max = 24): string {
+  const one = text(value).trim();
+  return one.length > max ? one.slice(0, max) : one;
+}
+
+/**
+ * 所有传进 noticeTemplate 的取值统一先过这里：
+ *   · null / undefined → 丢掉（`tf` 的 split/join 对 null 会插进字面量 "null"）；
+ *   · 空串 / 全空白 → 丢掉，让词典里的 `{time}` 留在原地、由 noticeTemplate 的花括号兜底
+ *     判定"渲染失败"并回退后端原文 —— 这样绝不会出现「下课时间 ，」或「「」」这种残缺句子；
+ *   · 其余原样保留（含 `{` 的值由同一道兜底拦下）。
+ */
+function assembleParams(params: Record<string, string> = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  Object.keys(params).forEach((name) => {
+    const value = params[name];
+    if (typeof value === "string" && value.trim()) {
+      out[name] = value;
+    }
+  });
+  return out;
+}
+
+/**
+ * ⭐ 占位符取值**唯一出口**：所有定型文案（title 与 body）都用这一份 params，杜绝
+ * "正文给了、标题没给"这类的错配。
+ *
+ * 逐项说明（key 与 i18n 词典里的 `{...}` 一一对应）：
+ *   · object —— 课程名。正文里的「」是历史/常态来源；后端 V36 起标题里也带课程名
+ *     （「课程名」N 分钟后开始），所以标题是**兜底**来源，两个都抽、都抽不到用中性词「这节课」。
+ *     注意：这里**不**用对象名替代（与 courseOf 一致，宁可中性也不编）。
+ *   · name —— 对方昵称。后端按句式写「代课者 X …」，由 counterpartName 解析，取不到给「同学」。
+ *   · minutes —— 仅在后端确实给了分钟数时才有值（形如「…N 分钟后开始」/旧的「距上课还有 N 分钟」）。
+ *     取不到就**不放**这个 key：{minutes} 会由花括号兜底拦下 → 回退后端原文。
+ *   · time —— 仅在后端确实写了「将于 X 开始」/「已于 X 下课」时才有值；取不到同上。
+ */
 function roleParams(item: NotificationItem, extra: Record<string, string> = {}): Record<string, string> {
-  const poster = counterpartName(item.content);
-  return {
-    object: courseOf(item.content) || courseOf(item.title) || t("msgCommonClass" as MsgKey),
-    name: poster,
-    minutes: minutesOf(item.title),
-    time: startAtOf(item.content) || endAtOf(item.content),
+  const content = text(item.content);
+  const title = text(item.title);
+  // ⚠️ 标题的「N 分钟后开始」是"后端确实给了分钟数"的唯一可靠标记；否则不从标题里凑数字，
+  //    避免把课程名里的「60 分钟精讲」当成开课倒计时（minutesOf 内部已按后缀锚定）。
+  const titleHasCountdown = /分钟后开始|距上课还有/.test(title);
+  const params: Record<string, string> = {
+    object: firstText(courseOf(content), titleHasCountdown ? courseOf(title) : "", t("msgCommonClass" as MsgKey)),
+    name: firstText(counterpartName(content), actorFallback()),
+    minutes: minutesOf(title),
+    time: firstText(startAtOf(content), endAtOf(content)),
     ...extra
   };
+  return assembleParams(params);
 }
 
 function pickRoleCopy(copy: RoleCopy, role: NoticeRole): NoticeTemplate | null {
@@ -602,21 +690,35 @@ function renderRoleCopy(item: NotificationItem, copy: RoleCopy, extra: Record<st
   return noticeTemplate(template.titleKey, template.bodyKey, roleParams(item, extra));
 }
 
+/**
+ * 举报/申诉类的占位符：这一族标题与正文用到 `{object}`（被举报的内容/对象）、
+ * `{typeLabel}`（违规类型）、`{name}`（申诉/举报人）。三个键在这里**统一补齐兜底值**，
+ * 不再由调用点一个个传（历史上正是这种"有的传有的没传"，让某个 key 缺席、占位符原样外泄）。
+ * `mark` 一并保留：目前 zh/en 词典里没有任何一句用到 `{mark}`（那三句是静态文案），
+ * 传它是为了将来文案要用这个 key 时不必再回来改调用点。
+ */
+function reportParams(object: string, fallbackMark: string, appellant: string, typeLabel: string): Record<string, string> {
+  return assembleParams({
+    object: firstText(shortText(object), t("msgCommonClass" as MsgKey)),
+    name: firstText(shortText(appellant), actorFallback()),
+    typeLabel: firstText(shortText(typeLabel, 12), t("msgActorStudent" as MsgKey)),
+    // ⚠️ fallbackMark 是**词典 key**（msgRepMarkHandled / msgRepMarkReply / msgRepMarkNotHandled），
+    //    先查表再交给 tf；查不到就是空串 → assembleParams 丢掉这个 key → 花括号兜底回退后端原文，
+    //    绝不会把 "undefined" 或 {mark} 显示给用户。
+    mark: text(t(fallbackMark as I18nKey))
+  });
+}
+
 function templateForReport(
   item: NotificationItem,
   object: string,
   fallbackMark: string
-): NoticeTemplate {
+): NoticeTemplate | null {
   const title = String(item.title || "").trim();
   const content = item.content || "";
   const typeLabel = typeLabelOf(content);
   const appellant = actorName((content.match(/^「?([^」]+?)」?\s*就/) || [])[1] || "");
-  const base: Record<string, string> = {
-    object,
-    name: appellant,
-    typeLabel: typeLabel || t("msgActorStudent" as MsgKey),
-    mark: fallbackMark
-  };
+  const base = reportParams(object, fallbackMark, appellant, typeLabel);
   if (matches(title, ["被举报人已提出申诉"])) {
     return noticeTemplate("msgRepAppealed" as I18nKey, "msgRepAppealedBody" as I18nKey, base);
   }
@@ -671,26 +773,29 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
   const content = item.content || "";
   const type = String(item.type || "").toUpperCase();
   const biz = String(item.bizType || "").toUpperCase();
-  const object = objectName(content) || objectName(title) || actorFallback();
   // 举报正文里的「处理结果：」值是后端映射好的一个标签（警告 / 删除内容 / 限制功能 / 封禁账号…）
   const outcome = contentLine(content, "处理结果：");
-  // 对方昵称：后端每种通知的写法固定（本轮逐调用点核对），逐个兜住；都取不到就返回兜底人称
-  const third = counterpartName(content);
+  /**
+   * ⭐ 占位符取值只有这一份（roleParams）：每个分支都把**完整** params 交给 noticeTemplate，
+   * 由 renderRoleCopy / 直接调用统一传参。历史写法是各分支各传一部分（`{ object }` /
+   * `{ object, name: third }`），标题与正文一旦要的 key 不一样就会漏 —— 本轮按分支逐条核对后统一。
+   */
+  const params = roleParams(item);
 
   // ---------- 申请类（type=APPLICATION）----------
   if (type === "APPLICATION") {
     if (matches(title, ["有人申请了你的代课"])) {
-      return noticeTemplate("msgAppNewApply" as I18nKey, "msgAppNewApplyBody" as I18nKey, { object, name: third });
+      return noticeTemplate("msgAppNewApply" as I18nKey, "msgAppNewApplyBody" as I18nKey, params);
     }
     if (matches(title, ["有人撤回了申请"])) {
-      return noticeTemplate("msgAppWithdrawn" as I18nKey, "msgAppWithdrawnBody" as I18nKey, { object, name: third });
+      return noticeTemplate("msgAppWithdrawn" as I18nKey, "msgAppWithdrawnBody" as I18nKey, params);
     }
   }
 
   // ---------- 评价类（bizType=REVIEW）----------
   if (biz === "REVIEW") {
     if (matches(title, ["代课已完成"])) {
-      return noticeTemplate("msgRevCompleted" as I18nKey, "msgRevCompletedBody" as I18nKey, { object, name: third });
+      return noticeTemplate("msgRevCompleted" as I18nKey, "msgRevCompletedBody" as I18nKey, params);
     }
     if (matches(title, ["代课已自动完成"])) {
       // 同一 title 发给两方，后端正文分别写「请为代课者 X 打星」/「请为发布者 X 打星」
@@ -698,7 +803,7 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
       return noticeTemplate(
         (publisherSide ? "msgRevAutoCompletedPublisher" : "msgRevAutoCompleted") as I18nKey,
         (publisherSide ? "msgRevAutoCompletedPublisherBody" : "msgRevAutoCompletedBody") as I18nKey,
-        { object, name: third }
+        params
       );
     }
   }
@@ -706,25 +811,25 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
   // ---------- 履约类（type=TASK）----------
   if (type === "TASK") {
     if (matches(title, ["申请已被接受"])) {
-      return noticeTemplate("msgAppAccepted" as I18nKey, "msgAppAcceptedBody" as I18nKey, { object });
+      return noticeTemplate("msgAppAccepted" as I18nKey, "msgAppAcceptedBody" as I18nKey, params);
     }
     if (matches(title, ["申请未被选中"])) {
-      return noticeTemplate("msgAppNotPicked" as I18nKey, "msgAppNotPickedBody" as I18nKey, { object });
+      return noticeTemplate("msgAppNotPicked" as I18nKey, "msgAppNotPickedBody" as I18nKey, params);
     }
     if (matches(title, ["申请已被拒绝"])) {
-      return noticeTemplate("msgAppRejectedByPublisher" as I18nKey, "msgAppRejectedByPublisherBody" as I18nKey, { object });
+      return noticeTemplate("msgAppRejectedByPublisher" as I18nKey, "msgAppRejectedByPublisherBody" as I18nKey, params);
     }
     if (matches(title, ["可以上传现场照片"])) {
-      return noticeTemplate("msgFulPhotoDue" as I18nKey, "msgFulPhotoDueBody" as I18nKey, roleParams(item));
+      return noticeTemplate("msgFulPhotoDue" as I18nKey, "msgFulPhotoDueBody" as I18nKey, params);
     }
     if (matches(title, ["待对方上传照片"])) {
-      return noticeTemplate("msgFulPhotoNeeded" as I18nKey, "msgFulPhotoNeededBody" as I18nKey, roleParams(item));
+      return noticeTemplate("msgFulPhotoNeeded" as I18nKey, "msgFulPhotoNeededBody" as I18nKey, params);
     }
     if (matches(title, ["代课者已上传照片"])) {
-      return noticeTemplate("msgFulPhotoUploaded" as I18nKey, "msgFulPhotoUploadedBody" as I18nKey, roleParams(item));
+      return noticeTemplate("msgFulPhotoUploaded" as I18nKey, "msgFulPhotoUploadedBody" as I18nKey, params);
     }
     if (matches(title, ["你已上传照片"])) {
-      return noticeTemplate("msgFulSelfPhotoUploaded" as I18nKey, "msgFulSelfPhotoUploadedBody" as I18nKey, roleParams(item));
+      return noticeTemplate("msgFulSelfPhotoUploaded" as I18nKey, "msgFulSelfPhotoUploadedBody" as I18nKey, params);
     }
     if (matches(title, ["可以确认完成"])) {
       // 同一 title 发给两方，后端正文分别写「你或代课者…」/「你或发布者…」
@@ -737,10 +842,10 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
       });
     }
     if (matches(title, ["发布者已取消代课"])) {
-      return noticeTemplate("msgFulCancelledByPublisher" as I18nKey, "msgFulCancelledByPublisherBody" as I18nKey, roleParams(item));
+      return noticeTemplate("msgFulCancelledByPublisher" as I18nKey, "msgFulCancelledByPublisherBody" as I18nKey, params);
     }
     if (matches(title, ["代课者已取消代课"])) {
-      return noticeTemplate("msgFulCancelledByApplicant" as I18nKey, "msgFulCancelledByApplicantBody" as I18nKey, roleParams(item));
+      return noticeTemplate("msgFulCancelledByApplicant" as I18nKey, "msgFulCancelledByApplicantBody" as I18nKey, params);
     }
     if (matches(title, ["管理员已取消代课"])) {
       return renderRoleCopy(item, {
@@ -760,7 +865,7 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
       return noticeTemplate(
         (publisherSide ? "msgFulExpiredMatchedPublisher" : "msgFulExpiredMatched") as I18nKey,
         (publisherSide ? "msgFulExpiredMatchedPublisherBody" : "msgFulExpiredMatchedBody") as I18nKey,
-        roleParams(item)
+        params
       );
     }
     if (matches(title, ["代课任务已过期"])) {
@@ -769,7 +874,7 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
       return noticeTemplate(
         (publisherSide ? "msgFulExpiredUnmatched" : "msgFulExpiredUnmatchedApplicant") as I18nKey,
         (publisherSide ? "msgFulExpiredUnmatchedBody" : "msgFulExpiredUnmatchedApplicantBody") as I18nKey,
-        roleParams(item)
+        params
       );
     }
     // 「即将开始」：后端 V36 起标题带课程名（「课程名」N 分钟后开始），V36 之前是「距上课还有 N 分钟」。
@@ -783,13 +888,16 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
        *     绝不渲染成空的【】/「」。
        * 收件角色由 roleOf 判定：V36 起优先后端 receiverRole 字段（即将开始这条一定会带上），
        * 历史通知才回退正文启发式。
+       *
+       * ⚠️ 这三条就是线上截图里的那两句（「你要代课的「{object}」{minutes} 分钟后开始」）：
+       *    课程名与分钟数在这里都从**标题与正文两处**抽（courseOf 正文优先、标题兜底；
+       *    minutesOf 只认「N 分钟后开始」/「距上课还有 N 分钟」），抽不到就走兜底句或回退后端原文。
        */
-      const course = courseOf(content) || courseOf(title);
-      const minutes = minutesOf(title);
+      const course = firstText(courseOf(content), courseOf(title));
       const time = startAtOf(content);
       if (!course) {
         return noticeTemplate("msgFulStartsInFallback" as I18nKey, "msgFulStartsInFallbackBody" as I18nKey, {
-          minutes,
+          minutes: minutesOf(title),
           time
         });
       }
@@ -802,7 +910,7 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
             bodyKey: "msgFulStartsInApplicantBody" as I18nKey
           }
         },
-        { object: course, minutes, time }
+        { object: course, minutes: minutesOf(title), time }
       );
     }
     // 「代课信息已更新」：字段审计结论 —— 后端只把变更内容写成一行自由文本
@@ -816,7 +924,7 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
       return noticeTemplate(
         "msgFulUpdatedBy" as I18nKey,
         "msgFulUpdatedBody" as I18nKey,
-        { object, name: named ? actorName(publisher) : actorFallback() }
+        { ...params, name: named ? actorName(publisher) : actorFallback() }
       );
     }
   }
@@ -828,22 +936,25 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
       : title.includes("回复")
         ? "msgRepMarkReply"
         : "msgRepMarkNotHandled";
-    return templateForReport(item, object, mark);
+    // 举报正文里的「」与课程名不是一回事（可能是被举报的用户名/内容），这里沿用原来的
+    // objectName(content) 优先口径，交给 reportParams 补齐 {object}/{name}/{typeLabel}/{mark}。
+    const reported = firstText(objectName(content), objectName(title), t("msgCommonClass" as MsgKey));
+    return templateForReport(item, reported, mark);
   }
 
   // ---------- 账号与安全（type=SYSTEM + bizType=USER）----------
   // 标题沿用后端原话（本来就没有歧义），正文换成定型句说明"这意味着什么/要不要动手"，
   // 后端正文里的设备名 / IP / 时间 / 管理员备注由 extraLines 原样附在后面（一行不丢）。
   if (type === "SYSTEM") {
+    // 这一族（msgSysNewDevice / msgSysSingleDevice / msgSysPasswordReset / msgSysUnbanned /
+    // msgSysBanned / msgSysRestrictions 的 title+body）**全是静态句**，词典里没有任何占位符；
+    // 仍然统一给一份 params：将来某句要用 `{object}` 时不必再回来补调用点，且 tf 会忽略多余的 key。
+    const sysParams: Record<string, string> = { object: t("msgCommonClass" as MsgKey) };
     if (matches(title, ["账号安全提醒"])) {
       if (content.includes("仅允许一台设备在线")) {
-        return noticeTemplate("msgSysSingleDevice" as I18nKey, "msgSysSingleDeviceBody" as I18nKey, {
-          object: t("msgCommonClass" as MsgKey)
-        });
+        return noticeTemplate("msgSysSingleDevice" as I18nKey, "msgSysSingleDeviceBody" as I18nKey, sysParams);
       }
-      return noticeTemplate("msgSysNewDevice" as I18nKey, "msgSysNewDeviceBody" as I18nKey, {
-        object: t("msgCommonClass" as MsgKey)
-      });
+      return noticeTemplate("msgSysNewDevice" as I18nKey, "msgSysNewDeviceBody" as I18nKey, sysParams);
     }
     const accountTitleKey: Record<string, I18nKey> = {
       密码已被重置: "msgSysPasswordReset" as I18nKey,
@@ -853,9 +964,7 @@ function noticeTemplateFor(item: NotificationItem): NoticeTemplate | null {
     };
     const accountKey = accountTitleKey[title];
     if (accountKey) {
-      return noticeTemplate(accountKey, `${String(accountKey)}Body` as I18nKey, {
-        object: t("msgCommonClass" as MsgKey)
-      });
+      return noticeTemplate(accountKey, `${String(accountKey)}Body` as I18nKey, sysParams);
     }
   }
   return null;
@@ -911,11 +1020,26 @@ function noticeBodyLines(item: NotificationItem): { lead: string; highlights: st
 }
 
 /**
+ * 渲染前的最后一道闸（位置见 noticeTexts / noticeTextOf）：**不许把占位符花括号交给模板**。
+ * 定型渲染（noticeTemplate）已经保证不会产生带花括号的结果，这里的对象是另外两条路：
+ *   1. 后端原文兜底（rawBodyLines 的 lead / highlights）—— 后端不该发 `{object}`，
+ *      但真发了也不能让它上屏；
+ *   2. 任何将来新增的渲染分支忘了走 noticeTemplate。
+ * 命中花括号 → 判定这一格"给不出可读文本" → 返回空串（标题→后端 title 的调用点已有兜底）；
+ * ⚠️ 全部返回**空串**而不是 null：uni-app 模板里 null 不会渲染成文字，但空串语义清楚。
+ */
+function plainText(value: unknown): string {
+  const one = text(value);
+  return hasPlaceholder(one) ? "" : one;
+}
+
+/**
  * 列表与弹层共用的**预计算**结果：模板里原来对每条通知要调 noticeTitle 一次、
  * noticeBodyLines 4 次（1193 / 1226 / 1228 / 1233 一带），任何一次抛错都会让
  * 整个列表节点挂不上。这里改成每条只算一次、整表 try/catch，模板只读 map：
  *   · 算不出来的那条退回后端 title / content 原文；
  *   · 计算本身再怎么出问题，也只是这一条降级，不会连累其他行，更不会让整块空白。
+ * ⚠️ 出口一律过 plainText：残留 `{...}` 的一律不给显示。
  */
 const noticeTexts = computed(() => {
   const map = new Map<number, { title: string; lead: string; highlights: string[] }>();
@@ -937,9 +1061,9 @@ const noticeTexts = computed(() => {
       lines = rawBodyLines(rawContent);
     }
     map.set(item.id, {
-      title,
-      lead: lines.lead || rawContent,
-      highlights: Array.isArray(lines.highlights) ? lines.highlights : []
+      title: plainText(title),
+      lead: plainText(lines.lead || rawContent),
+      highlights: (Array.isArray(lines.highlights) ? lines.highlights : []).map(plainText)
     });
   });
   return map;
@@ -968,7 +1092,11 @@ function noticeTextOf(item: NotificationItem): NoticeText {
   } catch {
     // 保持 rawBodyLines
   }
-  return { title, lead: lines.lead || rawContent, highlights: Array.isArray(lines.highlights) ? lines.highlights : [] };
+  return {
+    title: plainText(title),
+    lead: plainText(lines.lead || rawContent),
+    highlights: (Array.isArray(lines.highlights) ? lines.highlights : []).map(plainText)
+  };
 }
 
 // 弹层里也要用同一份文案：打开时就冻结，避免列表刷新后弹层内容跟着变
