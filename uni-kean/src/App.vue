@@ -56,6 +56,9 @@ onHide(() => {
 @import "./styles/wot-theme.css";
 @import "./styles/wallpaper-skin.css";
 @import "./styles/display-appearance.css";
+/* auth 三页（登录 / 注册 / 忘记密码）共用的皮肤：选择器全部收在 .kean-auth 之下，
+   只有带该 class 的页面会命中，对其它页面零影响。 */
+@import "./styles/auth-theme.css";
 page {
   background-color: var(--kean-page-bg, #f5f6f8);
   font-size: var(--kean-fs, 16px);

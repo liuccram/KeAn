@@ -3,9 +3,11 @@ import { fetchTurnstileConfig } from "@/api/auth";
 import { resetPassword, sendSms } from "@/api/sms";
 import CodeBoxes from "@/components/CodeBoxes.vue";
 import TurnstileChallenge from "@/components/TurnstileChallenge.vue";
+import { goBack } from "@/utils/authNav";
 import { QQ_EMAIL_HINT, normalizeQqEmail } from "@/utils/qqEmail";
+import { t, tf } from "@/utils/i18n";
 import { useToast } from "wot-design-uni";
-import { onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 
 const toast = useToast();
 const loading = ref(false);
@@ -21,6 +23,27 @@ const model = reactive({
   confirmPassword: "",
   turnstileToken: ""
 });
+/**
+ * 页面文案：统一走 i18n，不在模板里硬编码中文。
+ * 用 computed 包一层，语言偏好变更后重新进入页面就会整体跟着变。
+ */
+const i18n = computed(() => ({
+  brand: t("authBrand"),
+  headline: t("authResetHeadline"),
+  headlineSub: t("authResetSub"),
+  emailPlaceholder: t("authEmailExample"),
+  smsLabel: t("authSmsLabel"),
+  sendSms: t("authSendSms"),
+  newPasswordPlaceholder: t("authPasswordNewPlaceholder"),
+  confirmPlaceholder: t("authPasswordConfirmPlaceholder"),
+  submit: t("authResetSubmit"),
+  slogan: t("authSloganText"),
+  captchaFailed: t("authCaptchaFailed"),
+  captchaMissing: t("authCaptchaMissingReset"),
+  ruleEmail: t("authRuleEmailRequired"),
+  ruleNewPassword: t("authRuleNewPasswordRequired"),
+  ruleConfirm: t("authRuleNewConfirmRequired")
+}));
 /**
  * 真人验证配置。必须严格区分这几种状态，否则运维会被误导：
  * - enabled:true  + siteKey     → 正常渲染控件
@@ -97,6 +120,16 @@ function requireCaptcha(): boolean {
   return true;
 }
 
+/**
+ * 返回：**不再直接调 navigateBack**（理由同注册页）。
+ * 本页可能从登录页 navigateTo 压栈进来，也可能是 redirectTo / 直接打开 URL 进来的；
+ * 后者栈里没有上一页，navigateBack() 会静默失败 → 用户被困。
+ * 统一走 utils/authNav.ts 的 goBack()：能返回就返回，退无可退就回登录页。
+ */
+function onBack() {
+  goBack();
+}
+
 async function handleSendSms() {
   const email = normalizeQqEmail(model.email);
   if (!email) {
@@ -114,7 +147,7 @@ async function handleSendSms() {
     await sendSms({ email, scene: "FORGOT_PASSWORD", turnstileToken: model.turnstileToken || undefined });
     turnstileRef.value?.reset();
     startCountdown();
-    toast.success(`验证码已发送到 ${email}`);
+    toast.success(tf("authSmsSent", { email }));
   } catch (error) {
     turnstileRef.value?.reset();
     toast.error((error as Error).message || "发送失败");
@@ -170,95 +203,115 @@ function handleSubmit() {
 </script>
 
 <template>
-  <view class="page">
-    <wd-navbar title="忘记密码" left-arrow safe-area-inset-top @click-left="uni.navigateBack()" />
-    <wd-form ref="formRef" :model="model" error-type="toast">
-      <wd-cell-group border>
-        <wd-input
-          v-model="model.email"
-          label="QQ邮箱"
-          label-width="90px"
-          prop="email"
-          clearable
-          placeholder="例如 12345678@qq.com"
-          :rules="[{ required: true, message: '请填写QQ邮箱' }]"
-        />
-      </wd-cell-group>
-      <view class="code-block">
-        <view class="code-head">
-          <text>邮箱验证码</text>
-          <wd-button size="small" :loading="sending" :disabled="countdown > 0" @click="handleSendSms">
-            {{ countdown > 0 ? `${countdown}s` : "获取验证码" }}
-          </wd-button>
+  <view class="page kean-auth">
+    <!-- 背景装饰层：手写 SVG 几何校园场景（矢量 / 已柔化），纯装饰、不参与交互。
+         它是 .auth-content 的兄弟节点，永远不是弹层的祖先，filter: blur() 安全。 -->
+    <view class="auth-sky" />
+    <!-- 返回按钮：走 utils/authNav.ts 的 goBack()，任何入口进来都出得去 -->
+    <view class="auth-back" @click="onBack">
+      <view class="auth-back__arrow" />
+    </view>
+
+    <view class="auth-content">
+      <view class="auth-hero auth-hero--compact">
+        <image class="auth-logo" src="/static/app-logo.jpg" mode="aspectFit" />
+        <view class="auth-title">{{ i18n.brand }}</view>
+      </view>
+
+      <!-- 悬浮玻璃卡片 = 外层玻璃框（.auth-card）+ 内层玻璃板（.auth-card__inner），
+           两层之间留 2px 缝做厚度。本页没有 wd-picker，外框用 backdrop-filter 是安全的。 -->
+      <view class="auth-card">
+        <view class="auth-card__inner">
+          <view class="auth-card-title">{{ i18n.headline }}</view>
+          <view class="auth-card-sub">{{ i18n.headlineSub }}</view>
+
+          <wd-form ref="formRef" :model="model" error-type="toast">
+            <view class="auth-field auth-field--mail">
+              <wd-input
+                v-model="model.email"
+                prop="email"
+                :no-border="true"
+                clearable
+                :placeholder="i18n.emailPlaceholder"
+                :rules="[{ required: true, message: i18n.ruleEmail }]"
+              />
+            </view>
+
+            <view class="auth-block">
+              <view class="auth-block-head">
+                <text>{{ i18n.smsLabel }}</text>
+                <wd-button
+                  size="small"
+                  custom-class="auth-code-btn"
+                  :loading="sending"
+                  :disabled="countdown > 0"
+                  @click="handleSendSms"
+                >
+                  {{ countdown > 0 ? `${countdown}s` : i18n.sendSms }}
+                </wd-button>
+              </view>
+              <CodeBoxes v-model="model.smsCode" />
+            </view>
+
+            <TurnstileChallenge
+              v-if="captcha.enabled && captcha.siteKey"
+              ref="turnstileRef"
+              box-id="kean-ts-forgot"
+              :site-key="captcha.siteKey"
+              v-model="model.turnstileToken"
+            />
+            <!-- 配置请求失败：单独一行，且绝不在失败时渲染验证控件（H5 与非 H5 都渲染这个普通 view） -->
+            <view v-else-if="captcha.error" class="auth-hint">{{ i18n.captchaFailed }}</view>
+            <!-- 只有后端明确 enabled:true、却没给 siteKey 才是"未配置"；enabled:false 时这里也不显示 -->
+            <view v-else-if="captcha.loaded && captcha.enabled" class="auth-hint">{{ i18n.captchaMissing }}</view>
+
+            <!-- 极细分隔线：验证码区与「新密码」区属于两件事，用一条淡线分开即可 -->
+            <view class="auth-divider" />
+
+            <view class="auth-field auth-field--lock">
+              <wd-input
+                v-model="model.newPassword"
+                prop="newPassword"
+                :no-border="true"
+                show-password
+                :placeholder="i18n.newPasswordPlaceholder"
+                :rules="[{ required: true, message: i18n.ruleNewPassword }]"
+              />
+            </view>
+            <view class="auth-field auth-field--lock">
+              <wd-input
+                v-model="model.confirmPassword"
+                prop="confirmPassword"
+                :no-border="true"
+                show-password
+                :placeholder="i18n.confirmPlaceholder"
+                :rules="[{ required: true, message: i18n.ruleConfirm }]"
+              />
+            </view>
+
+            <view class="auth-actions">
+              <wd-button
+                type="primary"
+                size="large"
+                block
+                custom-class="auth-btn auth-btn--gradient"
+                :loading="loading"
+                @click="handleSubmit"
+              >
+                {{ i18n.submit }}
+              </wd-button>
+            </view>
+          </wd-form>
         </view>
-        <CodeBoxes v-model="model.smsCode" />
       </view>
-      <TurnstileChallenge
-        v-if="captcha.enabled && captcha.siteKey"
-        ref="turnstileRef"
-        box-id="kean-ts-forgot"
-        :site-key="captcha.siteKey"
-        v-model="model.turnstileToken"
-      />
-      <!-- 配置请求失败：单独一行，且绝不在失败时渲染验证控件（H5 与非 H5 都渲染这个普通 view） -->
-      <view v-else-if="captcha.error" class="captcha-hint">真人验证配置读取失败，请稍后重试</view>
-      <!-- 只有后端明确 enabled:true、却没给 siteKey 才是"未配置"；enabled:false 时这里也不显示 -->
-      <view v-else-if="captcha.loaded && captcha.enabled" class="captcha-hint">人机验证未配置，暂无法重置密码</view>
-      <wd-cell-group border>
-        <wd-input
-          v-model="model.newPassword"
-          label="新密码"
-          label-width="90px"
-          prop="newPassword"
-          show-password
-          placeholder="8-32 位新密码"
-          :rules="[{ required: true, message: '请填写新密码' }]"
-        />
-        <wd-input
-          v-model="model.confirmPassword"
-          label="确认密码"
-          label-width="90px"
-          prop="confirmPassword"
-          show-password
-          placeholder="再次输入新密码"
-          :rules="[{ required: true, message: '请再次输入新密码' }]"
-        />
-      </wd-cell-group>
-      <view class="footer">
-        <wd-button type="primary" size="large" block :loading="loading" @click="handleSubmit">
-          重置密码
-        </wd-button>
-      </view>
-    </wd-form>
+
+      <view class="auth-slogan">— {{ i18n.slogan }} —</view>
+    </view>
     <wd-toast />
   </view>
 </template>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  background: var(--kean-bg);
-}
-.footer {
-  padding: 24px 16px;
-}
-.code-block {
-  margin: 12px 16px 0;
-  padding: 14px 16px 16px;
-  background: var(--kean-card);
-  border-radius: 8px;
-}
-.code-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  color: var(--kean-text);
-  font-size: 14px;
-}
-.captcha-hint {
-  padding: 12px 16px 0;
-  color: #ef4444;
-  font-size: 13px;
-}
+/* 视觉全部由 src/styles/auth-theme.css 统一提供（.kean-auth 作用域），
+   本页无需额外样式。 */
 </style>

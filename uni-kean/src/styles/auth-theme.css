@@ -1,0 +1,1104 @@
+/**
+ * 登录 / 注册 / 忘记密码（auth 三页）共用的视觉皮肤 —— 全量重写版。
+ *
+ * 设计语言：半透明玻璃面板（glass）+ 柔和光晕 + 蓝白主色 + 少量紫色科技感。
+ * 目标观感是「成熟创业公司的产品」，不是后台管理系统、不是模板化蓝色渐变登录页。
+ * 三个页面共用这一份皮肤，选择器全部收在 `.kean-auth` 之下：
+ * 页面根节点必须同时带 `page kean-auth` 两个类才会命中，对其它页面零影响。
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * ⚠️ 两条必须遵守的工程约束（上一轮在这里翻过车，改动前请先读）
+ * ───────────────────────────────────────────────────────────────────────────
+ *
+ * 【约束 1 · CSS 加载顺序】本文件由 App.vue 的 @import 打进**入口样式表**（dist 里是
+ * index-*.css，index.html 静态 <link> 引入）；而 wd-button / wd-input / wd-picker 等
+ * 组件样式是**异步分包 CSS**，由 JS 在路由进入时追加到 <head> 末尾 —— 文档顺序永远
+ * 在我们后面。两者特异性相同时（例如 `.kean-auth .wd-input__inner` 与组件编译后的
+ * `.wd-input__inner[data-v-xxxx]` 都是 0,2,0）组件赢，我们那条等于没写。
+ * 所以：凡是要覆盖组件自身属性的规则，特异性一律提到 **0,3,0 以上**（多带一节
+ * `.auth-field` / `.wd-button` / `.auth-block`）。只改 CSS 变量不受影响（变量按元素解析）。
+ *
+ * 【约束 2 · 不要用变量让位给渐变】组件 `.wd-button.is-primary` 里写的是
+ * `background: var(--wot-button-primary-bg-color)` —— **简写**。如果把该变量设成
+ * transparent 指望渐变顶上来，简写会把我们的 background-image 一起重置成 none，
+ * 结果是「透明底 + 白字」= 按钮彻底看不见（上一轮就是这样）。
+ * 正确做法：在**同一条更高特异性的规则**里同时声明 background-color（纯色兜底）
+ * 和 background-image（渐变），永远不动 --wot-button-primary-bg-color。
+ *
+ * 【约束 3 · backdrop-filter 的包含块陷阱】CSS 规范规定：backdrop-filter 不为 none 的
+ * 元素，会成为其 position:fixed 后代的**包含块**。注册页的 wd-picker 底部弹层与其遮罩
+ * 正是 position:fixed：一旦「装着 picker 的容器」带上 backdrop-filter，弹层就不再贴屏幕
+ * 底部、遮罩也只剩容器那么大 → **遮罩点不到、弹层关不掉**（上一轮的 bug）。
+ * 因此本文件里 backdrop-filter **只出现在两个地方**，都保证内部没有任何 position:fixed 后代：
+ *   ① `.auth-back`（40px 的返回圆钮，纯图标）
+ *   ② `.auth-card`（外层玻璃框）。⚠️ 注意这里说的是**外层框**：
+ *      外层框里装着 wd-form / wd-input / wd-picker，注册页的 picker 就在它内部，
+ *      所以**注册页必须用 `.auth-card--plain`**（把外层框的 backdrop-filter 显式去掉）；
+ *      登录页与忘记密码页没有 picker，才用带 backdrop-filter 的默认版本。
+ * 同样会建包含块的属性一律不要加在卡片上，本项目已核对过这些：
+ *   `transform`（含 translate/scale/rotate 与 3D 变体）、`filter` 不为 none、
+ *   `backdrop-filter` 不为 none、`will-change: transform|filter|perspective`、
+ *   `contain: paint|layout|strict|content`、`container-type`、`perspective`、
+ *   `mask`/`clip-path` 的个别情形。**`.auth-card` 上这些属性一个都没有**，
+ *   只有 `.auth-btn--gradient:active` 的 `transform: translateY(1px) scale(.995)`
+ *   —— 按钮不是任何弹层的祖先，安全。
+ * 另外 `filter: blur()` 不是 backdrop-filter，但同样会给后代建包含块 —— 所以背景模糊层
+ * `.auth-sky` 是 .auth-content 的**兄弟节点**，永远不是任何弹层的祖先。
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * 背景：auth-bg.jpg 图片槽位 + 手写 SVG 几何场景（双保险，天然降级）
+ * ───────────────────────────────────────────────────────────────────────────
+ * `.auth-sky` 用多层 background-image，**前面的层画不出来就只有那一层为空**，后面的层照常显示：
+ *   ① url("/static/auth-bg.jpg") —— 用户放的 AI 生成高保真背景图（校园玻璃建筑 + 柔光）。
+ *      构建时 static 目录整体拷进产物根目录，所以页面里写 /static/... 就能取到。
+ *      建议 9:16 竖图（1080×1920 或更高），主体偏上/居中；cover 铺满、只裁不拉伸。
+ *      ⚠️ 文件不存在时控制台会有一条 404（可接受），观感自动落到 ②。
+ *   ② 内联 data-uri SVG 场景 —— 手写的「极简几何校园」：玻璃体块剪影（带 feGaussianBlur
+ *      柔化）+ 天空/地平线渐变 + 两处玻璃反光（facade 亮面）+ 3 条极细曲线连接线 +
+ *      1 个中心连接点与 5 个 AI 网络节点（小圆 + 连线，克制）+ 少量半透明光点。
+ *      没有手机框 / 浏览器窗口 / 状态栏 / 文字 / Logo / 假按钮假输入框，也没有赛博朋克霓虹。
+ *      矢量、可模糊、体积约 4KB、不新增任何二进制素材。
+ *   ③ 白色柔光渐变 —— 把整块背景压亮压柔，保证卡片与深色文字在任何一张底图上都可读。
+ *   ④ 顶部暗角 radial —— 只压暗顶部一条，让白色的品牌名 / 欢迎语有足够对比度。
+ *   ⑤ 天空底色渐变 —— 最后兜底，图片与 SVG 都画不出来时页面也不会是「廉价纯渐变」。
+ * background-size 必须逐层对齐，否则整体串位：① cover，其余 100% 100%。
+ *
+ * 深色模式：项目在 prefs.ts 里把深色整体关闭（resolveTheme 恒返回 "light"），
+ * 所以这里只按浅色出图；颜色仍尽量收进 --auth-* 变量，将来恢复深色时好改。
+ */
+
+.kean-auth {
+  /* —— 背景 —— */
+  --auth-sky-top: #b7cdf7;
+  --auth-sky-mid: #d9e4fb;
+  --auth-sky-bottom: #edf1fc;
+  --auth-sky-base: #d9e4fb;
+
+  /* —— 玻璃面板（外层框 + 内层板，两层见下面的 .auth-card / .auth-card__inner） —— */
+  --auth-glass-border: rgba(255, 255, 255, 0.52);
+  --auth-glass-shadow:
+    0 34px 66px -30px rgba(24, 41, 92, 0.3),
+    0 4px 12px -8px rgba(24, 41, 92, 0.16);
+  /* 外框上下两条「边缘捕捉光」：上沿亮线 + 下沿压暗（玻璃的厚度感几乎全靠这两笔）。
+   * 亮线用两层叠出来：1px 的半透明白看起来会「糊」，所以再补 0.5px 的近纯白细线，
+   * 在偏亮的天空底图上仍能读出一条清晰的受光边。 */
+  --auth-glass-edge:
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(24, 41, 92, 0.16);
+  /* 内层板的板面：左上微亮、右下微暗，只做 6% 的落差，不引入第二种颜色 */
+  /* ⚠️ 透明度必须按【两层叠加后的总账】来定，不能只看单层：
+     总白度 ≈ 1-(1-外框α)(1-内板α)。上一版 外 .20 / 内 .52~.68 → 总账 .60~.74，
+     背后校园图几乎被完全盖住，用户看到的就是"不透明"。
+     现在 外 .10 / 内 .18~.30 → 总账约 .27~.37，底图能透出来，才像玻璃。 */
+  --auth-panel-bg: linear-gradient(158deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.2) 62%, rgba(244, 247, 255, 0.18) 100%);
+  /* 内层板自己的细边 + 板面高光（内层板与外框之间留 2px 缝，光透进去就是「厚度」） */
+  --auth-panel-line: rgba(255, 255, 255, 0.86);
+  --auth-panel-inset:
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  /* 无 backdrop-filter 的注册页：纯靠多层半透明白 + 亮边 + 高光模拟玻璃（见 .auth-card--plain）。
+   * 这里没有「实色兜底」变量了 —— 卡片是两层的，实色兜底写在 @supports not 与 .auth-card--plain
+   * 两处（见下），不留一个用不到的变量误导后来者。 */
+  /* ⚠️ 注册页没有 backdrop-filter（内部有 3 个 wd-picker 的 fixed 弹层，模糊会建包含块 → 弹层关不掉），
+     所以它的"玻璃感"全靠多层半透明白；但也不能像上一版那样 .38/.90 叠到近实心 ——
+     那会让它看起来是一块白板。现在外 .20 / 内 .56~.72，既透出底图又不牺牲表单可读性。 */
+  --auth-plain-frame-bg: rgba(255, 255, 255, 0.2);
+  --auth-plain-panel-bg: linear-gradient(158deg, rgba(255, 255, 255, 0.72) 0%, rgba(252, 253, 255, 0.62) 58%, rgba(245, 248, 255, 0.56) 100%);
+
+  /* —— 输入胶囊（嵌在玻璃里的凹槽） —— */
+  --auth-field-bg: rgba(255, 255, 255, 0.26);
+  --auth-field-bg-focus: rgba(255, 255, 255, 0.62);
+  --auth-field-border: rgba(58, 80, 126, 0.16);
+  --auth-field-border-focus: rgba(79, 70, 229, 0.45);
+  --auth-field-icon: #6b7a92;
+  --auth-field-placeholder: #66738a;
+  --auth-field-focus-ring: 0 0 0 4px rgba(99, 102, 241, 0.14);
+  /* 极轻的凹陷 + 顶部一条被压暗的细线：靠明暗而不是粗边框表达「嵌进去」 */
+  --auth-field-inset:
+    inset 0 1px 2px rgba(24, 41, 92, 0.06),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.5);
+
+  /* —— 文字 —— */
+  --auth-card-title: #16203a;
+  --auth-card-sub: #5b6880;
+  --auth-link: #3b4fd8;
+  --auth-link-muted: #5b6880;
+
+  /* —— 主色：蓝紫渐变 + 柔和发光 —— */
+  --auth-btn-from: #2f5fd6;
+  --auth-btn-mid: #4f46e5;
+  --auth-btn-to: #7c3aed;
+  --auth-btn-shadow: 0 14px 28px -10px rgba(58, 66, 216, 0.46), 0 4px 12px -6px rgba(124, 58, 237, 0.32);
+
+  /* —— 顶部暗角（保证白字对比度，只在顶部一条） —— */
+  --auth-top-scrim: radial-gradient(128% 62% at 50% -6%, rgba(19, 34, 78, 0.42) 0%, rgba(19, 34, 78, 0.2) 42%, rgba(19, 34, 78, 0) 74%);
+
+  position: relative;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 0 20px calc(16px + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  background-color: var(--auth-sky-base);
+  background-image:
+    url("/static/auth-bg.jpg"),
+    var(--auth-top-scrim),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.52) 44%, rgba(255, 255, 255, 0.6) 100%),
+    linear-gradient(180deg, var(--auth-sky-top) 0%, var(--auth-sky-mid) 54%, var(--auth-sky-bottom) 100%);
+  background-repeat: no-repeat;
+  background-size: cover, 100% 100%, 100% 100%, 100% 100%;
+  background-position: center center;
+}
+
+/* ---------- 背景装饰层：SVG 几何校园场景 + 柔化 ----------
+ * ⚠️ 它是 .auth-content 的兄弟节点，绝不是 wd-picker 弹层的祖先，
+ * 所以这里的 filter: blur() 不会劫持任何 position:fixed 的定位。 */
+.auth-sky {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  filter: blur(5px);
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: cover;
+  opacity: 0.94;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1080 1920' preserveAspectRatio='xMidYMid slice'%3E%3Cdefs%3E%3ClinearGradient id='sky' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%2396b4f2' stop-opacity='0.78'/%3E%3Cstop offset='0.52' stop-color='%23cfddfb' stop-opacity='0.5'/%3E%3Cstop offset='1' stop-color='%23f2f6ff' stop-opacity='0.24'/%3E%3C/linearGradient%3E%3CradialGradient id='sun' cx='0.72' cy='0.3' r='0.4'%3E%3Cstop offset='0' stop-color='%23ffffff' stop-opacity='0.8'/%3E%3Cstop offset='1' stop-color='%23ffffff' stop-opacity='0'/%3E%3C/radialGradient%3E%3ClinearGradient id='glassA' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff' stop-opacity='0.6'/%3E%3Cstop offset='1' stop-color='%23ffffff' stop-opacity='0.06'/%3E%3C/linearGradient%3E%3ClinearGradient id='glassB' x1='0' y1='0' x2='1' y2='0.2'%3E%3Cstop offset='0' stop-color='%23ffffff' stop-opacity='0.34'/%3E%3Cstop offset='1' stop-color='%23ffffff' stop-opacity='0.05'/%3E%3C/linearGradient%3E%3ClinearGradient id='ground' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff' stop-opacity='0.32'/%3E%3Cstop offset='1' stop-color='%23ffffff' stop-opacity='0.02'/%3E%3C/linearGradient%3E%3Cfilter id='soft' x='-25%25' y='-25%25' width='150%25' height='150%25'%3E%3CfeGaussianBlur stdDeviation='7'/%3E%3C/filter%3E%3C/defs%3E%3Crect width='1080' height='1920' fill='url(%23sky)'/%3E%3Ccircle cx='778' cy='576' r='432' fill='url(%23sun)'/%3E%3Cg filter='url(%23soft)'%3E%3Cpath d='M0 1408Q540 1330 1080 1404L1080 1920L0 1920Z' fill='url(%23ground)'/%3E%3Crect x='-40' y='1330' width='300' height='320' rx='16' fill='url(%23glassA)'/%3E%3Crect x='96' y='1258' width='216' height='392' rx='16' fill='url(%23glassA)'/%3E%3Crect x='330' y='1352' width='252' height='298' rx='16' fill='url(%23glassA)'/%3E%3Crect x='600' y='1306' width='196' height='344' rx='16' fill='url(%23glassA)'/%3E%3Crect x='812' y='1372' width='308' height='278' rx='16' fill='url(%23glassA)'/%3E%3Cpath d='M702 1346L922 1302L988 1302L988 1150L798 1150L702 1224Z' fill='url(%23glassB)'/%3E%3Cpath d='M96 1258L312 1258L312 1284L96 1284Z' fill='%23ffffff' fill-opacity='0.4'/%3E%3Cpath d='M600 1306L796 1306L796 1330L600 1330Z' fill='%23ffffff' fill-opacity='0.32'/%3E%3Cpath d='M988 1330L988 1650L1080 1650L1080 1330Z' fill='%23ffffff' fill-opacity='0.18'/%3E%3Cpath d='M-40 1650L0 1650L0 1330L-40 1330Z' fill='%23ffffff' fill-opacity='0.14'/%3E%3C/g%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath d='M120 470C330 350 690 390 940 280' stroke='%23ffffff' stroke-opacity='0.3' stroke-width='1.7'/%3E%3Cpath d='M70 800C340 700 730 740 1010 630' stroke='%23ffffff' stroke-opacity='0.24' stroke-width='1.7'/%3E%3Cpath d='M200 1140C440 1055 700 1090 960 1010' stroke='%23ffffff' stroke-opacity='0.18' stroke-width='1.7'/%3E%3Cpath d='M472 700L865 638L302 886Z' stroke='%23ffffff' stroke-opacity='0.24' stroke-width='1.4'/%3E%3C/g%3E%3Cg fill='%23ffffff'%3E%3Ccircle cx='472' cy='700' r='7.5' fill-opacity='0.62'/%3E%3Ccircle cx='865' cy='638' r='5.5' fill-opacity='0.46'/%3E%3Ccircle cx='302' cy='886' r='5' fill-opacity='0.42'/%3E%3Ccircle cx='640' cy='782' r='4.5' fill-opacity='0.34'/%3E%3Ccircle cx='182' cy='958' r='6' fill-opacity='0.38'/%3E%3Ccircle cx='900' cy='1046' r='4.5' fill-opacity='0.3'/%3E%3Ccircle cx='386' cy='1128' r='4' fill-opacity='0.28'/%3E%3Ccircle cx='140' cy='470' r='5' fill-opacity='0.32'/%3E%3Ccircle cx='940' cy='280' r='4.5' fill-opacity='0.3'/%3E%3Ccircle cx='1010' cy='630' r='4' fill-opacity='0.26'/%3E%3Ccircle cx='250' cy='1780' r='4' fill-opacity='0.2'/%3E%3Ccircle cx='880' cy='1842' r='3.5' fill-opacity='0.18'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* 内容容器：z-index 抬到背景层之上；⚠️ 这里绝对不能加 backdrop-filter（内含 picker 弹层） */
+.auth-content {
+  display: flex;
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+/* ---------- 顶部返回（浮在背景上的玻璃圆钮，保证任何入口进来都出得去） ---------- */
+
+.auth-back {
+  display: flex;
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 14px;
+  z-index: 3;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 20px -10px rgba(19, 34, 78, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  /* 这颗 40px 圆钮内部没有任何 position:fixed 后代，backdrop-filter 安全（见文件头约束 3） */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* 箭头：内联 data-uri SVG，不新增二进制素材、也不依赖图标字体 */
+.auth-back__arrow {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 18px 18px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 5 8 12l7 7'/%3E%3C/svg%3E");
+}
+
+/* 登录页的返回入口：只在页面栈里还有上一页时才渲染（canGoBack()），做成「箭头 + 文字」的胶囊 */
+.kean-auth .auth-back--login {
+  width: auto;
+  height: 36px;
+  padding: 0 15px 0 11px;
+  border-radius: 18px;
+}
+
+.kean-auth .auth-back--login .auth-back__label {
+  margin-left: 3px;
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 36px;
+  text-shadow: 0 1px 5px rgba(19, 34, 78, 0.4);
+}
+
+/* ---------- 顶部：Logo + 课安 + 副标题 ---------- */
+
+.auth-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(40px + env(safe-area-inset-top)) 8px 22px;
+}
+
+.auth-logo {
+  width: 84px;
+  height: 84px;
+  border-radius: 24px;
+  box-shadow:
+    0 16px 34px -14px rgba(19, 34, 78, 0.5),
+    0 0 0 7px rgba(255, 255, 255, 0.2);
+}
+
+.auth-title {
+  margin-top: 14px;
+  color: #ffffff;
+  font-size: 29px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.09em;
+  text-shadow: 0 2px 10px rgba(19, 34, 78, 0.32);
+}
+
+.auth-subtitle {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 13px;
+  line-height: 20px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-shadow: 0 1px 7px rgba(19, 34, 78, 0.28);
+}
+
+/* 注册 / 忘记密码用的紧凑版顶部：Logo 更小、和卡片贴得更近 */
+.auth-hero--compact {
+  padding: calc(24px + env(safe-area-inset-top)) 8px 16px;
+}
+
+.auth-hero--compact .auth-logo {
+  width: 68px;
+  height: 68px;
+  border-radius: 20px;
+  box-shadow:
+    0 12px 26px -12px rgba(19, 34, 78, 0.46),
+    0 0 0 5px rgba(255, 255, 255, 0.18);
+}
+
+.auth-hero--compact .auth-title {
+  margin-top: 10px;
+  font-size: 24px;
+  letter-spacing: 0.08em;
+}
+
+/* ---------- 悬浮玻璃卡片 = 外层框 + 内层板（两层，才有玻璃的厚度） ----------
+ * 真实玻璃的六件事，逐条落在这两层上，克制优先：
+ *   ① 边缘捕捉光 → 外框 `--auth-glass-edge`（上沿 1px 亮线 + 下沿压暗）
+ *   ② 厚度        → 外框 padding: 2px：内层板比外框四周各小 2px，光从缝里透进去
+ *   ③ 环境光/投影 → 冷调深蓝大范围软阴影 `--auth-glass-shadow` + 上方一条极淡反光，
+ *                   不用纯黑、不堆彩色发光
+ *   ④ 内容内嵌    → 输入胶囊 `--auth-field-inset` + `--auth-field-bg`（见下）
+ *   ⑤ 按钮实体感  → `.auth-btn--gradient` 的顶部内高光 + 同色柔光 + 按下位移（见下）
+ *   ⑥ 克制        → 只有白/灰/蓝紫三系；分隔靠字重与灰度；内层板只做 6% 明暗落差
+ *
+ * ⚠️ 外框 `padding` 是**结构的一部分**（2px 的缝 + 内层板自己的 1px 细边 = 视觉上 3px 的厚度）。
+ * ⚠️ 外框上**没有** transform / filter / will-change / contain / container-type / perspective
+ *    —— 注册页的三个 wd-picker 就在这个外框内部，见文件头约束 3。
+ * ⚠️ 外框**故意不写 overflow: hidden**：内层板在圆角处会被父级裁掉自己的 `inset` 高光，
+ *    而 backdrop-filter 的模糊本来就会按外框圆角裁剪，所以不需要它。
+ */
+
+.auth-card {
+  display: block;
+  box-sizing: border-box;
+  /* 内外两层之间留 2px 的缝：靠它 + 内层板自己的细边做出「玻璃有厚度」 */
+  padding: 2px;
+  border: 1px solid var(--auth-glass-border);
+  border-radius: 34px;
+  background-color: rgba(255, 255, 255, 0.1);
+  box-shadow: var(--auth-glass-shadow), var(--auth-glass-edge);
+  /* 登录 / 忘记密码：真正在玻璃后面做模糊（内部无 position:fixed 后代，安全）
+     ⚠️ 12px 而不是 18px：叠加两层白之后，模糊越大越把底图糊成一片均匀色，反而更"不透明"。
+     透明度才是玻璃感的决定因素（见 --auth-panel-bg 的注释）。 */
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+}
+
+/* 内层玻璃板：真正的板面。外框只管「框」，内层板管「面 + 内容 + 自己的边与高光」。 */
+.auth-card__inner {
+  display: block;
+  box-sizing: border-box;
+  padding: 26px 20px 22px;
+  border: 1px solid var(--auth-panel-line);
+  /* 比外框小 6px：2px 缝 + 视觉上更薄更贴内容 */
+  border-radius: 28px;
+  /* ⚠️ 底色与 --auth-panel-bg 是【叠加】的（image 盖在 color 上），必须一起降：
+     上一版 .42 + 渐变 .52~.68 → 总账约 .75，这才是"完全不透明"的主因。 */
+  background-color: rgba(255, 255, 255, 0.12);
+  background-image: var(--auth-panel-bg);
+  box-shadow: var(--auth-panel-inset);
+}
+
+/* 外层框里再叠一点点模糊：让「框」比「板」更透、板更实，层次就出来了。
+ * ⚠️ 这里**刻意只给 4px**：backdrop-filter 是在「已经模糊过的底板」上再模糊一次，
+ *    18px + 大半径会把底图糊成一片均匀色（结构全部丢失，玻璃反而显得平），
+ *    所以第二层只加一点点，保证板面后面仍能看出光影与颜色走向。
+ * ⚠️ backdrop-filter 会在元素上建出包含块，而 `.auth-card__inner` 里装着 wd-picker，
+ *    所以注册页（.auth-card--plain）**同时也必须把这一层关掉**——注意它是 .auth-card
+ *    的直接子元素，`.auth-card--plain .auth-card__inner` 特异性高于单独的 `.auth-card__inner`。 */
+/* ⚠️ 内层板【不再】叠加第二层模糊：
+   上一版在内层又加了 blur(4px)，但外层已经有 12px 模糊，再叠一层只会把底图结构糊得更平 ——
+   用户反馈"玻璃不透明"时，视觉上的"糊成一片均匀色"正是元凶之一。现在只保留外框那一层模糊。
+   （保留这条规则的位置与注释，是为了说明：注册页的 .auth-card--plain 依然必须无任何模糊，
+     因为 .auth-card__inner 里装着 wd-picker 的 position:fixed 弹层，模糊会建出包含块。） */
+.auth-card:not(.auth-card--plain) .auth-card__inner {
+  /* 刻意留空：不再重复设置 backdrop-filter */
+  isolation: auto;
+}
+
+/* ⚠️ 注册页：卡片内部装着三个 wd-picker（position:fixed 弹层），所以**整张卡片
+ * （外框与内层板，共两层）都不能有 backdrop-filter**，否则弹层与遮罩会被劫持到卡片坐标系里
+ * （遮罩点不到、弹层关不掉）。
+ * 没有模糊，玻璃感就改由「多层半透明白 + 上下亮暗边 + 内高光 + 冷调软阴影」模拟：
+ *   外框 = 一层很淡的白（0.38）+ 亮边 + 上下缘线，让底图亮度先糊一层；
+ *   内层板 = 0.74~0.9 的白（不透明白会杀死「这是玻璃」的暗示，所以停在 0.9 而不是 0.97）；
+ *   再靠 2px 的缝 + 内层板细边把「厚度」补回来。 */
+.auth-card--plain,
+.auth-card--plain .auth-card__inner {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.auth-card--plain {
+  background-color: var(--auth-plain-frame-bg);
+}
+
+.auth-card--plain .auth-card__inner {
+  background-color: rgba(255, 255, 255, 0.86);
+  background-image: var(--auth-plain-panel-bg);
+}
+
+/* 外框里出现两张内层板的情况（本项目暂时没有）也保持 14px 节奏 */
+.auth-card__inner + .auth-card__inner {
+  margin-top: 14px;
+}
+
+.auth-card + .auth-card {
+  margin-top: 14px;
+}
+
+/* 卡片内的板块间距：因为内层板现在是 .auth-card 的子元素，这几条选择器写成
+ * `.auth-card .auth-card__inner xxx`（0,3,0），比单节的 `.auth-card-title`（0,1,0）
+ * 更高、也更明确地限定在「卡片内层板」里，不会漏到别的地方去。 */
+.auth-card .auth-card__inner .auth-card-title {
+  color: var(--auth-card-title);
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+}
+
+.auth-card .auth-card__inner .auth-card-sub {
+  margin-top: 7px;
+  color: var(--auth-card-sub);
+  font-size: 13.5px;
+  line-height: 20px;
+}
+
+/* 副标题下面紧跟的第一个块：间距交给副标题自己的下边距，避免空档叠加。
+ * 登录 / 忘记密码是 .wd-form，注册页是「只显示当前一步」的 .auth-step-head，
+ * 这些块自身已经有底 / 边框 / 内边距（或本来就是输入胶囊），所以给 26px，
+ * 让「副标题 → 第一个块」始终保持同一段节奏。 */
+.auth-card__inner .auth-card-sub + .wd-form,
+.auth-card__inner .auth-card-sub + .auth-field,
+.auth-card__inner .auth-card-sub + .auth-step-head {
+  margin-top: 26px;
+}
+
+/* 卡片内的极细分隔线：只在逻辑分组之间用一条，永远不画成「框」。
+ * 用 1px 高的元素 + 两端淡出的白线（不用边框、不用纯色实线），两侧各留 4px 内缩，
+ * 让线看起来是被内容「托住」的，而不是从卡片边一直顶到另一边。 */
+.auth-divider {
+  height: 1px;
+  margin: 18px 4px 0;
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.72) 22%, rgba(255, 255, 255, 0.72) 78%, rgba(255, 255, 255, 0) 100%);
+}
+
+/* 分隔线下面的第一个块：线是「分组」，不是「间距」，所以只补到 16px
+ * （比输入框之间的 13px 松一点、比 26px 的标题空档紧一点）。 */
+.auth-divider + .auth-field {
+  margin-top: 16px;
+}
+
+/* 没有浏览器原生 backdrop-filter 时退回实色卡片（不退化成半透明+深字这种看不清的组合） */
+@supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
+  .auth-card:not(.auth-card--plain) {
+    background-color: rgba(255, 255, 255, 0.55);
+  }
+
+  .auth-card:not(.auth-card--plain) .auth-card__inner {
+    background-color: rgba(255, 255, 255, 0.9);
+    background-image: var(--auth-plain-panel-bg);
+  }
+}
+
+/* ---------- 玻璃输入胶囊 ---------- */
+
+.auth-field {
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  height: 56px;
+  margin-top: 13px;
+  padding: 0 16px;
+  border: 1px solid var(--auth-field-border);
+  border-radius: 18px;
+  /* 嵌在玻璃里的凹槽：底比板面**略暗**（板面是 0.52~0.68 白，这里是 0.52 白 + 一层
+   * 极轻的 inset 阴影），上面再盖一条几乎看不见的顶部渐亮 —— 不能做成贴在表面的白块。 */
+  background-color: var(--auth-field-bg);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.02) 100%);
+  box-shadow: var(--auth-field-inset);
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* 聚焦态：亮底 + 蓝紫描边 + 一圈很淡的外发光（:focus-within 是原生选择器，不依赖组件类名） */
+.auth-field:focus-within {
+  border-color: var(--auth-field-border-focus);
+  background-color: var(--auth-field-bg-focus);
+  /* 外发光在外、凹陷感只留一点点：聚焦时先「亮起来」再「浮起来」 */
+  box-shadow: var(--auth-field-focus-ring), inset 0 1px 2px rgba(24, 41, 92, 0.03);
+}
+
+/* 图标统一用内联 data-uri SVG（不新增二进制素材、也不依赖图标字体） */
+.auth-field::before {
+  content: "";
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-right: 11px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 20px 20px;
+}
+
+/* 用户名（登录页 / 注册页通用） */
+.auth-field--user::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7a92' stroke-width='1.7' stroke-linecap='round'%3E%3Ccircle cx='12' cy='8.4' r='4'/%3E%3Cpath d='M4.4 20.2c0-4.2 3.4-6.6 7.6-6.6s7.6 2.4 7.6 6.6'/%3E%3C/svg%3E");
+}
+
+/* 密码 / 新密码 / 确认密码 */
+.auth-field--lock::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7a92' stroke-width='1.7' stroke-linecap='round'%3E%3Crect x='4.5' y='10.2' width='15' height='10.3' rx='3'/%3E%3Cpath d='M8.2 10.2V7.6a3.8 3.8 0 0 1 7.6 0v2.6'/%3E%3C/svg%3E");
+}
+
+/* 邮箱（QQ 邮箱） */
+.auth-field--mail::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7a92' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.2' y='5.6' width='17.6' height='12.8' rx='3'/%3E%3Cpath d='m4.4 8.2 7.6 5 7.6-5'/%3E%3C/svg%3E");
+}
+
+/* 昵称 */
+.auth-field--nick::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7a92' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.6 13.3a8.4 8.4 0 1 0-3.7 3.6L21 18.4l-1-4.2a6.6 6.6 0 0 0 .6-.9Z'/%3E%3Cpath d='M8.6 11.6h6.8M8.6 8.6h4.2'/%3E%3C/svg%3E");
+}
+
+/* 性别 */
+.auth-field--gender::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7a92' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9.4' cy='14.4' r='5'/%3E%3Cpath d='M13.2 10.6 20 3.8M15.6 3.8H20v4.4'/%3E%3C/svg%3E");
+}
+
+/* 校区 */
+.auth-field--campus::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7a92' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 21s6.2-5.2 6.2-10a6.2 6.2 0 1 0-12.4 0C5.8 15.8 12 21 12 21Z'/%3E%3Ccircle cx='12' cy='10.6' r='2.4'/%3E%3C/svg%3E");
+}
+
+/* 不配图标的字段（避免视觉噪音）：隐藏 ::before 占位，否则左边会留一段莫名空白 */
+.auth-field--plain::before,
+.auth-field--pick::before {
+  display: none;
+}
+
+/* 下拉选择（省份 / 学校 / 性别）：胶囊里换成 wd-picker 的单元格 */
+.auth-field--pick {
+  padding-left: 16px;
+  padding-right: 14px;
+}
+
+/* 输入框本体：把 wd-input 的默认外观（白底 + 下划线 + 固定行高）全部压掉。
+ * ⚠️ 每条都多带一层 .auth-field：组件自身的规则编译后是 `.wd-input[data-v-xxx]`（0,2,0）
+ * 且文档顺序在我们后面，只有到 0,3,0 才能稳赢，否则「白底盖住玻璃胶囊」。 */
+.kean-auth .auth-field .wd-input,
+.kean-auth .auth-field .wd-input.is-cell,
+.kean-auth .auth-field .wd-input.is-no-border,
+.kean-auth .auth-field .wd-picker {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  background: transparent;
+  background-color: transparent;
+  line-height: normal;
+}
+
+.kean-auth .auth-field .wd-input::after {
+  display: none;
+  height: 0;
+}
+
+.kean-auth .auth-field .wd-input__body,
+.kean-auth .auth-field .wd-input__value {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 输入文字：深色（--auth-card-title #16203a 对玻璃底约 13:1） */
+.kean-auth .auth-field .wd-input__inner {
+  width: 100%;
+  height: 22px;
+  padding: 0;
+  color: var(--auth-card-title);
+  font-size: 15.5px;
+  line-height: 22px;
+  background: transparent;
+}
+
+/* 占位文字：三种写法都覆盖（H5 走 ::placeholder / ::-webkit-input-placeholder，
+ * 小程序走 placeholder-class 的 .wd-input__placeholder），保证到哪一端都是可读的灰。 */
+.kean-auth .auth-field .wd-input__inner::placeholder,
+.kean-auth .auth-field .wd-input__inner::-webkit-input-placeholder {
+  color: var(--auth-field-placeholder);
+}
+
+.kean-auth .auth-field .wd-input__placeholder {
+  color: var(--auth-field-placeholder);
+}
+
+/* 清除按钮 / 明文切换眼睛：不给白底（组件 $-input-bg 默认白色，会在玻璃胶囊里显示成白方块） */
+.kean-auth .auth-field .wd-input__icon,
+.kean-auth .auth-field .wd-input__clear {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  margin-left: 10px;
+  color: var(--auth-field-icon);
+  font-size: 18px;
+  line-height: 22px;
+  background: transparent;
+}
+
+/* ---------- wd-picker 单元格：只改外观，不动 DOM 层级与事件 ---------- */
+
+/* wd-cell 自带白底（$-cell-bg），特异性平手时组件赢，会在玻璃胶囊里留一条白条 */
+.kean-auth .auth-field .wd-picker,
+.kean-auth .auth-field .wd-picker__cell,
+.kean-auth .auth-field .wd-cell {
+  background: transparent;
+  background-color: transparent;
+}
+
+.kean-auth .auth-field .wd-picker__cell {
+  padding: 0;
+}
+
+.kean-auth .auth-field .wd-picker__cell .wd-cell__wrapper,
+.kean-auth .auth-field .wd-cell__wrapper {
+  padding: 0;
+  align-items: center;
+}
+
+.kean-auth .auth-field .wd-cell__left {
+  margin-right: 10px;
+}
+
+.kean-auth .auth-field .wd-cell__title,
+.kean-auth .auth-field .wd-picker__cell .wd-cell__title {
+  color: var(--auth-card-title);
+  font-size: 15px;
+}
+
+.kean-auth .auth-field .wd-cell__value,
+.kean-auth .auth-field .wd-picker__cell .wd-cell__value {
+  color: var(--auth-card-title);
+  font-size: 15.5px;
+}
+
+/* 未选择时的占位值 */
+.kean-auth .auth-field .wd-picker__cell--placeholder .wd-cell__value {
+  color: var(--auth-field-placeholder);
+}
+
+/* 禁用态（没选省份时学校下拉不可点） */
+.kean-auth .auth-field .wd-picker.is-disabled .wd-cell__value {
+  color: var(--auth-field-placeholder);
+  opacity: 0.7;
+}
+
+.kean-auth .auth-field .wd-cell__arrow-right,
+.kean-auth .auth-field .wd-picker__arrow {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  margin-left: 8px;
+  color: var(--auth-field-icon);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+/* ---------- 验证码盒子（components/CodeBoxes.vue）在玻璃卡片里的观感 ----------
+ * CodeBoxes 的 .box 是 scoped 样式（.box[data-v-xxx] 也是 0,2,0），同样要靠 0,3,0 才盖得住。 */
+
+.kean-auth .auth-block .box {
+  height: 52px;
+  max-width: 50px;
+  border-color: var(--auth-field-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--auth-card-title);
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.kean-auth .auth-block .box.filled {
+  border-color: var(--auth-field-border-focus);
+}
+
+.kean-auth .auth-block .box.active {
+  border-color: var(--auth-field-border-focus);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+}
+
+/* ---------- 卡片内的辅助区块（验证码行、步骤头、提示、隐私勾选） ---------- */
+
+.auth-block {
+  margin-top: 14px;
+}
+
+.auth-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--auth-card-title);
+  font-size: 14px;
+}
+
+.auth-tip {
+  margin-top: 12px;
+  color: var(--auth-card-sub);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.auth-agree {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 18px;
+  margin-bottom: -2px;
+}
+
+.auth-agree-text {
+  color: var(--auth-card-sub);
+  font-size: 13px;
+}
+
+.auth-agree-link {
+  color: var(--auth-link);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 真人验证配置异常提示（逻辑不变，仅统一观感） */
+.auth-hint {
+  margin-top: 12px;
+  color: #cf3352;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* TurnstileChallenge 自带 12px 16px 的内边距，在玻璃卡片里显得贴边 */
+.kean-auth .turnstile {
+  padding: 14px 0 0;
+}
+
+/* ---------- 注册页步骤头：**只显示当前这一步** ----------
+ * 上一版把 4 步全部铺出来（圆点 + 连线 + 已完成打勾），用户明确不要。
+ * 现在每页只渲染当前步的一条：「第 N 步」标题 + 一句短语，外加右侧一个极轻的
+ * `N / 4`。左侧一小段竖线是唯一的装饰，用来表态「这是一步」，不做成按钮或链接。
+ *
+ * ⚠️ 这里刻意用左竖线而不是彩色圆点 / 徽章 / 图标：注册页的观感基调是玻璃 + 灰度层级，
+ *    加一个彩色圆点会立刻变成"向导组件"，反而比原来的步骤条更抢眼。
+ * ⚠️ 这块就在 .auth-card__inner 里（同一容器里装着 3 个 wd-picker 的 position:fixed 弹层），
+ *    所以下面这些属性一个都没有：transform / filter / backdrop-filter / will-change /
+ *    contain / container-type / perspective。竖线用 border-left 画，不用伪元素 + transform。 */
+.auth-step-head {
+  display: flex;
+  box-sizing: border-box;
+  align-items: flex-start;
+  justify-content: space-between;
+  /* 左侧那 2px 的 padding 是留给竖线的，竖线不额外占宽 */
+  padding: 12px 14px 12px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-left: 2px solid rgba(79, 70, 229, 0.32);
+  border-radius: 16px;
+  background-color: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 12px 26px -22px rgba(24, 41, 92, 0.5);
+}
+
+.auth-step-head__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.auth-step-head__title {
+  display: flex;
+  align-items: baseline;
+}
+
+/* 步号：只用字重和灰度拉开层级，不做圆点 / 徽章（见上面的注释） */
+.auth-step-head__no {
+  flex-shrink: 0;
+  color: var(--auth-card-title);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 22px;
+  letter-spacing: 0.02em;
+}
+
+/* 分隔点：比两侧文字都淡，纯粹用来断开「数字」和「标题」 */
+.auth-step-head__dot {
+  flex-shrink: 0;
+  margin: 0 7px;
+  color: rgba(91, 104, 128, 0.45);
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.auth-step-head__label {
+  color: var(--auth-card-title);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+/* 这一页要做什么：12px + 中灰，跟 .auth-tip 同一层灰度，不抢标题 */
+.auth-step-head__fields {
+  margin-top: 4px;
+  color: var(--auth-card-sub);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+/* 唯一的进度暗示：小字号 + 中灰 + 等宽数字，不用彩色、不加底色。
+ * 数字与斜杠不属于任何语言的文案，因此不新增 i18n key。 */
+.auth-step-head__meta {
+  flex-shrink: 0;
+  margin-left: 10px;
+  color: rgba(91, 104, 128, 0.72);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  line-height: 22px;
+}
+
+/* ---------- 主按钮：整宽胶囊 + 蓝紫渐变 + 柔和发光 + 白色粗体 + 右侧箭头 ----------
+ *
+ * ⚠️ 「按钮看不见」就是这一段翻的车，两个原因都要记住（见文件头约束 1 / 2）：
+ *   1) 组件 `.wd-button.is-primary` 里是 `background:` **简写**，会连 background-image 一起重置。
+ *      所以这里在**同一条 0,4,0 规则**里同时写 background-color（纯色兜底）+ background-image（渐变），
+ *      并且**绝不**把 --wot-button-primary-bg-color 设成 transparent。
+ *   2) 覆盖一律写到 0,4,0（多带一节 .wd-button），稳赢组件编译出来的
+ *      `.wd-button.is-primary[data-v-xxx]`（0,3,0），不依赖两者在 <head> 里的先后顺序。
+ */
+
+.auth-actions {
+  display: flex;
+  flex-direction: column;
+  margin-top: 18px;
+}
+
+.auth-btn {
+  display: flex;
+  width: 100%;
+  margin-top: 20px;
+}
+
+.auth-actions .auth-btn {
+  margin-top: 0;
+}
+
+/* 主按钮（登录 / 下一步 / 提交注册）：蓝紫渐变 + 顶部内高光 + 同色柔光（三样加起来才有实体感） */
+.kean-auth .wd-button.auth-btn--gradient.is-primary {
+  display: flex;
+  width: 100%;
+  border-radius: 18px;
+  background-color: var(--auth-btn-from);
+  background-image: linear-gradient(102deg, var(--auth-btn-from) 0%, var(--auth-btn-mid) 52%, var(--auth-btn-to) 100%);
+  /* ① 顶部 1px 内高光：渐变按钮的「上表面受光」，缺了它就是一整块扁平色块
+   * ② 同色柔光：范围大、透明度低，不用纯黑影子
+   * 两条都写在这一条 0,4,0 规则里（组件 `.wd-button.is-primary[data-v-x]` 是 0,3,0，
+   * 且异步分包 CSS 永远在入口 CSS 之后，所以必须靠特异性稳赢，见文件头约束 1）。 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    var(--auth-btn-shadow);
+  /* 按下反馈要跟手：≤120ms */
+  transition: transform 0.1s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+/* 按下：轻微下沉（1px）+ 几乎看不出的内缩 + 柔光收一点。
+ * ⚠️ transform 只在按钮上（按钮内部没有弹层），不会成为任何 position:fixed 的包含块；
+ *    卡片上永远不加 transform，见文件头约束 3。 */
+.kean-auth .wd-button.auth-btn--gradient.is-primary:active {
+  transform: translateY(1px) scale(0.995);
+  /* ① 顶部内高光按下去要暗一档（光被压住了）；② 外柔光收小并贴近 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 8px 18px -10px rgba(58, 66, 216, 0.42);
+}
+
+.kean-auth .wd-button.auth-btn--gradient.is-primary::after {
+  border: none;
+  border-radius: 18px;
+}
+
+/* loading / disabled 时按钮会自动变成「白字 + 组件默认底」，这里补一条更具体的兜底，
+ * 保证禁用态依然是蓝紫渐变（禁用只降不透明度，由组件的 is-disabled 负责）。 */
+.kean-auth .wd-button.auth-btn--gradient.is-primary:not(.is-disabled) {
+  color: #ffffff;
+}
+
+.kean-auth .wd-button.auth-btn--gradient .wd-button__content {
+  display: flex;
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  gap: 10px;
+}
+
+.kean-auth .wd-button.auth-btn--gradient .wd-button__text {
+  color: #ffffff;
+  font-size: 16.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* 右侧箭头用 CSS 画，不额外加元素、不依赖图标字体；loading 时隐藏，避免和转圈叠在一起 */
+.kean-auth .wd-button.auth-btn--gradient .wd-button__content::after {
+  content: "";
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin-top: -9px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 18px 18px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h13M12.5 6l6 6-6 6'/%3E%3C/svg%3E");
+}
+
+.kean-auth .wd-button.auth-btn--gradient.is-loading .wd-button__content::after {
+  display: none;
+}
+
+/* 「上一步」：白色玻璃 + 蓝字描边胶囊（同样 0,4,0，压过 .wd-button.is-primary 的主题蓝底） */
+.kean-auth .wd-button.auth-btn--ghost.is-primary {
+  border: 1px solid rgba(58, 80, 126, 0.24);
+  border-radius: 18px;
+  background-color: rgba(255, 255, 255, 0.78);
+  background-image: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.kean-auth .wd-button.auth-btn--ghost.is-primary::after {
+  border: none;
+  border-radius: 18px;
+}
+
+.kean-auth .wd-button.auth-btn--ghost.is-primary .wd-button__text {
+  color: var(--auth-link);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* 注册页第 2 步起：「上一步」+「下一步」同排 */
+.auth-actions--row {
+  flex-direction: row;
+  gap: 12px;
+}
+
+.auth-actions--row .auth-actions-prev {
+  flex: 0 0 36%;
+}
+
+.auth-actions--row .auth-actions-next {
+  flex: 1;
+}
+
+/* ---------- 「获取验证码」小胶囊 ----------
+ * wd-button 的 type 默认就是 primary，这枚按钮身上同时有 .is-primary 和 .is-small。
+ * 只保留小胶囊这一套外观（浅蓝玻璃底 + 蓝字），不走渐变分支 —— 否则
+ * 「.is-primary 里写白字」会和浅蓝底撞成白字浅底，又变成看不清。
+ * ⚠️ 同样用 background-color 长属性覆盖组件的 `background:` 简写，不动任何 --wot-* 变量。 */
+
+.kean-auth .wd-button.auth-code-btn.is-primary {
+  height: 34px;
+  padding: 0 15px;
+  border: 1px solid rgba(59, 79, 216, 0.22);
+  border-radius: 17px;
+  background-color: rgba(59, 79, 216, 0.1);
+  background-image: none;
+  box-shadow: none;
+}
+
+.kean-auth .wd-button.auth-code-btn.is-primary::after {
+  border: none;
+  border-radius: 17px;
+}
+
+.kean-auth .wd-button.auth-code-btn .wd-button__text {
+  color: var(--auth-link);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 倒计时中 / 发送中：灰化，但仍能看清文字 */
+.kean-auth .wd-button.auth-code-btn.is-primary.is-disabled {
+  border-color: rgba(102, 116, 138, 0.24);
+  background-color: rgba(102, 116, 138, 0.1);
+  background-image: none;
+  opacity: 0.72;
+}
+
+.kean-auth .wd-button.auth-code-btn.is-disabled .wd-button__text {
+  color: var(--auth-field-icon);
+}
+
+/* ---------- 卡片底部一行：注册账号 / 忘记密码 ---------- */
+
+.auth-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18px;
+  padding: 0 2px;
+}
+
+.auth-link {
+  color: var(--auth-link);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.auth-link--muted {
+  color: var(--auth-link-muted);
+  font-weight: 400;
+}
+
+/* ---------- 卡片外的底部标语 ---------- */
+
+.auth-slogan {
+  padding: 20px 0 4px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 11.5px;
+  line-height: 18px;
+  letter-spacing: 0.22em;
+  text-align: center;
+  text-shadow: 0 1px 7px rgba(19, 34, 78, 0.3);
+}
+
+/* ---------- 矮屏（iPhone SE 667 等）：压缩留白，保证卡片不溢出、可滚动 ---------- */
+
+@media screen and (max-height: 760px) {
+  .auth-hero {
+    padding: calc(26px + env(safe-area-inset-top)) 8px 14px;
+  }
+
+  .auth-hero .auth-logo {
+    width: 72px;
+    height: 72px;
+    border-radius: 20px;
+  }
+
+  .auth-hero .auth-title {
+    margin-top: 10px;
+    font-size: 26px;
+  }
+
+  .auth-card {
+    border-radius: 30px;
+  }
+
+  .auth-card__inner {
+    padding: 22px 18px 18px;
+    border-radius: 25px;
+  }
+
+  .auth-card__inner .auth-card-sub + .wd-form,
+  .auth-card__inner .auth-card-sub + .auth-field,
+  .auth-card__inner .auth-card-sub + .auth-step-head {
+    margin-top: 22px;
+  }
+
+  .auth-field {
+    height: 52px;
+    margin-top: 11px;
+  }
+
+  .auth-btn {
+    margin-top: 16px;
+  }
+
+  .auth-slogan {
+    padding: 14px 0 2px;
+  }
+}
+
+@media screen and (max-height: 640px) {
+  .auth-hero {
+    padding: calc(18px + env(safe-area-inset-top)) 8px 10px;
+  }
+
+  .auth-hero .auth-logo {
+    width: 62px;
+    height: 62px;
+    border-radius: 18px;
+  }
+
+  .auth-hero .auth-title {
+    font-size: 22px;
+  }
+
+  .auth-hero .auth-subtitle {
+    margin-top: 6px;
+    font-size: 12px;
+  }
+
+  .auth-card {
+    border-radius: 28px;
+  }
+
+  .auth-card__inner {
+    padding: 20px 16px 16px;
+    border-radius: 23px;
+  }
+
+  .auth-field {
+    height: 50px;
+    margin-top: 10px;
+  }
+
+  .auth-slogan {
+    display: none;
+  }
+}
+
+/* 更矮的屏幕（横屏 / 小窗）：背景模糊是纯装饰，直接关掉省一次全屏合成 */
+@media screen and (max-height: 560px) {
+  .auth-sky {
+    filter: none;
+  }
+}
