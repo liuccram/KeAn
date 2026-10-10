@@ -9,6 +9,14 @@ export interface NotificationItem {
   bizId?: number | null;
   readFlag: number;
   createdAt: string;
+  /**
+   * 收件角色（后端 V36 起落库的 notification.receiver_role）：
+   * `"PUBLISHER"` = 这条是发给发布者的，`"APPLICANT"` = 发给代课者的。
+   *
+   * ⚠️ 可选 + 可空，且老后端/历史数据**不会返回这个字段**（后端 non_null 序列化，
+   * 值为 null 时字段直接不出现）：拿不到时按原来的正文启发式判定，绝不因为缺字段而报错。
+   */
+  receiverRole?: string | null;
 }
 
 export interface PageResult<T> {

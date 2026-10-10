@@ -1,3 +1,5 @@
+import { t, tf } from "@/utils/i18n";
+
 export function pad(value: number) {
   return String(value).padStart(2, "0");
 }
@@ -20,6 +22,103 @@ export function parseDateTime(iso?: string | null) {
     return "";
   }
   return iso.replace("T", " ").slice(0, 16);
+}
+
+/* ===========================================================================
+ * 消息体系的时间文案（会话列表右端 / 通知分组标题 / 通知行内时间）
+ * ---------------------------------------------------------------------------
+ * 为什么要单独一套、而不复用上面的 formatChatTime / parseDateTime：
+ *   · parseDateTime 是「原样截断」（2026-03-08 14:05），在会话行右端太宽，一屏挤掉昵称；
+ *   · formatChatTime 是聊天页气泡之间的时间戳（今天也要带 HH:mm，昨天要带 HH:mm），
+ *     而会话列表需要的正是"今天只给时间、昨天不给时间"的紧凑口径。
+ * 铁律：**所有文案走 i18n**（t()），这里只负责"算"和"填占位符"，不出现中文字面量。
+ * =========================================================================== */
+
+/** 距今的"天差"：今天 0 / 昨天 1 / 前天 2 …（按自然日算，不按 24 小时） */
+function dayDiffFromToday(date: Date, now: Date): number {
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startThat = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  return Math.round((startToday - startThat) / 86400000);
+}
+
+/** Date.getDay()：0=周日 → 1..7（周一到周日），正好对上 i18n 的 msgWeekday1..7 */
+function isoWeekday(date: Date): number {
+  return date.getDay() === 0 ? 7 : date.getDay();
+}
+
+function monthDayText(date: Date, withYear: boolean): string {
+  if (withYear) {
+    return tf("msgYearMonthDay", { y: String(date.getFullYear()), mon: String(date.getMonth() + 1), d: String(date.getDate()) });
+  }
+  return tf("msgMonthDay", { mon: String(date.getMonth() + 1), d: String(date.getDate()) });
+}
+
+/**
+ * 会话列表右端的时间（D 节规则）：
+ *   今天 → `HH:mm`；昨天 → 昨天；本周（2~6 天）→ 周一…周日；今年更早 → 3月8日；跨年 → 2025年3月8日。
+ * 解析不出来（老后端字段缺失 / 脏数据）返回空串 —— **绝不显示 "NaN"**。
+ */
+export function formatRelativeStamp(iso?: string | null): string {
+  if (!iso) {
+    return "";
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const now = new Date();
+  const diff = dayDiffFromToday(date, now);
+  if (diff <= 0) {
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+  if (diff === 1) {
+    return t("msgYesterday");
+  }
+  if (diff < 7) {
+    // 动态 key：msgWeekday1..7。这里用模板字面量 + 一次收窄，
+    // 保证与字典里的 key 集合对齐（少一个 key 就是运行时报错，不是静默空白）。
+    const weekdayKey = `msgWeekday${isoWeekday(date)}` as "msgWeekday1";
+    return t(weekdayKey);
+  }
+  return monthDayText(date, date.getFullYear() !== now.getFullYear());
+}
+
+/**
+ * 通知列表的行内时间：**永远是 HH:mm**（跨天信息已经由日期分组标题表达了，
+ * 行里再写一次日期是重复信息，只会把标题挤窄）。
+ */
+export function formatNoticeTime(iso?: string | null): string {
+  if (!iso) {
+    return "";
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * 通知列表的日期分组桶（D 节）：只产**稳定的 bucket key**，不产文案 ——
+ * 文案在页面里走 t("msgDayToday" / "msgDayYesterday" / "msgDayEarlier")。
+ * 用 key 而不是文案的好处：语言切换不需要重算分组，而且 bucket 能当 v-for 的 :key。
+ */
+export function formatNoticeDay(iso?: string | null): "today" | "yesterday" | "earlier" {
+  if (!iso) {
+    return "earlier";
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "earlier";
+  }
+  const diff = dayDiffFromToday(date, new Date());
+  if (diff <= 0) {
+    return "today";
+  }
+  if (diff === 1) {
+    return "yesterday";
+  }
+  return "earlier";
 }
 
 const CHAT_TIME_GAP_MS = 5 * 60 * 1000;

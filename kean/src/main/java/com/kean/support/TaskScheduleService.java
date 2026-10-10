@@ -29,6 +29,12 @@ public class TaskScheduleService {
 
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("M月d日 HH:mm");
 
+    /**
+     * 标题里课程名的最大长度。notification.title 是 VARCHAR(100)（V1 建表），
+     * 而"「」+ N 分钟后开始"固定占 11 个字符（N 最多 3 位），留足余量取 80。
+     */
+    private static final int TITLE_COURSE_MAX = 80;
+
     private static final Logger log = LoggerFactory.getLogger(TaskScheduleService.class);
 
     private final SubstituteTaskMapper taskMapper;
@@ -157,7 +163,10 @@ public class TaskScheduleService {
                 String applicant = applicantName(task);
                 if (soon && (task.getClassReminded() == null || task.getClassReminded() != 1)) {
                     long minutes = minutesUntil(now, task.getStartAt());
-                    String title = "距上课还有 " + minutes + " 分钟";
+                    // ⚠️ B1：标题里带课程名，格式「课程名」N 分钟后开始 —— 客户端「{课程} N 分钟后开始」
+                    // 的定型文案一直缺课程名（旧标题是"距上课还有 N 分钟"，课程名只在正文里）。
+                    // 正文**一个字都不动**：客户端还在从正文的「」与"将于…开始"里抽课程名与上课时间。
+                    String title = "「" + titleCourseName(task) + "」" + minutes + " 分钟后开始";
                     if (!taskStatusService.requirePhoto(task)) {
                         notifyPublisher(
                                 task,
@@ -259,16 +268,41 @@ public class TaskScheduleService {
         }
     }
 
+    /**
+     * 发布者侧通知。收件角色固定是发布者，所以在这里统一标注 receiverRole=PUBLISHER ——
+     * 本文件里所有"同一事件发两方"的通知（即将开始 / 待对方上传照片 / 可以确认完成 / 过期）
+     * 都走这个入口，各自那几处调用点因此不需要逐个改，也不会漏。
+     */
     private void notifyPublisher(SubstituteTask task, String title, String content) {
-        notificationService.notifyUser(task.getPublisherId(), "TASK", title, content, "TASK", task.getId());
+        notificationService.notifyUser(
+                task.getPublisherId(),
+                "TASK",
+                title,
+                content,
+                "TASK",
+                task.getId(),
+                NotificationService.RECEIVER_ROLE_PUBLISHER
+        );
     }
 
+    /**
+     * 代课者侧通知。收件角色固定是代课者，统一标注 receiverRole=APPLICANT（理由同 {@link #notifyPublisher}）。
+     * 取不到已接受的申请人时**不发**（保持原行为，不猜收件人）。
+     */
     private void notifyApplicant(SubstituteTask task, String title, String content) {
         Long applicantId = acceptedApplicantUserId(task);
         if (applicantId == null) {
             return;
         }
-        notificationService.notifyUser(applicantId, "TASK", title, content, "TASK", task.getId());
+        notificationService.notifyUser(
+                applicantId,
+                "TASK",
+                title,
+                content,
+                "TASK",
+                task.getId(),
+                NotificationService.RECEIVER_ROLE_APPLICANT
+        );
     }
 
     private Long acceptedApplicantUserId(SubstituteTask task) {
@@ -325,6 +359,23 @@ public class TaskScheduleService {
         return task.getCourseNameSnapshot() == null ? "代课任务" : task.getCourseNameSnapshot();
     }
 
+    /**
+     * 标题里用的课程名：快照为 null **或空白**时都回退「代课任务」，绝不拼出空「」。
+     *
+     * <p>为什么不直接用 {@link #courseName(SubstituteTask)}：那个方法只兜住 null，而且它同时服务于
+     * **正文**，而正文一个字都不许动（客户端靠正文里的「」抽课程名），所以这里单独给标题一条兜底口径。
+     *
+     * <p>另外这里按标题列做长度保护：课程名快照最长 128（V1:69），"「」+ 分钟后开始"固定占 11 个字符，
+     * 不截断的话超长课程名在严格模式下会写成 1406 Data too long —— 那条提醒会被 sendReminders 的
+     * try/catch 每 30 秒吞一次、却永远发不出去，所以按列预算截断（与 LoginDeviceServiceImpl:481
+     * 把设备名截到 120 是同一思路）。
+     */
+    private String titleCourseName(SubstituteTask task) {
+        String course = task.getCourseNameSnapshot();
+        String name = StringUtils.hasText(course) ? course.trim() : "代课任务";
+        return name.length() > TITLE_COURSE_MAX ? name.substring(0, TITLE_COURSE_MAX) : name;
+    }
+
     private void bumpApplicantCompleted(SubstituteTask task) {
         if (task.getAcceptedApplicationId() == null) {
             return;
@@ -358,7 +409,8 @@ public class TaskScheduleService {
                 title,
                 "代课「" + course + "」已过下课 24 小时，系统已自动确认完成，请为代课者 " + applicantName(task) + " 打星。",
                 "REVIEW",
-                task.getId()
+                task.getId(),
+                NotificationService.RECEIVER_ROLE_PUBLISHER
         );
         Long applicantId = acceptedApplicantUserId(task);
         if (applicantId != null) {
@@ -368,7 +420,8 @@ public class TaskScheduleService {
                     title,
                     "代课「" + course + "」已过下课 24 小时，系统已自动确认完成，请为发布者 " + publisherName(task) + " 打星。",
                     "REVIEW",
-                    task.getId()
+                    task.getId(),
+                    NotificationService.RECEIVER_ROLE_APPLICANT
             );
         }
     }

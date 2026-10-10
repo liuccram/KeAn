@@ -1,0 +1,1167 @@
+/**
+ * 课安设计套件（design kit）—— 把 design-tokens.css 的令牌组装成可复用的视觉零件。
+ *
+ * 用法（后人加新页面时就是这么用，最小示例）：
+ *   1) 页面根节点加一个页面级作用域类：<view class="page kean-xxx">
+ *   2) 视觉全部写在这份全局表里（不要写进页面 <style scoped>），作用域收在 .kean-xxx 之下：
+ *        .kean-xxx .mine-card            ← 或直接在 <view class="mine-card"> 上挂零件类
+ *   3) 需要壁纸皮肤就再加 .page.skinned 分支（design-tokens.css 已提供 --kean-sk-*）
+ *
+ * 完整最小示例（照这个抄即可，零件类都是现成的）：
+ *   <view class="page kean-xxx" :class="{ skinned: wallpaperOn }">
+ *     <view class="mine-card mine-card--list">
+ *       <view class="mine-group__title">我的代课</view>
+ *       <wd-cell title="我发布的" is-link @click="go('/pages/mine/published')">
+ *         <template #icon><view class="mine-cico mine-cico--doc" /></template>
+ *       </wd-cell>
+ *     </view>
+ *     <view class="mine-btn--text">更多</view>
+ *   </view>
+ *   · 想自己做一行（不用 wd-cell）时，用「二·补」那套 .mine-row__* ：
+ *     <view class="mine-row"><view class="mine-row__icon mine-cico mine-cico--star" />
+ *       <text class="mine-row__label">我的收藏</text><view class="mine-row__arrow" /></view>
+ *   · 页面 <style scoped> 里只留结构与尺寸（margin / padding / flex），
+ *     颜色、玻璃、阴影、字阶一个都不要写 —— 否则壁纸皮肤分支必漏。
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * 命名：本文件所有零件类统一 mine- 前缀
+ *   · 为什么不叫 kit-card / kean-card？因为 .card / .row / .title / .meta 这些
+ *     通用词在本项目里已被 wallpaper-skin.css、display-appearance.css 用作
+ *     「全局换肤钩子」（且大量带 !important）。新类名一旦撞上，换肤就会误伤。
+ *     mine- 前缀既短又不会撞，将来要升级成全站通用件时再统一改名。
+ *
+ * 三条工程约束（照抄 auth-theme.css 的结论，改动前先读）：
+ *  【1 · CSS 加载顺序】本文件由 App.vue 的 @import 打进**入口样式表**；而 wd-cell /
+ *      wd-button / wd-toast 等组件样式是**异步分包 CSS**，文档顺序永远在我们后面。
+ *      两者特异性相同时组件赢。所以凡是要覆盖组件自身属性的规则，特异性一律 ≥ 0,3,0
+ *      （本文件用 .kean-mine .mine-card .wd-cell 这类多节选择器，或 html body 前缀兜底）。
+ *  【2 · 不要用 --wot-* 变量让位给渐变】组件里写的是 `background:` **简写**，
+ *      把变量设成 transparent 会让简写连 background-image 一起重置成 none
+ *      → 结果「透明底 + 白字」= 按钮彻底看不见。正确做法是在**同一条更高特异性规则**里
+ *      同时声明 background-color（纯色兜底）+ background-image（渐变），
+ *      永远不动 --wot-button-primary-bg-color（见 .mine-btn--primary）。
+ *  【3 · backdrop-filter 的包含块陷阱】backdrop-filter 不为 none 的元素会成为其
+ *      position:fixed 后代的**包含块**（transform / filter / will-change / contain /
+ *      perspective 同理）。本文件**只有一处** backdrop-filter：.mine-hero（头卡）。
+ *      依据：头卡内部只有文字/头像/标签，以及 .hero-bg / .hero-wash 两个绝对定位装饰层，
+ *      **没有任何 position:fixed 后代**；头像上的长按是 uni.showActionSheet
+ *      （原生/宿主层弹层，按定义不在文档流里，与包含块无关）。
+ *      本页唯一真正的 fixed 后代是 <wd-toast>，它是 .page 的**直接子节点**，
+ *      在头卡**外面** → 所以 .page / .logged / .mine-card 上一律没有这些属性。
+ *      列表卡（.mine-card）里装着 wd-cell 与后续可能出现的 picker/popup，
+ *      因此它的"玻璃感"完全靠多层半透明白 + 亮边 + 冷调阴影模拟，不用模糊。
+ */
+
+/* ===========================================================================
+ * 一·前置、页面底色（放在这里，页面 <style scoped> 里就不必再写颜色）
+ * ⚠️ .page 上**绝不能**出现 backdrop-filter / transform / filter：
+ *    本页 <wd-toast> 是 .page 的直接子节点，而 wd-toast 内部是 position:fixed
+ *    + translate3d —— 一旦 .page 成了包含块，toast 就会被劫持到 .page 坐标系里。
+ * =========================================================================== */
+.kean-mine .page {
+  background-color: #f4f6fb;
+}
+
+.kean-mine .page.skinned {
+  background-color: transparent;
+}
+
+/* 未登录态：整页淡蓝到白的柔和渐变（与头卡的雾蓝基调一致）。
+   ⚠️ 壁纸模式下换成"深色渐隐"，否则会在星空上出现一整块浅色底。
+   ⚠️ 这里用 .kean-mine .page .guest（0,3,0）而不是 .kean-mine .guest（0,2,0）：
+      页面 <style scoped> 里那条 .guest[data-v-x] 也是 0,2,0，而 uni-app 的页面样式
+      是运行时追加的，注入顺序在入口 CSS 之后 —— 平手时它赢。多带一节 .page
+      把它稳稳压住，比用 !important 更好维护（既有的 wallpaper-skin.css 选择 !important，
+      新代码不再扩散这个习惯）。 */
+.kean-mine .page .guest {
+  background-image: linear-gradient(180deg, #edf3ff 0%, #f7f9fc 42%, #f7f9fc 100%);
+}
+
+.page.skinned.kean-mine .guest {
+  background-image: linear-gradient(180deg, rgba(12, 18, 34, 0.22) 0%, rgba(12, 18, 34, 0.08) 46%, rgba(12, 18, 34, 0) 100%);
+}
+
+/* ===========================================================================
+ * 一、玻璃卡片：外框 + 内板两层（真实玻璃的六件事，见 auth-theme.css 的同一段推导）
+ *  ① 边缘捕捉光 → --kean-glass-edge（上沿 0.5px + 1px 两层亮线 + 下沿压暗）
+ *  ② 厚度       → 外描边 + 内板细边 + 2% 明暗落差（不做 2px 物理缝：列表卡要装组件，
+ *                 加 padding 会打乱 wd-cell 自己的 15px 节奏）
+ *  ③ 环境光     → 冷调深蓝大范围软阴影（--kean-shadow-glass），不用纯黑
+ *  ④ 内容内嵌   → 输入/凹槽用 --kean-glass-inset（见 .mine-inset）
+ *  ⑤ 层次       → 外框 10% → 板面 14% → 渐变 10~24%，总账 ≈ 32%（铁律 1）
+ *  ⑥ 克制       → 只有白/灰/蓝紫三系，分隔靠字重与灰度
+ * =========================================================================== */
+.kean-mine .mine-card {
+  position: relative;
+  box-sizing: border-box;
+  border: 1px solid var(--kean-glass-border);
+  border-radius: var(--kean-radius-md);
+  /* ⚠️ 必须用 background-color + background-image 两条长属性：
+     用 background: 简写会连 wd-cell 自身可能存在的 image 一起重置，
+     而且简写里的 color 顺序一旦写错就是"看不见的 bug"。 */
+  background-color: var(--kean-glass-panel);
+  background-image: var(--kean-glass-frost);
+  box-shadow: var(--kean-shadow-glass), var(--kean-glass-edge);
+}
+
+/* 卡片标题：主卡片的第二视觉层级（20px / 600 / t1），单独一条不依赖 .title 之类的通用词 */
+.kean-mine .mine-card__title {
+  color: var(--kean-t1);
+  font-size: var(--kean-fs-t2);
+  font-weight: var(--kean-fw-title);
+  line-height: var(--kean-lh-t2);
+  letter-spacing: 0.01em;
+}
+
+/* 卡片内副标题：跟标题拉开层级，不做第二种颜色 */
+.kean-mine .mine-card__sub {
+  margin-top: 6px;
+  color: var(--kean-t3);
+  font-size: var(--kean-fs-t4);
+  line-height: var(--kean-lh-t4);
+}
+
+/* 极细分隔线：只在逻辑分组之间用一条，永远不画成「框」。
+   两端 16% 处淡出 = 线像是被内容"托住"，而不是从卡片边顶到另一边。 */
+.kean-mine .mine-divider {
+  height: 1px;
+  margin: var(--kean-sp-4) 2px 0;
+  background-image: var(--kean-glass-divider);
+}
+
+/* 组标题（"我的代课" / "其他"）：小字 + 辅助灰，靠字重而不是彩色抢注意力。
+   ⚠️ 不用 .section-title 这个名字：wallpaper-skin.css 已经用 !important 占用了它。 */
+.kean-mine .mine-group__title {
+  margin: 0 var(--kean-sp-1) var(--kean-sp-2);
+  color: var(--kean-t3);
+  font-size: var(--kean-fs-t4);
+  font-weight: var(--kean-fw-strong);
+  line-height: var(--kean-lh-t4);
+  letter-spacing: 0.02em;
+}
+
+/* 导航标题：两处共用（头卡内在 kit 的 .mine-hero 一节里单独配色）。
+   ⚠️ 页面里 .nav-title 的排版（10/6 内边距、居中、17px SemiBold）与改版前逐字一致，
+   不因为"顺手"改字体大小；未登录态与登录态共用一个标题样式。 */
+.kean-mine .nav-title {
+  padding: 10px 0 6px;
+  color: var(--kean-t1);
+  font-size: var(--kean-fs-t1);
+  font-weight: var(--kean-fw-strong);
+  line-height: var(--kean-lh-t1);
+  text-align: center;
+}
+
+/* 未登录态的标题：显式写 0,3,0（.kean-mine .guest .nav-title），
+   不去依赖"入口 CSS 与页面 scoped CSS 谁先注入"这种顺序巧合。 */
+.kean-mine .guest .nav-title {
+  color: var(--kean-t1);
+}
+
+.page.skinned.kean-mine .guest .nav-title {
+  color: var(--kean-sk-text);
+}
+
+/* 未登录态：内容整体包在一张玻璃卡里（.mine-guest 见本节末尾，外框尺寸留在页面 scoped）。 */
+
+/* ===========================================================================
+ * 二、列表行（wd-cell 的玻璃化）
+ * ⚠️ 只改外观，不动 DOM 层级、不动任何 prop —— wd-cell 的 is-link / border /
+ *    点击事件全部保留，所以 wot 的异步 CSS 会覆盖同特异性的规则，必须写到 0,3,0 以上。
+ * =========================================================================== */
+.kean-mine .mine-card .wd-cell {
+  background-color: transparent;
+  color: var(--kean-t1);
+}
+
+.kean-mine .mine-card .wd-cell.is-hover,
+.kean-mine .mine-card .wd-cell:active {
+  /* 按下反馈：极淡的一层白 + 主色微染，不用灰底（灰底在玻璃上显脏） */
+  background-color: rgba(77, 128, 240, 0.08);
+}
+
+/* 行标题：15px 正文档，字重 500 由字体回退决定，不额外加粗 */
+.kean-mine .mine-card .wd-cell__title {
+  color: var(--kean-t1);
+  font-size: var(--kean-fs-t3);
+}
+
+.kean-mine .mine-card .wd-cell__value,
+.kean-mine .mine-card .wd-cell__label {
+  color: var(--kean-t3);
+  font-size: var(--kean-fs-t4);
+}
+
+/* 右侧箭头：wot 默认 rgba(0,0,0,.25)（对白 3.1:1，纯装饰可接受），
+   这里提到辅助灰，和行标题形成清晰的两级。 */
+.kean-mine .mine-card .wd-cell__arrow-right {
+  color: var(--kean-t3);
+}
+
+/* 行与行之间：极细分隔线（首行不画，否则卡片上沿会出现"双线"）。 */
+.kean-mine .mine-card .wd-cell + .wd-cell .wd-cell__wrapper::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--kean-sp-4);
+  right: 0;
+  height: 1px;
+  background-image: var(--kean-glass-divider);
+  pointer-events: none;
+}
+
+/* ===========================================================================
+ * 二·补、自绘列表行（不用 wd-cell 时用这套）
+ * wd-cell 覆盖不了的时候（自定义右侧布局、多行、开关位…）直接用它，
+ * 别再每个页面自己写一遍 flex。高度 50px 与 wd-cell 的常规行对齐。
+ * ⚠️ 分隔线用 .mine-row + .mine-row 的 ::after，和 wd-cell 那条同一支笔。
+ * =========================================================================== */
+.kean-mine .mine-row {
+  display: flex;
+  position: relative;
+  box-sizing: border-box;
+  align-items: center;
+  min-height: 50px;
+  padding: 0 var(--kean-sp-4);
+  color: var(--kean-t1);
+  font-size: var(--kean-fs-t3);
+  line-height: var(--kean-lh-t3);
+}
+
+.kean-mine .mine-row:active {
+  background-color: rgba(77, 128, 240, 0.08);
+}
+
+.kean-mine .mine-row__icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: var(--kean-sp-3);
+}
+
+.kean-mine .mine-row__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--kean-t1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 右侧数值：辅助灰 + 等宽数字（列表数字不跳） */
+.kean-mine .mine-row__value {
+  flex-shrink: 0;
+  margin-left: var(--kean-sp-2);
+  color: var(--kean-t3);
+  font-size: var(--kean-fs-t4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 右侧箭头：用 CSS 画（1px 边框旋转 45deg），不新增元素、不依赖图标字体。
+   ⚠️ 旋转只在 8px 的箭头上，它内部没有任何 position:fixed 后代，安全。 */
+.kean-mine .mine-row__arrow {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-left: var(--kean-sp-2);
+  border-right: 1.5px solid var(--kean-t3);
+  border-bottom: 1.5px solid var(--kean-t3);
+  transform: rotate(-45deg);
+}
+
+.kean-mine .mine-row + .mine-row::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--kean-sp-4);
+  right: 0;
+  height: 1px;
+  background-image: var(--kean-glass-divider);
+  pointer-events: none;
+}
+
+/* ===========================================================================
+ * 三、行内线性图标（内联 data-uri SVG）
+ * 项目既有做法（auth-theme.css 的字段图标就是这么写的）：
+ * 不新增二进制素材、不依赖图标字体、不引入第三方 icon 包。
+ * 统一 20px 视觉尺寸 + currentColor 无法用于 background-image，
+ * 所以颜色直接写进 SVG 的 stroke：%235f6673 = --kean-t3。
+ * =========================================================================== */
+.kean-mine .mine-cico {
+  display: block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-right: var(--kean-sp-3);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 20px 20px;
+}
+
+.kean-mine .mine-cico--clock {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6673' stroke-width='1.7' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='8.4'/%3E%3Cpath d='M12 7.4V12l3.4 2'/%3E%3C/svg%3E");
+}
+
+.kean-mine .mine-cico--doc {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6673' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M13.4 3.4H7.2A2.2 2.2 0 0 0 5 5.6v12.8a2.2 2.2 0 0 0 2.2 2.2h9.6a2.2 2.2 0 0 0 2.2-2.2V8.8z'/%3E%3Cpath d='M13.4 3.4v5.4H19'/%3E%3C/svg%3E");
+}
+
+.kean-mine .mine-cico--pencil {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6673' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15.2 4.6 19.4 8.8 9 19.2H4.8v-4.2z'/%3E%3Cpath d='M11.4 8.4 15.6 12.6'/%3E%3C/svg%3E");
+}
+
+.kean-mine .mine-cico--star {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6673' stroke-width='1.7' stroke-linejoin='round'%3E%3Cpath d='M12 3.6l2.6 5.4 5.8.8-4.2 4 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.2-4 5.8-.8z'/%3E%3C/svg%3E");
+}
+
+.kean-mine .mine-cico--bubble {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6673' stroke-width='1.7' stroke-linejoin='round'%3E%3Cpath d='M20.4 12.6a8.4 8.4 0 1 0-3.7 3.6L21 18.6l-1-4.2a6.6 6.6 0 0 0 .4-.8Z'/%3E%3Cpath d='M8.6 11.8h6.8M8.6 8.8h4.2'/%3E%3C/svg%3E");
+}
+
+.kean-mine .mine-cico--block {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6673' stroke-width='1.7' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='8.4'/%3E%3Cpath d='M6 6l12 12'/%3E%3C/svg%3E");
+}
+
+.kean-mine .mine-cico--flag {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6673' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 20.4V4.4'/%3E%3Cpath d='M6 5.4h11.6l-2.2 3.8 2.2 3.8H6'/%3E%3C/svg%3E");
+}
+
+.kean-mine .mine-cico--gear {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6673' stroke-width='1.7' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='2.9'/%3E%3Cpath d='M19.1 14.4a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V20.5a2 2 0 1 1-4 0v-.12a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3.5a2 2 0 1 1 0-4h.12a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.08a1.7 1.7 0 0 0 1.03-1.56V3.5a2 2 0 1 1 4 0v.12a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08a1.7 1.7 0 0 0 1.56 1.03h.12a2 2 0 1 1 0 4h-.12a1.7 1.7 0 0 0-1.56 1.03z'/%3E%3C/svg%3E");
+}
+
+/* ===========================================================================
+ * 四、chip 标签（性别 / 限制 / 状态）
+ * 两档：中性白玻璃（.mine-chip）与语义色浅底（.mine-chip--warn/--ok/--danger）。
+ * 底 = rgba(色, .12) + 1px 边框同色 .22：**浅底深字**，在玻璃上比实心色块干净得多。
+ * =========================================================================== */
+.kean-mine .mine-chip {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--kean-glass-border);
+  border-radius: var(--kean-radius-sm);
+  background-color: rgba(255, 255, 255, 0.42);
+  color: var(--kean-t2);
+  font-size: var(--kean-fs-t5);
+  font-weight: var(--kean-fw-strong);
+  /* 20px 定高 + 不换行：chip 是"标签"，不是段落；宁可整枚换行也不要文字被裁一半 */
+  white-space: nowrap;
+  line-height: 18px;
+  letter-spacing: 0.02em;
+  box-shadow: var(--kean-shadow-chip);
+}
+
+.kean-mine .mine-chip--warn {
+  border-color: rgba(176, 106, 0, 0.24);
+  background-color: rgba(176, 106, 0, 0.12);
+  color: var(--kean-warn);
+}
+
+.kean-mine .mine-chip--ok {
+  border-color: rgba(35, 122, 74, 0.24);
+  background-color: rgba(35, 122, 74, 0.12);
+  color: var(--kean-ok);
+}
+
+.kean-mine .mine-chip--danger {
+  border-color: rgba(197, 52, 52, 0.24);
+  background-color: rgba(197, 52, 52, 0.12);
+  color: var(--kean-danger);
+}
+
+/* ===========================================================================
+ * 五、头像 / 徽标 badge
+ * =========================================================================== */
+.kean-mine .mine-avatar {
+  display: block;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border: 2px solid rgba(255, 255, 255, 0.82); /* 白圈：头像与底图之间的一道"贴纸"边 */
+  border-radius: 50%;
+  background-color: var(--kean-primary-soft);
+  box-shadow: 0 8px 20px -10px rgba(19, 34, 78, 0.55);
+}
+
+/* 纯色兜底头像（没有上传过头像时显示昵称首字） */
+.kean-mine .mine-avatar--text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: var(--kean-grad-primary);
+  color: #ffffff;
+  font-size: var(--kean-fs-t2);
+  font-weight: var(--kean-fw-strong);
+  text-shadow: 0 1px 4px rgba(19, 34, 78, 0.35);
+}
+
+/* 徽标：数字角标 / 状态圆点，24px 以内的小件，白色描边让它"浮"在头像上 */
+.kean-mine .mine-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--kean-glass-border);
+  border-radius: var(--kean-radius-pill);
+  background-color: rgba(255, 255, 255, 0.86);
+  color: var(--kean-t1);
+  font-size: var(--kean-fs-t5);
+  font-weight: var(--kean-fw-strong);
+  line-height: 20px;
+  box-shadow: var(--kean-shadow-chip);
+}
+
+/* ===========================================================================
+ * 六、按钮
+ * 主按钮与 auth 页的 .auth-btn--gradient 同一支笔（同渐变、同顶部内高光、同按下反馈）。
+ * ⚠️ 覆盖 .wd-button.is-primary 必须 0,4,0 以上，且同一条规则里同时给
+ *    background-color（纯色兜底）+ background-image（渐变），
+ *    绝不把 --wot-button-primary-bg-color 设成 transparent（见文件头约束 2）。
+ * =========================================================================== */
+.kean-mine .wd-button.mine-btn--primary.is-primary {
+  display: flex;
+  width: 100%;
+  height: 48px;
+  border-radius: var(--kean-radius-md);
+  background-color: var(--kean-grad-from);
+  background-image: var(--kean-grad-primary);
+  /* ① 顶部 1px 内高光 = 上表面受光，缺了它就是一整块扁平色块
+     ② 同色柔光：范围大、透明度低，不用纯黑影 */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), var(--kean-shadow-btn);
+  transition: transform 0.1s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+/* 按下：下沉 1px + 几乎看不出的内缩 + 柔光收一点（跟手 ≤120ms）
+   ⚠️ transform 只在按钮上；按钮内部没有任何弹层，不会成为 position:fixed 的包含块。 */
+.kean-mine .wd-button.mine-btn--primary.is-primary:active {
+  transform: translateY(1px) scale(0.995);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 8px 18px -10px rgba(58, 66, 216, 0.42);
+}
+
+/* 组件默认会画一条 1px 的 ::after 边框，渐变底下必须去掉，否则边缘发脏 */
+.kean-mine .wd-button.mine-btn--primary.is-primary::after {
+  border: none;
+  border-radius: var(--kean-radius-md);
+}
+
+.kean-mine .wd-button.mine-btn--primary.is-primary:not(.is-disabled) {
+  color: #ffffff;
+}
+
+.kean-mine .wd-button.mine-btn--primary .wd-button__text {
+  color: #ffffff;
+  font-size: var(--kean-fs-t3);
+  font-weight: var(--kean-fw-title);
+  letter-spacing: 0.05em;
+}
+
+/* 次要按钮：白色玻璃 + 主色蓝字 + 细描边（不抢主按钮） */
+.kean-mine .wd-button.mine-btn--ghost.is-primary {
+  height: 44px;
+  border: 1px solid rgba(58, 80, 126, 0.24);
+  border-radius: var(--kean-radius-md);
+  background-color: rgba(255, 255, 255, 0.78);
+  background-image: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.kean-mine .wd-button.mine-btn--ghost.is-primary::after {
+  border: none;
+  border-radius: var(--kean-radius-md);
+}
+
+.kean-mine .wd-button.mine-btn--ghost.is-primary .wd-button__text {
+  color: var(--kean-primary-ink);
+  font-size: var(--kean-fs-t4);
+  font-weight: var(--kean-fw-strong);
+}
+
+/* 文字按钮：没有底、没有边，只靠主色和字重表达可点 */
+.kean-mine .mine-btn--text {
+  color: var(--kean-primary-ink);
+  font-size: var(--kean-fs-t4);
+  font-weight: var(--kean-fw-strong);
+}
+
+/* ===========================================================================
+ * 七、输入 / 内嵌凹陷
+ * 内嵌感的公式：底色比板面**略暗**（板面 .14 → 这里 .08 白）+ 顶部一条 inset 暗线，
+ * 聚焦时反而"亮起来再浮起来"（亮底 + 主色描边 + 一圈外发光）。
+ * ⚠️ 同样 0,3,0 起步，压过 wd-input 的 `.wd-input[data-v-x]`。
+ * =========================================================================== */
+.kean-mine .mine-inset {
+  box-sizing: border-box;
+  border: 1px solid rgba(58, 80, 126, 0.16);
+  border-radius: var(--kean-radius-md);
+  background-color: var(--kean-glass-inset);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.02) 100%);
+  box-shadow: inset 0 1px 2px rgba(24, 41, 92, 0.06), inset 0 -1px 0 rgba(255, 255, 255, 0.5);
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.kean-mine .mine-inset:focus-within {
+  border-color: rgba(79, 70, 229, 0.45);
+  background-color: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14), inset 0 1px 2px rgba(24, 41, 92, 0.03);
+}
+
+.kean-mine .mine-inset .wd-input,
+.kean-mine .mine-inset .wd-textarea {
+  background-color: transparent;
+  background-image: none;
+}
+
+/* ===========================================================================
+ * 八、空状态 / 骨架屏 / 加载态
+ * 「我的」页当前没有用到这三件，但规范里要有，新页面直接用，别再各写一套。
+ * =========================================================================== */
+.kean-mine .mine-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 20px;
+  color: var(--kean-t3);
+  font-size: var(--kean-fs-t4);
+  line-height: var(--kean-lh-t4);
+  text-align: center;
+}
+
+.kean-mine .mine-empty__icon {
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--kean-sp-3);
+  border-radius: 50%;
+  background-color: rgba(24, 41, 92, 0.06);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6673' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8.4h16v9.2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z'/%3E%3Cpath d='M4 8.4 6.6 4.4h10.8L20 8.4M10 12.6h4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 22px 22px;
+}
+
+/* 骨架屏：底比卡片再亮/暗一档 + 横向微光扫过。
+   动画只用 background-position（不触发合成层、不会建包含块）。 */
+.kean-mine .mine-skeleton {
+  border-radius: var(--kean-radius-sm);
+  background-color: rgba(24, 41, 92, 0.06);
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.66) 50%, rgba(255, 255, 255, 0) 100%);
+  background-repeat: no-repeat;
+  background-size: 44% 100%;
+  background-position: -60% 0;
+  animation: kean-mine-shimmer 1.3s ease-in-out infinite;
+}
+
+@keyframes kean-mine-shimmer {
+  from {
+    background-position: -60% 0;
+  }
+  to {
+    background-position: 160% 0;
+  }
+}
+
+.kean-mine .mine-loading {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(77, 128, 240, 0.24);
+  border-top-color: var(--kean-primary);
+  border-radius: 50%;
+  animation: kean-mine-spin 0.75s linear infinite;
+}
+
+/* ⚠️ 只旋转这个 18px 的圈本身：它内部没有任何 position:fixed 后代，
+   所以 transform 不会劫持任何弹层。永远不要把 transform 加到卡片上。 */
+@keyframes kean-mine-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===========================================================================
+ * 九、壁纸皮肤（.page.skinned）下的整体反转
+ * 由 usePageWallpaper() 决定是否加 .skinned；这里把浅色玻璃换成深色玻璃 + 浅色文字。
+ * ⚠️ wallpaper-skin.css 里带 !important 的规则（.wd-cell 透明底、浅色字）依然胜出，
+ *    这是**期望行为**：皮肤模式下组件外观归 wallpaper-skin.css 管，本文件只管
+ *    自己新增的零件（头卡、卡片底、chip、统计数字…）。
+ * =========================================================================== */
+.page.skinned.kean-mine .mine-card {
+  border-color: var(--kean-sk-border);
+  background-color: var(--kean-sk-panel);
+  background-image: var(--kean-sk-frost);
+  box-shadow: var(--kean-sk-shadow);
+}
+
+.page.skinned.kean-mine .mine-card__title {
+  color: var(--kean-sk-text);
+}
+
+.page.skinned.kean-mine .mine-card__sub,
+.page.skinned.kean-mine .mine-group__title {
+  color: var(--kean-sk-faint);
+}
+
+.page.skinned.kean-mine .mine-card .wd-cell + .wd-cell .wd-cell__wrapper::after {
+  background-image: var(--kean-sk-divider);
+}
+
+.page.skinned.kean-mine .mine-chip {
+  border-color: var(--kean-sk-border);
+  background-color: rgba(255, 255, 255, 0.16);
+  color: var(--kean-sk-text);
+}
+
+.page.skinned.kean-mine .mine-chip--warn {
+  border-color: rgba(255, 214, 102, 0.4);
+  background-color: rgba(255, 215, 102, 0.18);
+  color: #ffe08a;
+}
+
+.page.skinned.kean-mine .mine-avatar {
+  border-color: rgba(255, 255, 255, 0.62);
+}
+
+.page.skinned.kean-mine .mine-badge {
+  border-color: var(--kean-sk-border);
+  background-color: rgba(20, 26, 44, 0.86);
+  color: var(--kean-sk-text);
+}
+
+/* 自绘行（.mine-row）在皮肤模式下的反色 */
+.page.skinned.kean-mine .mine-row,
+.page.skinned.kean-mine .mine-row .mine-row__label {
+  color: var(--kean-sk-text);
+}
+
+.page.skinned.kean-mine .mine-row .mine-row__value {
+  color: var(--kean-sk-faint);
+}
+
+.page.skinned.kean-mine .mine-row .mine-row__arrow {
+  border-color: var(--kean-sk-faint);
+}
+
+.page.skinned.kean-mine .mine-row + .mine-row::after {
+  background-image: var(--kean-sk-divider);
+}
+
+.page.skinned.kean-mine .mine-empty {
+  color: var(--kean-sk-faint);
+}
+
+/* 统计条：它是一块「浅色玻璃」，在深色壁纸上必须整体翻成深色玻璃，
+   否则会出现「深色头卡 + 一块白板 + 白字」这种最刺眼的组合。
+   （原先 wallpaper-skin.css 用 .page.skinned .stats / .num / .label 单独修，
+     现在统计条换了零件类，那三条选择器已不再命中，所以在这里统一接管。） */
+.page.skinned.kean-mine .mine-stats {
+  border-color: var(--kean-sk-border);
+  background-color: var(--kean-sk-panel);
+  background-image: var(--kean-sk-frost);
+  box-shadow: var(--kean-sk-shadow);
+}
+
+.page.skinned.kean-mine .mine-stat__num {
+  color: var(--kean-sk-text);
+}
+
+.page.skinned.kean-mine .mine-stat__label {
+  color: var(--kean-sk-faint);
+}
+
+.page.skinned.kean-mine .mine-stat + .mine-stat::before {
+  background-image: var(--kean-sk-divider);
+}
+
+/* 进行中卡里的任务卡：皮肤模式下 wallpaper-skin.css 已经把 .card 压成透明 + 白字，
+   这里只把它在玻璃容器里的"更薄一层白"换成"更薄一层黑"，保持同一层语义。 */
+.page.skinned.kean-mine .mine-ongoing .card {
+  background-color: rgba(12, 18, 34, 0.36);
+}
+
+.page.skinned.kean-mine .mine-ongoing .title,
+.page.skinned.kean-mine .mine-ongoing .meta {
+  color: var(--kean-sk-faint);
+}
+
+.page.skinned.kean-mine .mine-ongoing .name {
+  color: var(--kean-sk-text);
+}
+
+/* 未登录态：玻璃卡与卡片内文字同样翻深 */
+.page.skinned.kean-mine .mine-guest {
+  border-color: var(--kean-sk-border);
+  background-color: var(--kean-sk-panel);
+  background-image: var(--kean-sk-frost);
+  box-shadow: var(--kean-sk-shadow);
+}
+
+.page.skinned.kean-mine .mine-guest__name {
+  color: var(--kean-sk-text);
+}
+
+.page.skinned.kean-mine .mine-guest__sub {
+  color: var(--kean-sk-faint);
+}
+
+/* 锁形头像：皮肤模式下把"浅蓝柔光底"压成半透明深底，避免在星空上亮成一块白斑 */
+.page.skinned.kean-mine .mine-lock {
+  border-color: var(--kean-sk-border);
+  background-color: rgba(255, 255, 255, 0.1);
+  background-image: linear-gradient(158deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.04) 100%);
+}
+
+.page.skinned.kean-mine .mine-lock__badge {
+  border-color: var(--kean-sk-border);
+  background-color: rgba(20, 26, 44, 0.92);
+}
+
+/* ===========================================================================
+ * 十、「我的」页专用零件（头卡 / 统计条 / 分组 / 进行中卡 / 未登录态）
+ * 通用件（卡片 / 行 / chip / 头像 / 按钮 / 输入 / 空状态 / 骨架 / 加载）
+ * 到上面为止已经齐全，新页面用那部分就够了。本节只服务「我的」页，
+ * 以后逐页铺开时**不要抄这一节**，要抄就抄上面的通用件。
+ * =========================================================================== */
+
+/* ---------- 头卡 ----------
+ * 高级头卡的六件事：
+ *   ① 底图（用户上传的封面 / 默认 mine-hero-bg.png，由 .hero-bg 铺满）
+ *   ② 一层"洗色"（.hero-wash 白→雾蓝，把底图压柔；自定义封面时改压深）
+ *   ③ 冷调大范围投影（--kean-shadow-hero）—— 头卡是页面的视觉锚点，投影要比列表卡更重
+ *   ④ 上下亮暗边（--kean-glass-edge）
+ *   ⑤ 25px 半径 + 底部大留白：给悬浮的统计条留出重叠空间
+ *   ⑥ backdrop-filter blur(6px)：真正在底图上做一点模糊，玻璃感才不是贴纸
+ * ⚠️ 关于 ⑥：头卡内部**没有** position:fixed 后代（只有 absolute 的底图/洗色层、
+ *    头像、文字、chip；长按弹的是 uni.showActionSheet，宿主层弹层，与包含块无关），
+ *    所以这里用 backdrop-filter 是安全的（见文件头约束 3）。
+ *    本页唯一的 fixed 后代 <wd-toast> 是 .page 的直接子节点，在头卡**外面**。
+ * ⚠️ 头卡不用 transform：它虽然不是任何弹层的祖先，但"头卡不做位移/缩放"能让
+ *    以后有人往里塞 picker 时不会突然踩坑。 */
+.kean-mine .mine-hero {
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  min-height: 226px;
+  margin: 0 16px;
+  padding-bottom: 44px;
+  border: 1px solid var(--kean-glass-border);
+  border-radius: var(--kean-radius-lg);
+  box-shadow: var(--kean-shadow-hero), var(--kean-glass-edge);
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+}
+
+/* 没有 backdrop-filter 的端（老内核 / 小程序）：给一层更实的兜底底色，
+   保证任何情况下文字都可读，而不是"透明底 + 深字"。 */
+@supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
+  .kean-mine .mine-hero {
+    background-color: rgba(255, 255, 255, 0.42);
+  }
+}
+
+/* 洗色层：默认封面偏亮蓝 → 用白/雾蓝把它压柔（上 .10 / 中 .20 / 下 .42，
+ * 越往下越亮，正好和统计条的白玻璃接上，不会出现一条生硬的分界）。
+ * ⚠️ 透明度同样按总账：头卡上没有任何不透明白底，洗色层是"可读性的担保"。 */
+.kean-mine .mine-hero__wash {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  background-image: linear-gradient(
+    180deg,
+    rgba(244, 247, 251, 0.1) 0%,
+    rgba(244, 247, 251, 0.2) 52%,
+    rgba(255, 255, 255, 0.42) 100%
+  );
+}
+
+/* 用户自定义封面（可能是深色照片）→ 改成深色洗色，文字整体翻白 */
+.kean-mine .mine-hero--custom .mine-hero__wash {
+  background-image: linear-gradient(180deg, rgba(15, 23, 42, 0.36) 0%, rgba(15, 23, 42, 0.22) 52%, rgba(15, 23, 42, 0.1) 100%);
+}
+
+/* ⚠️ 壁纸模式下头卡必须更暗：流星壁纸整页是浅色，默认那层"雾蓝洗色"
+   叠在 backdrop 上会把头卡整体提亮，白字和星空一起糊掉。
+   这里把洗色换成深色，白字的对比度反而更稳。 */
+.page.skinned.kean-mine .mine-hero__wash {
+  background-image: linear-gradient(180deg, rgba(8, 12, 24, 0.52) 0%, rgba(8, 12, 24, 0.42) 52%, rgba(8, 12, 24, 0.32) 100%);
+}
+
+/* 导航标题：压在头卡上，白字 + 极淡投影（投影只为读得清，不许做成"发光字"）。 */
+.kean-mine .mine-hero .mine-nav-title {
+  position: relative;
+  z-index: 2;
+  padding: 10px 0 6px;
+  color: #ffffff;
+  font-size: var(--kean-fs-t1);
+  font-weight: var(--kean-fw-strong);
+  line-height: var(--kean-lh-t1);
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-shadow: 0 1px 6px rgba(19, 34, 78, 0.35);
+}
+
+/* 「更换背景」胶囊：白玻璃 + 深蓝字，不吃底图颜色（底图再花也读得清）。
+ * ⚠️ top 由模板里的 :style 按 statusBarHeight 计算，这里不硬编码 top。 */
+.kean-mine .mine-hero .mine-cover-btn {
+  position: absolute;
+  right: 14px;
+  z-index: 3;
+  padding: 5px 11px;
+  border: 1px solid var(--kean-glass-border);
+  border-radius: var(--kean-radius-sm);
+  background-color: rgba(255, 255, 255, 0.62);
+  color: var(--kean-primary-ink);
+  font-size: var(--kean-fs-t5);
+  font-weight: var(--kean-fw-strong);
+  line-height: 1.4;
+  box-shadow: var(--kean-shadow-chip);
+}
+
+.kean-mine .mine-hero--custom .mine-cover-btn {
+  border-color: rgba(255, 255, 255, 0.36);
+  background-color: rgba(15, 23, 42, 0.42);
+  color: #ffffff;
+}
+
+/* 头像 + 资料两栏：头像 72px（比原来的 64px 更像"头卡"的主角；矮屏降到 64px），
+ * 白圈 + 冷调投影让它从底图上"浮"起来。 */
+.kean-mine .mine-hero .mine-profile {
+  display: flex;
+  position: relative;
+  z-index: 2;
+  align-items: center;
+  padding: 8px 18px 0;
+}
+
+.kean-mine .mine-hero .mine-avatar {
+  width: 72px;
+  height: 72px;
+  margin-right: var(--kean-sp-4);
+  font-size: 26px;
+}
+
+.kean-mine .mine-profile__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.kean-mine .mine-name-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 昵称：20px/700 + 白字 + 投影。它是头卡的唯一大标题，
+ * 所以这里用 --kean-fs-t2（和卡片标题同档），不再往上加。 */
+.kean-mine .mine-hero .mine-nickname {
+  overflow: hidden;
+  max-width: 60%;
+  color: #ffffff;
+  font-size: var(--kean-fs-t2);
+  font-weight: var(--kean-fw-title);
+  line-height: var(--kean-lh-t2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 7px rgba(19, 34, 78, 0.36);
+}
+
+.kean-mine .mine-hero .mine-school {
+  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: var(--kean-fs-t4);
+  line-height: var(--kean-lh-t4);
+  text-shadow: 0 1px 5px rgba(19, 34, 78, 0.3);
+}
+
+/* 评分 / 完成次数：辅助层，统一极小档（--kean-fs-t5 = 11px）+ 同一档白，不换色 */
+.kean-mine .mine-hero .mine-rate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: var(--kean-fs-t5);
+  line-height: var(--kean-lh-t5);
+  text-shadow: 0 1px 4px rgba(19, 34, 78, 0.26);
+}
+
+.kean-mine .mine-hero .mine-rate + .mine-rate {
+  margin-top: 2px;
+}
+
+/* 限制/警告标签与状态标签同排 */
+.kean-mine .mine-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* 自定义封面：所有头卡文字翻白、洗色翻深（默认封面本来就是"深色头图"，
+ * 白字同样是可读的；这里只是把自定义封面的对比度再兜一层）。 */
+.kean-mine .mine-hero--custom .mine-nickname,
+.kean-mine .mine-hero--custom .mine-school,
+.kean-mine .mine-hero--custom .mine-rate,
+.kean-mine .mine-hero--custom .mine-nav-title {
+  color: #ffffff;
+}
+
+/* ---------- 统计条 ----------
+ * 用 -34px 负外边距压在头卡下沿之上：视觉上"浮"在头卡上，是这一版信息层级的骨架。
+ * ⚠️ 绝不能换成 transform: translateY(-34px) —— 那会让统计条成为包含块，
+ *    而它下面就装着 wd-cell（将来可能是 picker）。负 margin 没有这个副作用。 */
+.kean-mine .mine-stats {
+  display: flex;
+  position: relative;
+  z-index: 3;
+  margin: -34px 16px 0;
+  padding: 14px 0;
+  border-radius: var(--kean-radius-md);
+  background-color: var(--kean-glass-panel);
+  background-image: var(--kean-glass-frost);
+  border: 1px solid var(--kean-glass-border);
+  box-shadow: var(--kean-shadow-glass), var(--kean-glass-edge);
+}
+
+.kean-mine .mine-stat {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+/* 统计格之间的极细分隔：一条 22px 宽的短线**压在数字上方**（不是竖线格子），
+ * 只在第 2、3 格出现（+ 选择器）。 */
+.kean-mine .mine-stat + .mine-stat::before {
+  content: "";
+  display: block;
+  width: 22px;
+  height: 1px;
+  margin: 0 auto 8px;
+  background-image: var(--kean-glass-divider);
+}
+
+/* 数字：22px/700 + 等宽数字（切页时数字宽度不跳） */
+.kean-mine .mine-stat__num {
+  color: var(--kean-t1);
+  font-size: 22px;
+  font-weight: var(--kean-fw-title);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.kean-mine .mine-stat__label {
+  margin-top: 4px;
+  color: var(--kean-t3);
+  font-size: var(--kean-fs-t5);
+  line-height: var(--kean-lh-t5);
+}
+
+/* ---------- 「进行中的代课」容器 ----------
+ * ⚠️ 这里**没有** backdrop-filter：它内部就是 wd-cell 风格的任务卡，
+ *    而且以后可能塞 popup/picker。玻璃感靠同一套 外框+内板 的白阶。
+ * 内部任务卡（OngoingTasks 的 .card）是组件局部样式，本文件管不到，
+ * 所以给容器加一点上下内边距，让那几张卡不会贴着玻璃边。 */
+.kean-mine .mine-ongoing {
+  margin: 16px 16px 0;
+  padding: 6px 0 4px;
+  border-radius: var(--kean-radius-md);
+}
+
+/* OngoingTasks 是共用组件，这里只改"在「我的」页玻璃卡里"的观感：
+ * 把它的卡片底改成一层更薄的白，免得白卡叠白卡。
+ * ⚠️ 选择器写到 0,3,0（.kean-mine .mine-ongoing + 组件类），
+ *    因为组件样式是 scoped（.card[data-v-x] = 0,2,0）且异步在后。 */
+.kean-mine .mine-ongoing .card {
+  border-radius: var(--kean-radius-sm);
+  background-color: rgba(255, 255, 255, 0.42);
+}
+
+.kean-mine .mine-ongoing .title {
+  color: var(--kean-t3);
+}
+
+.kean-mine .mine-ongoing .name {
+  color: var(--kean-t1);
+}
+
+.kean-mine .mine-ongoing .meta {
+  color: var(--kean-t3);
+}
+
+/* 重试行：危险色 + 12px，点击区域给足高度（手指友好） */
+.kean-mine .mine-retry {
+  padding: 8px 18px 4px;
+  color: var(--kean-danger);
+  font-size: var(--kean-fs-t5);
+  line-height: var(--kean-lh-t5);
+}
+
+/* ---------- 分组 ---------- */
+.kean-mine .mine-group {
+  margin: 20px 16px 0;
+}
+
+/* 列表卡内部：给行一点水平内边距（wd-cell 自己已有 15px，这里只补上下留白） */
+.kean-mine .mine-card--list {
+  padding: 4px 0;
+  overflow: hidden; /* 让首尾行的按下态/分隔线被圆角裁掉，不会在圆角外露一个方角 */
+}
+
+/* ---------- 未登录（guest）状态 ----------
+ * 与登录后的头卡同一套视觉语言：玻璃卡片 + 蓝紫渐变主按钮。
+ * ⚠️ 不加 backdrop-filter：guest 分支与 wd-toast 同级都在 .page 下，
+ *    而 .guest 里没有 fixed 后代，但也没必要模糊（背景是纯渐变，模糊看不出来）。 */
+.kean-mine .mine-guest {
+  box-sizing: border-box;
+  margin: 40px 16px 0;
+  padding: 32px 20px 28px;
+  border: 1px solid var(--kean-glass-border);
+  border-radius: var(--kean-radius-lg);
+  background-color: var(--kean-glass-panel);
+  background-image: var(--kean-glass-frost);
+  box-shadow: var(--kean-shadow-glass), var(--kean-glass-edge);
+  text-align: center;
+}
+
+/* 锁形头像：主色柔光底 + 白色锁徽标（不用 emoji，避免各端字形差异） */
+.kean-mine .mine-lock {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  margin: 0 auto;
+  border: 1px solid var(--kean-glass-border);
+  border-radius: 50%;
+  background-color: var(--kean-primary-soft);
+  background-image: linear-gradient(158deg, rgba(255, 255, 255, 0.72) 0%, rgba(219, 231, 255, 0.5) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.kean-mine .mine-lock__icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 36px 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='%232b4fa8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='24' cy='18' r='7.6'/%3E%3Cpath d='M9.6 39.6c1.6-8.2 6.8-12.4 14.4-12.4s12.8 4.2 14.4 12.4'/%3E%3C/svg%3E");
+}
+
+.kean-mine .mine-lock__badge {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--kean-glass-border);
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.94);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232b4fa8' stroke-width='1.9' stroke-linecap='round'%3E%3Crect x='5' y='10.6' width='14' height='9.4' rx='2.6'/%3E%3Cpath d='M8.4 10.6V8.2a3.6 3.6 0 0 1 7.2 0v2.4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 14px 14px;
+  box-shadow: var(--kean-shadow-chip);
+}
+
+.kean-mine .mine-guest__name {
+  margin-top: 18px;
+  color: var(--kean-t1);
+  font-size: var(--kean-fs-t2);
+  font-weight: var(--kean-fw-title);
+  line-height: var(--kean-lh-t2);
+}
+
+.kean-mine .mine-guest__sub {
+  margin-top: 8px;
+  color: var(--kean-t3);
+  font-size: var(--kean-fs-t4);
+  line-height: var(--kean-lh-t4);
+}
+
+.kean-mine .mine-guest__action {
+  width: 220px;
+  max-width: 100%;
+  margin: 26px auto 0;
+}
+
+/* ---------- 页脚留白：给底部 tabbar / 安全区让位 ---------- */
+.kean-mine .mine-foot {
+  height: calc(24px + env(safe-area-inset-bottom));
+}
+
+/* ===========================================================================
+ * 十一、矮屏（iPhone SE 667 / 横屏小窗）：压缩留白，保证不溢出、可滚动
+ * 只压间距与头卡高度，**不缩小正文**（--kean-fs-t3 跟随用户的字体大小偏好，
+ * 矮屏上把字缩回去等于偷偷推翻用户的设置）。
+ * =========================================================================== */
+@media screen and (max-height: 720px) {
+  .kean-mine .mine-hero {
+    min-height: 202px;
+    padding-bottom: 38px;
+  }
+
+  .kean-mine .mine-hero .mine-avatar {
+    width: 64px;
+    height: 64px;
+    margin-right: 12px;
+  }
+
+  .kean-mine .mine-stats {
+    margin-top: -30px;
+    padding: 12px 0;
+  }
+
+  .kean-mine .mine-guest {
+    margin-top: 26px;
+    padding: 26px 18px 22px;
+  }
+}
+
+@media screen and (max-height: 600px) {
+  .kean-mine .mine-hero {
+    min-height: 186px;
+  }
+
+  .kean-mine .mine-guest {
+    margin-top: 16px;
+    padding: 22px 16px 18px;
+  }
+
+  .kean-mine .mine-lock {
+    width: 72px;
+    height: 72px;
+  }
+
+  .kean-mine .mine-lock__icon {
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+    background-size: 30px 30px;
+  }
+}
+
+/* 窄屏（iPhone SE 320/360）：昵称与学校行更容易挤，让昵称的可视宽度再收一点 */
+@media screen and (max-width: 360px) {
+  .kean-mine .mine-hero .mine-nickname {
+    max-width: 52%;
+  }
+
+  .kean-mine .mine-hero .mine-profile {
+    padding: 8px 14px 0;
+  }
+}
+
+

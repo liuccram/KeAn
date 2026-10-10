@@ -28,6 +28,13 @@ public class Notification {
 
     private Long bizId;
 
+    /**
+     * 收件角色：PUBLISHER / APPLICANT（取值与 review.target_role 一致，见 V36）。
+     * 可空 —— 只标注"同一事件同时发给两方"的那几类通知；
+     * 系统通知、申请通知等单一收件角色的通知一律为 null（历史行为同样为 null）。
+     */
+    private String receiverRole;
+
     private Integer readFlag;
 
     @TableField(fill = FieldFill.INSERT)

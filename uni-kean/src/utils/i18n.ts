@@ -96,7 +96,161 @@ const DICT = {
     authPasswordMismatch: "两次输入的密码不一致",
     authSmsCodeInvalid: "请填写 6 位验证码",
     // 返回入口文案（auth 三页是自定义导航栏、没有原生返回键，登录页的返回胶囊会用到这里）
-    authBack: "返回"
+    authBack: "返回",
+    // —— 消息体系（消息 Tab / 会话列表 / 通知列表 / 聊天页）——
+    // ⚠️ 文案顺序 zh/en 严格 1:1 同序；时间文案给的是"模板"（{mon}/{d}/{y}），
+    //    由 format.ts 的 formatRelativeStamp / formatNoticeDay 填值 ——
+    //    zh/en 的日期书写顺序不同（3月8日 vs Mar 8），所以绝不能自己拼字符串。
+    msgYesterday: "昨天",
+    msgWeekday1: "周一",
+    msgWeekday2: "周二",
+    msgWeekday3: "周三",
+    msgWeekday4: "周四",
+    msgWeekday5: "周五",
+    msgWeekday6: "周六",
+    msgWeekday7: "周日",
+    msgMonthDay: "{mon}月{d}日",
+    msgYearMonthDay: "{y}年{mon}月{d}日",
+    msgDayToday: "今天",
+    msgDayYesterday: "昨天",
+    msgDayEarlier: "更早",
+    msgTodo: "待处理",
+    msgTypeApply: "申请",
+    msgTypeTask: "履约",
+    msgTypeReview: "评价",
+    msgTypeChange: "变动",
+    msgTypeReport: "举报",
+    msgTypeSystem: "系统",
+    msgPreviewImage: "[图片]",
+    msgPreviewRecall: "[已撤回]",
+    msgPreviewNone: "暂无消息",
+    // —— 通知定型文案（按后端 type + bizType + 给定 title 渲染；未命中的类型一律回退原样显示）——
+    // ⚠️ 每条都必须回答：谁 / 对哪个对象 / 发生了什么 / 我要不要动手。
+    // ⚠️ 不要和后端已有的自由正文重复：正文里的「处理结果 / 回复 / 变更如下」几行由
+    //    noticeBodyLines() 原样附在后面（见 pages/message/index.vue 的 G 节）。
+    msgActorPublisher: "发布者",
+    msgActorApplicant: "代课者",
+    msgActorStudent: "同学",
+    msgActorAdmin: "管理员",
+    // 拿不到课程名时的兜底名词：宁可说「这节课」，也绝不渲染出空的【】/「」
+    msgCommonClass: "这节课",
+    // 申请（type=APPLICATION）
+    msgAppNewApply: "「{object}」有人申请了",
+    msgAppNewApplyBody: "{name} 申请了这门代课，去详情页处理。",
+    msgAppWithdrawn: "「{object}」有人撤回了申请",
+    msgAppWithdrawnBody: "{name} 撤回了申请，去详情页查看剩下的申请人。",
+    msgAppAccepted: "你申请的「{object}」已被接受",
+    msgAppAcceptedBody: "发布者已选中你，按提示完成履约即可。",
+    msgAppNotPicked: "你申请的「{object}」未被选中",
+    msgAppNotPickedBody: "发布者已选择其他人，可以继续找其他代课。",
+    msgAppRejectedByPublisher: "你申请的「{object}」已被拒绝",
+    msgAppRejectedByPublisherBody: "发布者拒绝了这次申请，可以继续找其他代课。",
+    // 履约（type=TASK + bizType=TASK）——以下按【收件角色】分开：同一事件发布者与代课者文案不同
+    // 即将开始：代课者
+    msgFulStartsInApplicant: "你要代课的「{object}」{minutes} 分钟后开始",
+    msgFulStartsInApplicantBody: "上课时间 {time}，请按时到场。",
+    // 即将开始：发布者；后端 V36 起标题已带课程名（「课程名」N 分钟后开始，之前只有正文才有），
+    // 所以课程名正常都能取到；历史通知取不到时走下面的兜底句，绝不渲染出空的【】/「」。
+    msgFulStartsInPublisher: "你的「{object}」{minutes} 分钟后开始",
+    msgFulStartsInPublisherBody: "上课时间 {time}，请关注代课者 {name} 是否到场。",
+    msgFulStartsInFallback: "有一节课 {minutes} 分钟后开始",
+    msgFulStartsInFallbackBody: "上课时间 {time}，点击查看是哪节课。",
+    msgFulPhotoDue: "「{object}」可以上传现场照片了",
+    msgFulPhotoDueBody: "请在开课前 5 分钟至下课前上传现场照片，下课前未上传任务会过期。",
+    msgFulPhotoNeeded: "「{object}」等待代课者上传照片",
+    msgFulPhotoNeededBody: "上课时间 {time}，代课者 {name} 还没上传照片，下课前未上传任务会过期。",
+    msgFulPhotoUploaded: "「{object}」代课者已上传现场照片",
+    msgFulPhotoUploadedBody: "代课者 {name} 已上传照片，下课后可以确认完成。",
+    msgFulSelfPhotoUploaded: "你已上传「{object}」的现场照片",
+    msgFulSelfPhotoUploadedBody: "下课后可以确认完成。",
+    // 可以确认完成：发布者
+    msgFulConfirmable: "「{object}」已下课，可以确认完成了",
+    msgFulConfirmableBody: "下课时间 {time}，你或代课者确认后即可完成。",
+    // 可以确认完成：代课者
+    msgFulConfirmableApplicant: "「{object}」已下课，可以确认完成了",
+    msgFulConfirmableApplicantBody: "下课时间 {time}，你或发布者确认后即可完成。",
+    // 取消：收件人是代课者，发布者取消的
+    msgFulCancelledByPublisher: "你申请的「{object}」已被发布者取消",
+    msgFulCancelledByPublisherBody: "发布者取消了这次代课，无需再履约。",
+    // 取消：收件人是发布者，代课者取消的（必须写清是谁取消的）
+    msgFulCancelledByApplicant: "「{object}」已被代课者取消",
+    msgFulCancelledByApplicantBody: "代课者 {name} 取消了这次代课，可以重新发布或另找代课。",
+    // 取消：收件人是发布者，管理员取消的
+    msgFulCancelledByAdminPublisher: "你发布的「{object}」已被管理员取消",
+    msgFulCancelledByAdminPublisherBody: "平台已取消这次代课，你无需再履约。",
+    // 取消：收件人是代课者，管理员取消的
+    msgFulCancelledByAdminApplicant: "你要代课的「{object}」已被管理员取消",
+    msgFulCancelledByAdminApplicantBody: "平台已取消这次代课，你无需再履约。",
+    // 过期：发布者，已匹配但代课者没传照片
+    msgFulExpiredMatchedPublisher: "「{object}」已过期",
+    msgFulExpiredMatchedPublisherBody: "下课前代课者 {name} 没有上传现场照片，任务已过期。",
+    // 过期：代课者，已匹配但自己没传照片
+    msgFulExpiredMatched: "「{object}」已过期",
+    msgFulExpiredMatchedBody: "下课前你没有上传现场照片，任务已过期。",
+    // 过期：发布者，到点仍无人匹配
+    msgFulExpiredUnmatched: "你发布的「{object}」已过期",
+    msgFulExpiredUnmatchedBody: "到了上课时间仍无人完成匹配，任务已过期。",
+    // 过期：代课者，到点仍无人匹配
+    msgFulExpiredUnmatchedApplicant: "「{object}」已过期",
+    msgFulExpiredUnmatchedApplicantBody: "到了上课时间仍无人完成匹配，任务已过期。",
+    // 信息被修改：收件人是发布者自己
+    msgFulUpdatedByPublisher: "你发布的「{object}」已更新",
+    // 信息被修改：收件人是申请者 / 已被接受的代课者
+    msgFulUpdatedBy: "「{object}」已被发布者 {name} 修改",
+    msgFulUpdatedBody: "发布者改了这门代课的信息，具体变更见下方；请确认还能按时到场。",
+    // 评价（bizType=REVIEW）
+    msgRevCompleted: "「{object}」已完成，请评价对方",
+    msgRevCompletedBody: "为 {name} 打分，评价会显示在对方的信用记录里。",
+    msgRevAutoCompletedPublisher: "「{object}」已自动完成，请为代课者打星",
+    msgRevAutoCompletedPublisherBody: "已过下课 24 小时，系统自动确认完成；请为代课者 {name} 打分。",
+    msgRevAutoCompleted: "「{object}」已自动完成，请为发布者打星",
+    msgRevAutoCompletedBody: "已过下课 24 小时，系统自动确认完成；请为发布者 {name} 打分。",
+    // 举报与申诉（type=SYSTEM + bizType=REPORT）
+    msgRepAppealed: "被举报人已对你举报的「{object}」提出申诉",
+    msgRepAppealedBody: "平台将复核这条举报的处理结果。",
+    // 管理员侧（收件人是管理员）
+    msgRepAppealReceived: "「{object}」的当事人提出了申诉",
+    msgRepAppealReceivedBody: "{name} 就「{object}」的处理结果提出申诉，请尽快复核。",
+    msgRepReportReceived: "收到新举报：{object}（{typeLabel}）",
+    msgRepReportReceivedBody: "{name} 提交了一条举报（{typeLabel}），对象：{object}，请尽快处理。",
+    msgRepFeedbackReceived: "收到新反馈：{object}（{typeLabel}）",
+    msgRepFeedbackReceivedBody: "{name} 提交了一条反馈（{typeLabel}），请尽快查看。",
+    // 申诉处理结果：收件人是申诉者
+    msgRepAppealAccepted: "你的申诉已受理",
+    msgRepAppealAcceptedBody: "平台将结合复核调整账号限制。",
+    msgRepAppealRejected: "你的申诉未获支持",
+    msgRepAppealRejectedBody: "原处理结果维持不变。",
+    msgRepReportHandled: "你举报的「{object}」已处理",
+    msgRepReportHandledBody: "平台已完成处理，结果见下方。",
+    msgRepReportRejected: "你举报的「{object}」未予处理",
+    msgRepReportRejectedBody: "经核实未予处理，如有异议可继续申诉。",
+    msgRepFeedbackReplied: "你的反馈已收到回复",
+    msgRepFeedbackRepliedBody: "平台已回复这条反馈，内容见下方。",
+    msgRepFeedbackRejected: "你的反馈未予采纳",
+    msgRepFeedbackRejectedBody: "平台评估后暂未采纳，感谢你的建议。",
+    // 处理结果：收件人是被举报/被处理的一方
+    msgRepAccountWarned: "你收到一条平台警告",
+    msgRepAccountWarnedBody: "因举报（{typeLabel}），平台已对你的账号或内容作出处理；如有异议可在「举报与反馈」中申诉。",
+    msgRepAccountRestricted: "你的账号功能已被限制",
+    msgRepAccountRestrictedBody: "因举报（{typeLabel}），部分功能已被限制；如有异议可在「举报与反馈」中申诉。",
+    msgRepContentRemoved: "你的相关内容已被处理",
+    msgRepContentRemovedBody: "因举报（{typeLabel}），平台已处理相关内容；如有异议可在「举报与反馈」中申诉。",
+    msgRepMarkHandled: "请点击查看处理结果",
+    msgRepMarkReply: "请点击查看回复",
+    msgRepMarkNotHandled: "请点击查看说明",
+    // 账号与安全（type=SYSTEM + bizType=USER）
+    msgSysNewDevice: "账号安全提醒",
+    msgSysNewDeviceBody: "你的账号在一台新设备上登录，如非本人操作请立即修改密码。",
+    msgSysSingleDevice: "账号安全提醒",
+    msgSysSingleDeviceBody: "已开启「仅允许一台设备在线」，其他设备已被退出登录。",
+    msgSysPasswordReset: "密码已被重置",
+    msgSysPasswordResetBody: "管理员已重置你的登录密码，请使用新密码登录。",
+    msgSysUnbanned: "账号已解封",
+    msgSysUnbannedBody: "你的账号已恢复正常，可以继续发布与申请代课。",
+    msgSysBanned: "账号已被封禁",
+    msgSysBannedBody: "你的账号已被封禁，原因见下方；如有异议可在「举报与反馈」中申诉。",
+    msgSysRestrictions: "账号权限已调整",
+    msgSysRestrictionsBody: "平台调整了你的账号权限，当前限制见下方。"
   },
   en: {
     theme: "Appearance",
@@ -191,9 +345,154 @@ const DICT = {
     authRuleNewConfirmRequired: "Please enter the new password again",
     authPasswordMismatch: "The two passwords do not match",
     authSmsCodeInvalid: "Please enter the 6-digit code",
-    authBack: "Back"
+    authBack: "Back",
+    // —— messages (message tab / session list / notification list / chat) ——
+    msgYesterday: "Yesterday",
+    msgWeekday1: "Mon",
+    msgWeekday2: "Tue",
+    msgWeekday3: "Wed",
+    msgWeekday4: "Thu",
+    msgWeekday5: "Fri",
+    msgWeekday6: "Sat",
+    msgWeekday7: "Sun",
+    msgMonthDay: "{mon} {d}",
+    msgYearMonthDay: "{mon} {d}, {y}",
+    msgDayToday: "Today",
+    msgDayYesterday: "Yesterday",
+    msgDayEarlier: "Earlier",
+    msgTodo: "Action needed",
+    msgTypeApply: "Application",
+    msgTypeTask: "Fulfilment",
+    msgTypeReview: "Review",
+    msgTypeChange: "Update",
+    msgTypeReport: "Report",
+    msgTypeSystem: "System",
+    msgPreviewImage: "[Photo]",
+    msgPreviewRecall: "[Recalled]",
+    msgPreviewNone: "No messages yet",
+    msgActorPublisher: "the publisher",
+    msgActorApplicant: "the substitute",
+    msgActorStudent: "your classmate",
+    msgActorAdmin: "the admin",
+    // fallback noun when the class name cannot be extracted: never render an empty 【】/「」
+    msgCommonClass: "this class",
+    msgAppNewApply: "New application for “{object}”",
+    msgAppNewApplyBody: "{name} applied for this class. Open the task to review it.",
+    msgAppWithdrawn: "An application for “{object}” was withdrawn",
+    msgAppWithdrawnBody: "{name} withdrew the application. Open the task to see who is left.",
+    msgAppAccepted: "Your application for “{object}” was accepted",
+    msgAppAcceptedBody: "The publisher picked you. Follow the steps to fulfil the class.",
+    msgAppNotPicked: "Your application for “{object}” was not selected",
+    msgAppNotPickedBody: "The publisher chose someone else. You can keep looking for other classes.",
+    msgAppRejectedByPublisher: "Your application for “{object}” was declined",
+    msgAppRejectedByPublisherBody: "The publisher declined this application. You can keep looking for other classes.",
+    // fulfilment (type=TASK + bizType=TASK) — split by RECIPIENT ROLE: same event, different copy
+    // starting soon: substitute
+    msgFulStartsInApplicant: "The class you cover, “{object}”, starts in {minutes} min",
+    msgFulStartsInApplicantBody: "Class starts at {time}. Please be there on time.",
+    // starting soon: publisher; from backend V36 the title already carries the class name
+    // ("「class」starts in N min", previously only the body had it), so it normally resolves;
+    // for historical rows that lack it we use the fallback line below, never an empty 【】/“”.
+    msgFulStartsInPublisher: "Your “{object}” starts in {minutes} min",
+    msgFulStartsInPublisherBody: "Class starts at {time}. Check that {name} shows up.",
+    msgFulStartsInFallback: "A class starts in {minutes} min",
+    msgFulStartsInFallbackBody: "Class starts at {time}. Tap to see which class it is.",
+    msgFulPhotoDue: "You can upload the on-site photo for “{object}” now",
+    msgFulPhotoDueBody: "Upload it from 5 minutes before the class until the class ends, or the task will expire.",
+    msgFulPhotoNeeded: "“{object}” is waiting for the on-site photo",
+    msgFulPhotoNeededBody: "Class starts at {time}. {name} has not uploaded a photo yet; the task expires when the class ends.",
+    msgFulPhotoUploaded: "The on-site photo for “{object}” was uploaded",
+    msgFulPhotoUploadedBody: "{name} uploaded the photo. You can confirm completion after the class.",
+    msgFulSelfPhotoUploaded: "You uploaded the on-site photo for “{object}”",
+    msgFulSelfPhotoUploadedBody: "You can confirm completion after the class.",
+    // ready to confirm: publisher
+    msgFulConfirmable: "“{object}” has ended — ready to confirm",
+    msgFulConfirmableBody: "The class ended at {time}. You or the substitute can confirm to finish it.",
+    // ready to confirm: substitute
+    msgFulConfirmableApplicant: "“{object}” has ended — ready to confirm",
+    msgFulConfirmableApplicantBody: "The class ended at {time}. You or the publisher can confirm to finish it.",
+    // cancelled: recipient is the substitute, the publisher cancelled
+    msgFulCancelledByPublisher: "Your application for “{object}” was cancelled by the publisher",
+    msgFulCancelledByPublisherBody: "The publisher cancelled this class, so nothing is left to fulfil.",
+    // cancelled: recipient is the publisher, the substitute cancelled (say clearly WHO cancelled)
+    msgFulCancelledByApplicant: "“{object}” was cancelled by the substitute",
+    msgFulCancelledByApplicantBody: "{name} cancelled this class. You can republish it or find another substitute.",
+    // cancelled: recipient is the publisher, an admin cancelled
+    msgFulCancelledByAdminPublisher: "Your “{object}” was cancelled by an admin",
+    msgFulCancelledByAdminPublisherBody: "The platform cancelled this class; there is nothing left to fulfil.",
+    // cancelled: recipient is the substitute, an admin cancelled
+    msgFulCancelledByAdminApplicant: "The class you cover, “{object}”, was cancelled by an admin",
+    msgFulCancelledByAdminApplicantBody: "The platform cancelled this class; there is nothing left to fulfil.",
+    // expired: publisher, matched but the substitute uploaded no photo
+    msgFulExpiredMatchedPublisher: "“{object}” has expired",
+    msgFulExpiredMatchedPublisherBody: "The substitute {name} uploaded no on-site photo before the class ended, so the task expired.",
+    // expired: substitute, matched but you uploaded no photo
+    msgFulExpiredMatched: "“{object}” has expired",
+    msgFulExpiredMatchedBody: "You uploaded no on-site photo before the class ended, so the task expired.",
+    // expired: publisher, nobody matched in time
+    msgFulExpiredUnmatched: "Your “{object}” has expired",
+    msgFulExpiredUnmatchedBody: "Class time arrived with no match, so the task expired.",
+    // expired: substitute, nobody matched in time
+    msgFulExpiredUnmatchedApplicant: "“{object}” has expired",
+    msgFulExpiredUnmatchedApplicantBody: "Class time arrived with no match, so the task expired.",
+    // info edited: recipient is the publisher themselves
+    msgFulUpdatedByPublisher: "Your “{object}” was updated",
+    // info edited: recipient is an applicant / the accepted substitute
+    msgFulUpdatedBy: "“{object}” was edited by the publisher {name}",
+    msgFulUpdatedBody: "The publisher changed this class; the exact changes are below. Please confirm you can still make it.",
+    msgRevCompleted: "“{object}” is done — please rate your counterpart",
+    msgRevCompletedBody: "Rate {name}; the review shows on their credit record.",
+    msgRevAutoCompletedPublisher: "“{object}” was auto-completed — please rate the substitute",
+    msgRevAutoCompletedPublisherBody: "24 hours past the class, the system confirmed completion. Please rate the substitute {name}.",
+    msgRevAutoCompleted: "“{object}” was auto-completed — please rate the publisher",
+    msgRevAutoCompletedBody: "24 hours past the class, the system confirmed completion. Please rate the publisher {name}.",
+    msgRepAppealed: "The reported user appealed your report on “{object}”",
+    msgRepAppealedBody: "The platform will review this report's outcome.",
+    // admin side (recipient is an admin)
+    msgRepAppealReceived: "New appeal on “{object}”",
+    msgRepAppealReceivedBody: "{name} appealed the outcome of “{object}”. Please review it soon.",
+    msgRepReportReceived: "New report: {object} ({typeLabel})",
+    msgRepReportReceivedBody: "{name} filed a report ({typeLabel}) against: {object}. Please handle it soon.",
+    msgRepFeedbackReceived: "New feedback: {object} ({typeLabel})",
+    msgRepFeedbackReceivedBody: "{name} submitted feedback ({typeLabel}). Please take a look soon.",
+    msgRepAppealAccepted: "Your appeal was accepted",
+    msgRepAppealAcceptedBody: "The platform will review and adjust the account restrictions.",
+    msgRepAppealRejected: "Your appeal was not supported",
+    msgRepAppealRejectedBody: "The original outcome stands.",
+    msgRepReportHandled: "Your report on “{object}” was handled",
+    msgRepReportHandledBody: "The platform has finished handling it; the outcome is below.",
+    msgRepReportRejected: "Your report on “{object}” was not upheld",
+    msgRepReportRejectedBody: "After review it was not upheld. You can still file an appeal.",
+    msgRepFeedbackReplied: "Your feedback has a reply",
+    msgRepFeedbackRepliedBody: "The platform replied to this feedback; the reply is below.",
+    msgRepFeedbackRejected: "Your feedback was not adopted",
+    msgRepFeedbackRejectedBody: "It was reviewed but not adopted. Thanks for the suggestion.",
+    // outcome copy: recipient is the reported / actioned party
+    msgRepAccountWarned: "You received a platform warning",
+    msgRepAccountWarnedBody: "Following a report ({typeLabel}), the platform acted on your account or content. You can appeal in “Reports & feedback”.",
+    msgRepAccountRestricted: "Your account features were restricted",
+    msgRepAccountRestrictedBody: "Following a report ({typeLabel}), some features are now restricted. You can appeal in “Reports & feedback”.",
+    msgRepContentRemoved: "The related content was removed",
+    msgRepContentRemovedBody: "Following a report ({typeLabel}), the platform removed the related content. You can appeal in “Reports & feedback”.",
+    msgRepMarkHandled: "Tap to see the outcome",
+    msgRepMarkReply: "Tap to see the reply",
+    msgRepMarkNotHandled: "Tap to see the details",
+    msgSysNewDevice: "Account security alert",
+    msgSysNewDeviceBody: "Your account was signed in from a new device. If this wasn't you, change your password now.",
+    msgSysSingleDevice: "Account security alert",
+    msgSysSingleDeviceBody: "“Only one device online” is on, so your other devices were signed out.",
+    msgSysPasswordReset: "Password was reset",
+    msgSysPasswordResetBody: "An admin reset your sign-in password. Please use the new one.",
+    msgSysUnbanned: "Account unbanned",
+    msgSysUnbannedBody: "Your account is back to normal — you can publish and apply for classes again.",
+    msgSysBanned: "Account banned",
+    msgSysBannedBody: "Your account was banned; the reason is below. You can appeal in “Reports & feedback”.",
+    msgSysRestrictions: "Account permissions changed",
+    msgSysRestrictionsBody: "The platform adjusted your permissions; current limits are below."
   }
 } as const;
+
+export type MsgKey = keyof typeof DICT.zh;
 
 export function t(key: keyof typeof DICT.zh, lang?: Lang) {
   const current = lang ?? loadDisplayPrefs().lang;

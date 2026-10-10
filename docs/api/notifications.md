@@ -41,6 +41,16 @@ Phase 4 本阶段只落地站内消息通知；当时未做的对象存储与私
 
 `type`：`APPLICATION` / `TASK`。点击 `bizType=TASK` 的消息进入任务详情。
 
+`receiverRole`（V36 起可选出现）：`PUBLISHER` / `APPLICANT`，表示这条通知的**收件角色**。
+同一个事件同时发给发布者与代课者时，两边标题往往相同，客户端原先只能从正文里的互斥短语反推
+收件角色（`uni-kean/src/pages/message/index.vue` 的 `roleOf`）；有了这个字段就不用再猜。
+只在这类"双角色"通知上落值，其余通知（系统 / 申请 / 举报…）与 **V36 之前的历史通知都是 NULL**，
+此时字段整个不出现（`default-property-inclusion=non_null`），客户端按原启发式降级处理。
+取值口径与 `review.target_role`（V24）一致；迁移见 `kean/src/main/resources/db/migration/V36__notification_receiver_role.sql`。
+
+> 另：履约类"即将开始"的通知标题自 V36 起由「距上课还有 N 分钟」改为「课程名」N 分钟后开始，
+> 正文一字未动。客户端两种标题都认。
+
 ---
 
 ## GET /api/notifications/unread-count

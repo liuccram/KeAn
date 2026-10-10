@@ -867,25 +867,29 @@ public class TaskServiceImpl implements TaskService {
                                     ApplicationStatus.PENDING.name())
             );
             for (SubstituteApplication application : applicants) {
+                // 收件人是申请者/已接受的代课者
                 notificationService.notifyUser(
                         application.getApplicantId(),
                         "TASK",
                         "发布者已取消代课",
                         "代课「" + course + "」已被发布者 " + publisher + " 取消。" + extra,
                         "TASK",
-                        task.getId()
+                        task.getId(),
+                        NotificationService.RECEIVER_ROLE_APPLICANT
                 );
             }
             return;
         }
         String applicant = displayName(acceptedApplicantId(task), "代课者");
+        // 收件人是发布者
         notificationService.notifyUser(
                 task.getPublisherId(),
                 "TASK",
                 "代课者已取消代课",
                 "代课「" + course + "」已被代课者 " + applicant + " 取消。" + extra,
                 "TASK",
-                task.getId()
+                task.getId(),
+                NotificationService.RECEIVER_ROLE_PUBLISHER
         );
     }
 

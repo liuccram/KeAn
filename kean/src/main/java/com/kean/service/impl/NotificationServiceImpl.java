@@ -34,6 +34,14 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyUser(Long userId, String type, String title, String content, String bizType, Long bizId) {
+        // 历史签名保持不变：直接委托给带角色的重载并把角色置为 null（不标注收件角色）。
+        // 所有不需要标注角色的调用点（系统通知 / 申请通知 / 举报通知…）因此一行都不用改，
+        // 落库行为与 V36 之前逐字相同。
+        notifyUser(userId, type, title, content, bizType, bizId, null);
+    }
+
+    @Override
+    public void notifyUser(Long userId, String type, String title, String content, String bizType, Long bizId, String receiverRole) {
         if (userId == null) {
             return;
         }
@@ -44,6 +52,9 @@ public class NotificationServiceImpl implements NotificationService {
         notification.setContent(content);
         notification.setBizType(bizType);
         notification.setBizId(bizId);
+        // 收件角色：只有"同一事件同时发给两方"的写入点会传 PUBLISHER / APPLICANT，
+        // 其余调用点传 null（与 V36 之前的历史行同形）。
+        notification.setReceiverRole(receiverRole);
         notification.setReadFlag(0);
         notificationMapper.insert(notification);
         realtimePublisher.notice(userId, type, bizType, bizId);
@@ -135,7 +146,8 @@ public class NotificationServiceImpl implements NotificationService {
                 item.getBizType(),
                 item.getBizId(),
                 item.getReadFlag(),
-                item.getCreatedAt()
+                item.getCreatedAt(),
+                item.getReceiverRole()
         );
     }
 }

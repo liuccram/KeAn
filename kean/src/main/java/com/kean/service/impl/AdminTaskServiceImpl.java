@@ -196,13 +196,15 @@ public class AdminTaskServiceImpl implements AdminTaskService {
     private void notifyCancelled(SubstituteTask task, String reason) {
         String course = task.getCourseNameSnapshot() == null ? "代课任务" : task.getCourseNameSnapshot();
         String extra = StringUtils.hasText(reason) ? " 原因：" + reason : "";
+        // 管理员取消：两边标题相同，靠 receiverRole 区分收件角色
         notificationService.notifyUser(
                 task.getPublisherId(),
                 "TASK",
                 "管理员已取消代课",
                 "代课「" + course + "」已被管理员取消。" + extra,
                 "TASK",
-                task.getId()
+                task.getId(),
+                NotificationService.RECEIVER_ROLE_PUBLISHER
         );
         Long applicantId = acceptedApplicantId(task);
         if (applicantId != null) {
@@ -212,7 +214,8 @@ public class AdminTaskServiceImpl implements AdminTaskService {
                     "管理员已取消代课",
                     "代课「" + course + "」已被管理员取消。" + extra,
                     "TASK",
-                    task.getId()
+                    task.getId(),
+                    NotificationService.RECEIVER_ROLE_APPLICANT
             );
         }
     }

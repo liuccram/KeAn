@@ -1,0 +1,36 @@
+-- 课安 V36：给站内通知补一个「收件角色」字段。
+--
+-- 背景：notification 只有收件人（user_id），没有「这一条是发给发布者还是代课者」的字段。
+-- 同一个标题在很多场景下**同时发给两方**（即将开始 / 待对方上传照片 / 可以确认完成 /
+-- 自动完成 / 取消 / 过期），客户端因此只能从**正文里的互斥短语**反推收件角色
+-- （见 uni-kean/src/pages/message/index.vue 的 roleOf）。这很脆弱：后端哪天改了那些短语，
+-- 判定就退化成中性，那条通知只能显示对两方都成立的中性句。
+--
+-- 本轮把角色落库：写入点显式给出 PUBLISHER / APPLICANT，客户端优先读该字段，
+-- 读不到（历史数据 NULL）再回退到原来的正文启发式 —— 双保险，历史数据也不丢文案。
+--
+-- 取值与 review.target_role（V24）完全一致：PUBLISHER / APPLICANT，都是 VARCHAR。
+--
+-- 本列**只做加法**：ADD COLUMN / 允许 NULL / 不写 DEFAULT / 不改既有列 / 不删数据 / 不建索引。
+-- 可空是刻意的：加上去之后，历史行与"不标注角色"的写入点（SYSTEM、申请、举报等）都是 NULL。
+--
+-- ⚠️ 刻意**不写 AFTER**（与 V9/V33 的风格不同）：MySQL 8.0 从 8.0.12 起支持
+--    ALGORITHM=INSTANT 加列（只改数据字典，不重建表），但**早期 8.0.x 只允许把新列加在表尾**；
+--    "可以加在任意位置"要到 8.0.29 才放开（见 MySQL 8.0 手册 / 各云厂商 RDS 文档的
+--    INSTANT ADD COLUMN 约束："New columns are placed at the end and the column sequence
+--    cannot be changed. In versions later than MySQL 8.0.29, columns can be added to any position."）。
+--    生产镜像用的是浮动 tag `mysql:8.0`，无法确定小版本，所以这里选"追加到表尾"这条
+--    在所有 8.0.x 上都不会退化成 INPLACE 重建表的写法。列顺序对代码没有任何影响：
+--    实体按列名映射（map-underscore-to-camel-case），返回体的字段顺序由 NotificationVO 决定。
+--    （这里也不显式写 ALGORITHM=INSTANT：万一服务器不支持，显式指定会让迁移直接失败，
+--      而交给 MySQL 自己挑算法时它会优先用 INSTANT。）
+--
+-- ⚠️ 历史行**刻意不回填**：
+--   1. 正文是散文，用正则去反推角色正是本轮要摆脱的做法，拿它回填等于把猜测固化进库；
+--   2. notification 是只增不减的流水表，全表 UPDATE 会在大表上产生长事务、大量 undo 与行锁，
+--      为了一个"客户端已经能降级处理"的字段去锁表不划算；
+--   3. 客户端对 NULL 已能降级（回退启发式），回填没有收益。
+--    所以历史行保持 NULL 是**预期状态**，不是遗漏。
+
+ALTER TABLE notification
+    ADD COLUMN receiver_role VARCHAR(16) NULL COMMENT '收件角色 PUBLISHER/APPLICANT；NULL=未标注（V36 之前的历史通知）';
