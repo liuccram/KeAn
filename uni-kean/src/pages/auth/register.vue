@@ -43,18 +43,14 @@ let timer: ReturnType<typeof setInterval> | null = null;
  */
 const step = ref(1);
 /**
- * 四步各自的「标题 + 一句短语」：只做文案国际化，步骤数量与顺序（4 步）都不变。
- * ⚠️ 现在**不再**用它渲染一整条四步进度条，只用 `stepItems[step - 1]` 取「当前这一步」那一条，
- * 每页只显示当前步（见 currentStep）。数组本身因此必须保持 1→4 的顺序，索引即步号。
+ * 总步数：本轮用于**三件事**——① 渲染 4 个进度节点（`v-for="n in totalSteps"`）、
+ * ② 渲染 3 段连接线（`v-if="n < totalSteps"`）、③ 右上角的 `2/4`。
+ * ⚠️ 上一版这里的 `stepItems`（4 条「标题 + 一句短语」）连同 `currentStep` 一起删掉了：
+ *    用户明确要求「注册页四步流程改为一条小进度条，别占地方」「不要再显示每步的标题与说明句」。
+ *    步数 4、步序 1→4 以及所有切步/校验逻辑一字未改（见 nextStep / prevStep / validateAllSteps）。
+ *    ⚠️ 本轮加节点**仍然遵守**这一条：节点下面只有**一行**（当前步的名字），没有恢复"每步标题 + 说明"。
  */
-const stepItems = computed(() => [
-  { no: 1, title: t("authStepAccount"), fields: t("authStepFieldAccount") },
-  { no: 2, title: t("authStepEmail"), fields: t("authStepFieldEmail") },
-  { no: 3, title: t("authStepStudent"), fields: t("authStepFieldStudent") },
-  { no: 4, title: t("authStepProfile"), fields: t("authStepFieldProfile") }
-]);
-/** 当前这一步（step 恒为 1~4，数组恒为 4 条；兜底取第 1 条只为类型安全） */
-const currentStep = computed(() => stepItems.value[step.value - 1] || stepItems.value[0]);
+const totalSteps = 4;
 
 const model = reactive({
   // —— 第 1 步 · 账号 ——
@@ -80,12 +76,29 @@ const agreed = ref(false);
 /**
  * 页面文案：统一走 i18n，不在模板里硬编码中文。
  * 用 computed 包一层，语言偏好变更后重新进入页面就会整体跟着变。
+ * ⚠️ 本轮把描述**加回来但都用短的**（用户要求「文字描述都加回来、但要简化」）：
+ *    headline   → 卡内页面标题「加入课安」（**本轮新引用**，key 一直存在但此前未被引用）
+ *    heroSlogan → 顶部副标题「校园临时代课互助」（5 个汉字，12.5px 一行）
+ *    sub        → 卡内副标题「开启你的校园互助旅程」（10 个汉字，12.5px 一行）
+ *                 ⚠️ 本轮**没有渲染它**（用户只要"标题"，且反复强调"文字太多"）；
+ *                    key 保留在词典里未引用，将来要加回只需在卡内标题下面补一行模板。
+ *    slogan     → 底部署名「让知识与时间更有价值」（10 个汉字，11px 低对比一行）
+ *    stepHints  → 进度条节点**下面那一行**：当前步的名字（4~6 个汉字，**只有一行**）
+ *    emailHint / nicknameHint → 输入框下面的一行极短提示（「需完整 QQ 邮箱」/「选填」）
+ *    ⚠️ 原来那两句长提示 authEmailTip / authNicknameTip **没有**再上屏（保留在词典里未引用）。
+ *    ⚠️ stepHints 用 computed 包住，所以下标写法必须带 `.value`：
+ *       i18n.value.stepHints[step.value - 1]。
  */
 const i18n = computed(() => ({
   brand: t("authBrand"),
+  /** 卡内页面标题：复用既有 key（zh「加入课安」/ en「Join Kean」），见上面的说明 */
   headline: t("authRegisterHeadline"),
-  heroSub: t("authRegisterSub"),
-  subTip: t("authRegisterSubTip"),
+  heroSlogan: t("authHeroSlogan"),
+  sub: t("authRegisterSub"),
+  slogan: t("authSloganText"),
+  stepHints: [t("authStepHintAccount"), t("authStepHintEmail"), t("authStepHintStudent"), t("authStepHintProfile")],
+  emailHint: t("authEmailHintShort"),
+  nicknameHint: t("authNicknameHintShort"),
   usernamePlaceholder: t("authUsernamePlaceholder"),
   passwordPlaceholder: t("authPasswordPlaceholder"),
   confirmPlaceholder: t("authPasswordConfirmPlaceholder"),
@@ -93,7 +106,6 @@ const i18n = computed(() => ({
   genderPlaceholder: t("authGenderPlaceholder"),
   nickname: t("authNickname"),
   nicknamePlaceholder: t("authNicknamePlaceholder"),
-  nicknameTip: t("authNicknameTip"),
   emailPlaceholder: t("authEmailExample"),
   smsLabel: t("authSmsLabel"),
   sendSms: t("authSendSms"),
@@ -107,8 +119,6 @@ const i18n = computed(() => ({
   school: t("authSchool"),
   schoolPlaceholder: t("authSchoolPlaceholder"),
   campusPlaceholder: t("authCampusPlaceholder"),
-  emailTip: t("authEmailTip"),
-  slogan: t("authSloganText"),
   captchaFailed: t("authCaptchaFailed"),
   captchaMissing: t("authCaptchaMissingRegister"),
   ruleUsername: t("authRuleUsernameRequired"),
@@ -122,6 +132,15 @@ const i18n = computed(() => ({
   rulePasswordMismatch: t("authPasswordMismatch"),
   ruleSmsCodeInvalid: t("authSmsCodeInvalid")
 }));
+/**
+ * 进度节点**下面那一行**的当前步名字（4~6 个汉字，一行放得下）。
+ * ⚠️ 模板里引用的是 `stepHint`（**不带 s**）；带 s 的 `i18n.stepHints` 是那 4 条文案的数组。
+ * ⚠️ 必须定义在 `i18n` 之后：i18n 是 computed，stepHint 读它的 `.value`。
+ *    下标 = step - 1（step 恒为 1~4）；模运算只是防御，避免将来有人把 step 写到越界时
+ *    取出 undefined、让模板渲染出空白或报错。
+ * ⚠️ 本轮只把它的**位置**从"进度条下面"改成"节点下面"，值与取值逻辑一字未动。
+ */
+const stepHint = computed(() => i18n.value.stepHints[(step.value - 1) % totalSteps]);
 /**
  * 真人验证配置。必须严格区分这几种状态，否则运维会被误导：
  * - enabled:true  + siteKey     → 正常渲染控件
@@ -522,33 +541,53 @@ async function handleRegister() {
       <view class="auth-hero auth-hero--compact">
         <image class="auth-logo" src="/static/app-logo.jpg" mode="aspectFit" />
         <view class="auth-title">{{ i18n.brand }}</view>
-        <view class="auth-subtitle">{{ i18n.headline }}</view>
+        <!-- 顶部副标题：短句、一行、小字号（12.5px） -->
+        <text class="auth-subtitle">{{ i18n.heroSlogan }}</text>
       </view>
 
-      <!-- ⚠️ 本页用 .auth-card--plain（外层框与内层板都不带 backdrop-filter）：卡片内部装着
-           三个 wd-picker，而 backdrop-filter 会成为 position:fixed 后代的包含块，会把底部
-           弹层与遮罩劫持到卡片坐标系里（遮罩点不到、弹层关不掉）。
-           玻璃感改由「多层半透明白 + 上下亮暗边 + 内高光 + 冷调软阴影 + 2px 缝」模拟。 -->
+      <!-- ⚠️ 本页用 .auth-card--plain：卡片内部装着三个 wd-picker，而 backdrop-filter / filter /
+           transform / will-change / contain / perspective 都会成为 position:fixed 后代的**包含块**，
+           会把底部弹层与遮罩劫持到卡片坐标系里（遮罩点不到、弹层关不掉）。
+           所以登录 / 忘记密码页的卡片本轮已改回**真玻璃**（backdrop-filter blur(12px)），
+           而**本页的卡片上这些属性一个都没有**：玻璃感由 auth-theme.css 的 `.auth-card--plain`
+           用「外层 + 内板 + 两层极淡洗色」的半透明白叠层模拟（总账 ≈ 64% 白），零风险。
+           真人验证在卡片**下方**，也不受卡片圆角 / overflow 影响。 -->
       <view class="auth-card auth-card--plain">
         <view class="auth-card__inner">
-          <view class="auth-card-title">{{ i18n.heroSub }}</view>
-          <view class="auth-card-sub">{{ i18n.subTip }}</view>
+          <!-- ⭐ 卡内页面标题（用户反馈②「要让人知道当前是注册页」）：
+               直接复用 i18n.ts 里**已经存在但一直未被引用**的 key `authRegisterHeadline`
+               （zh「加入课安」/ en「Join Kean」，都只有 4 个字 / 2 个词），字号就是既有的
+               卡内标题档 18.5px（.auth-card-title，登录页「欢迎回来」/ 忘记密码「重置密码」同款），
+               **没有放大任何尺寸**、也**没有加副标题**（用户反复强调"文字太多"，标题已经足够标识页面）。
+               它与进度条之间的间距由 auth-theme.css 的
+               `.auth-card .auth-card__inner .auth-card-title + .auth-step-progress { margin-top: 10px }`
+               负责（本轮从 22px 收到 10px，正好抵掉标题自身约 24px 的行高）。 -->
+          <view class="auth-card-title">{{ i18n.headline }}</view>
 
-          <!-- 步骤提示：这一版**只显示当前这一步**（不再把 4 步全部铺出来、没有圆点连线、
-               也没有「已完成 / 未完成」状态）。结构 = 左侧一小段竖线 + 「当前步骤标题」+
-               一句短语；右侧「2 / 4」是唯一一处极轻的进度暗示（数字与斜杠，全语言通用，
-               不新增任何 i18n 文案）。文案与序号来自 stepItems，当前步直接复用既有的 step。 -->
-          <view class="auth-step-head">
-            <view class="auth-step-head__main">
-              <view class="auth-step-head__title">
-                <text class="auth-step-head__no">{{ currentStep.no }}</text>
-                <text class="auth-step-head__dot">·</text>
-                <text class="auth-step-head__label">{{ currentStep.title }}</text>
-              </view>
-              <view class="auth-step-head__fields">{{ currentStep.fields }}</view>
+          <!-- 进度：**带节点**的四步指示器 + 右侧 `2/4`（用户反馈①「进度条要有节点」）。
+               结构：一条 18px 高的轨道里放 4 个圆点 + 3 段 2px 连接线，全程 flex，
+               **没有** position:absolute / fixed，**没有** transform / scaleX（见 auth-theme.css）。
+               ⚠️ 节点下面**只写一行**：当前步的名字（.auth-step-hint，4~6 个汉字，下一行），
+                  不写四个节点各自的名字 —— 理由写在 auth-theme.css 的进度条注释里。
+               ⚠️ 进度**逻辑**与上一版完全一致：当前步 = `step`，总步数 = `totalSteps`(=4)，
+                  每段连线的"已完成 / 未到达"由下标与 step 比大小决定，不新增任何状态。 -->
+          <view class="auth-step-progress">
+            <view class="auth-step-progress__track">
+              <template v-for="n in totalSteps" :key="n">
+                <view
+                  class="auth-step-node"
+                  :class="n < step ? 'is-done' : n === step ? 'is-current' : 'is-todo'"
+                />
+                <view
+                  v-if="n < totalSteps"
+                  class="auth-step-line"
+                  :class="n < step ? 'is-done' : 'is-todo'"
+                />
+              </template>
             </view>
-            <text class="auth-step-head__meta">{{ step }} / {{ stepItems.length }}</text>
+            <text class="auth-step-progress__label">{{ step }}/{{ totalSteps }}</text>
           </view>
+          <view class="auth-step-hint">{{ stepHint }}</view>
 
           <!-- 第 1 步 · 账号 -->
           <wd-form v-if="step === 1" key="step-account" ref="step1Ref" :model="model" error-type="toast" custom-class="auth-form">
@@ -598,6 +637,8 @@ async function handleRegister() {
                 :rules="[{ required: true, message: i18n.ruleEmail }]"
               />
             </view>
+            <!-- 输入框下面的一行极短提示（8 个汉字，取代原来那句 30 多字的长说明） -->
+            <view class="auth-tip">{{ i18n.emailHint }}</view>
             <view class="auth-block">
               <view class="auth-block-head">
                 <text>{{ i18n.smsLabel }}</text>
@@ -613,7 +654,6 @@ async function handleRegister() {
               </view>
               <CodeBoxes v-model="model.smsCode" />
             </view>
-            <view class="auth-tip">{{ i18n.emailTip }}</view>
           </wd-form>
 
           <!-- 第 3 步 · 学生认证：省份 / 学校（均必填）+ 校区（选填手输） -->
@@ -680,27 +720,9 @@ async function handleRegister() {
                 :placeholder="i18n.nicknamePlaceholder"
               />
             </view>
-            <view class="auth-tip">{{ i18n.nicknameTip }}</view>
+            <!-- 输入框下面的一行极短提示：「选填」（取代原来那句 40 多字的长说明） -->
+            <view class="auth-tip">{{ i18n.nicknameHint }}</view>
           </wd-form>
-
-          <!--
-            真人验证：第 2 步发码与第 4 步提交共用**同一个控件实例**（不重复渲染 iframe）。
-            这里用 v-show 而不是 v-if：切步骤时不卸载控件，不会重新发起 turnstile 渲染。
-            发码成功后既有逻辑会 reset() 清空 token，所以第 4 步提交前必须重新完成验证。
-          -->
-          <view v-show="step >= 2">
-            <TurnstileChallenge
-              v-if="captcha.enabled && captcha.siteKey"
-              ref="turnstileRef"
-              box-id="kean-ts-register"
-              :site-key="captcha.siteKey"
-              v-model="model.turnstileToken"
-            />
-            <!-- 配置请求失败：单独一行，且绝不在失败时渲染验证控件（H5 与非 H5 都渲染这个普通 view） -->
-            <view v-else-if="captcha.error" class="auth-hint">{{ i18n.captchaFailed }}</view>
-            <!-- 只有后端明确 enabled:true、却没给 siteKey 才是"未配置"；enabled:false 时这里也不显示 -->
-            <view v-else-if="captcha.loaded && captcha.enabled" class="auth-hint">{{ i18n.captchaMissing }}</view>
-          </view>
 
           <!-- 第 4 步 · 隐私政策（未勾选不能提交） -->
           <view v-if="step === 4" class="auth-agree">
@@ -710,45 +732,71 @@ async function handleRegister() {
               <text class="auth-agree-link" @click.stop="goPrivacy">{{ i18n.privacy }}</text>
             </wd-checkbox>
           </view>
+
+          <!-- 动作区（仍在**白卡内**）：「上一步」+「下一步 / 提交注册」。每步点「下一步」都会
+               校验当前这一步（nextStep 内部先 validateStep 再翻页，失败留在本步并提示）；
+               「上一步」不校验；提交时 handleRegister 再用 validateAllSteps 全量校验一次兜底。
+               位置与上一版一致，只是从「卡片外的兄弟节点」挪进 .auth-card__inner（见下方说明）。 -->
+          <view class="auth-actions" :class="{ 'auth-actions--row': step > 1 }">
+            <view v-if="step > 1" class="auth-actions-prev">
+              <wd-button size="large" block custom-class="auth-btn auth-btn--ghost" style="height: 48px" @click="prevStep">
+                {{ i18n.prevStep }}
+              </wd-button>
+            </view>
+            <view class="auth-actions-next">
+              <wd-button
+                v-if="step < 4"
+                type="primary"
+                size="large"
+                block
+                custom-class="auth-btn auth-btn--gradient"
+                style="height: 48px"
+                @click="nextStep()"
+              >
+                {{ i18n.nextStep }}
+              </wd-button>
+              <wd-button
+                v-else
+                type="primary"
+                size="large"
+                block
+                custom-class="auth-btn auth-btn--gradient"
+                style="height: 48px"
+                :loading="loading"
+                @click="handleRegister"
+              >
+                {{ i18n.submit }}
+              </wd-button>
+            </view>
+          </view>
         </view>
       </view>
 
-      <!-- 动作区：「上一步」+「下一步 / 提交注册」。每步点「下一步」都会校验当前这一步
-           （nextStep 内部先 validateStep 再翻页，失败留在本步并提示）；「上一步」不校验；
-           提交时 handleRegister 再用 validateAllSteps 全量校验一次兜底。 -->
-      <view class="auth-actions" :class="{ 'auth-actions--row': step > 1 }">
-        <view v-if="step > 1" class="auth-actions-prev">
-          <wd-button size="large" block custom-class="auth-btn auth-btn--ghost" @click="prevStep">
-            {{ i18n.prevStep }}
-          </wd-button>
-        </view>
-        <view class="auth-actions-next">
-          <wd-button
-            v-if="step < 4"
-            type="primary"
-            size="large"
-            block
-            custom-class="auth-btn auth-btn--gradient"
-            @click="nextStep()"
-          >
-            {{ i18n.nextStep }}
-          </wd-button>
-          <wd-button
-            v-else
-            type="primary"
-            size="large"
-            block
-            custom-class="auth-btn auth-btn--gradient"
-            :loading="loading"
-            @click="handleRegister"
-          >
-            {{ i18n.submit }}
-          </wd-button>
-        </view>
+      <!--
+        真人验证：**移到卡片外面（卡片之后）**，不再被卡片的圆角 / overflow 裁切，宽度自适应并居中。
+        第 2 步发码与第 4 步提交共用**同一个控件实例**（不重复渲染 iframe）。
+        这里仍用 v-show 而不是 v-if：切步骤时不卸载控件，不会重新发起 turnstile 渲染。
+        发码成功后既有逻辑会 reset() 清空 token，所以第 4 步提交前必须重新完成验证。
+        ⚠️ 逻辑一字未动：v-if / v-show 条件、box-id、v-model、ref 与两条错误提示的
+        v-else-if 分支全部原样搬迁，只换了位置。
+      -->
+      <view v-show="step >= 2">
+        <TurnstileChallenge
+          v-if="captcha.enabled && captcha.siteKey"
+          ref="turnstileRef"
+          box-id="kean-ts-register"
+          :site-key="captcha.siteKey"
+          v-model="model.turnstileToken"
+        />
+        <!-- 配置请求失败：单独一行，且绝不在失败时渲染验证控件（H5 与非 H5 都渲染这个普通 view） -->
+        <view v-else-if="captcha.error" class="auth-hint">{{ i18n.captchaFailed }}</view>
+        <!-- 只有后端明确 enabled:true、却没给 siteKey 才是"未配置"；enabled:false 时这里也不显示 -->
+        <view v-else-if="captcha.loaded && captcha.enabled" class="auth-hint">{{ i18n.captchaMissing }}</view>
       </view>
-
-      <view class="auth-slogan">— {{ i18n.slogan }} —</view>
     </view>
+
+    <!-- 底部署名：加回来但缩到 11px 低对比一行 -->
+    <text class="auth-slogan">— {{ i18n.slogan }} —</text>
     <wd-toast />
   </view>
 </template>

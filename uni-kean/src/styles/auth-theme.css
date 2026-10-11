@@ -1,13 +1,19 @@
 /**
- * 登录 / 注册 / 忘记密码（auth 三页）共用的视觉皮肤 —— 全量重写版。
+ * 登录 / 注册 / 忘记密码（auth 三页）共用的视觉皮肤 —— **本批：三页统一实心白卡**。
  *
- * 设计语言：半透明玻璃面板（glass）+ 柔和光晕 + 蓝白主色 + 少量紫色科技感。
+ * 设计语言：**实心白卡**（#ffffff + 1px 极浅边框 + 上沿 1px 细亮线 + 冷调软阴影，约 20px 圆角）
+ * + 蓝白主色 + 少量紫色科技感。⭐ 上一轮的「玻璃卡」**本批不启用**（用户：「只把卡片改回白框，
+ * 其余原样」）—— 本文件现在**一个 backdrop-filter 都没有**（已 grep 自证 = 0 条声明）。
+ * ⚠️ 硬约束不变：卡片上不许有任何"会建包含块"的属性（backdrop-filter / filter / transform /
+ * will-change / contain / perspective），因为注册页卡片里装着 3 个 wd-picker（见约束 3）。
+ * 尺寸基准（与上一轮**完全一致，一处未放大**）：
+ *   Logo 76 / 56 · 顶部「课安」25 · 卡内标题 18.5 · 输入胶囊 47 · 按钮 48 · 卡内边距 18/17（+外框 2px）。
  * 目标观感是「成熟创业公司的产品」，不是后台管理系统、不是模板化蓝色渐变登录页。
  * 三个页面共用这一份皮肤，选择器全部收在 `.kean-auth` 之下：
  * 页面根节点必须同时带 `page kean-auth` 两个类才会命中，对其它页面零影响。
  *
  * ───────────────────────────────────────────────────────────────────────────
- * ⚠️ 两条必须遵守的工程约束（上一轮在这里翻过车，改动前请先读）
+ * ⚠️ 三条必须遵守的工程约束（前两条历史上在这里翻过车，改动前请先读）
  * ───────────────────────────────────────────────────────────────────────────
  *
  * 【约束 1 · CSS 加载顺序】本文件由 App.vue 的 @import 打进**入口样式表**（dist 里是
@@ -25,25 +31,23 @@
  * 正确做法：在**同一条更高特异性的规则**里同时声明 background-color（纯色兜底）
  * 和 background-image（渐变），永远不动 --wot-button-primary-bg-color。
  *
- * 【约束 3 · backdrop-filter 的包含块陷阱】CSS 规范规定：backdrop-filter 不为 none 的
- * 元素，会成为其 position:fixed 后代的**包含块**。注册页的 wd-picker 底部弹层与其遮罩
- * 正是 position:fixed：一旦「装着 picker 的容器」带上 backdrop-filter，弹层就不再贴屏幕
- * 底部、遮罩也只剩容器那么大 → **遮罩点不到、弹层关不掉**（上一轮的 bug）。
- * 因此本文件里 backdrop-filter **只出现在两个地方**，都保证内部没有任何 position:fixed 后代：
- *   ① `.auth-back`（40px 的返回圆钮，纯图标）
- *   ② `.auth-card`（外层玻璃框）。⚠️ 注意这里说的是**外层框**：
- *      外层框里装着 wd-form / wd-input / wd-picker，注册页的 picker 就在它内部，
- *      所以**注册页必须用 `.auth-card--plain`**（把外层框的 backdrop-filter 显式去掉）；
- *      登录页与忘记密码页没有 picker，才用带 backdrop-filter 的默认版本。
- * 同样会建包含块的属性一律不要加在卡片上，本项目已核对过这些：
- *   `transform`（含 translate/scale/rotate 与 3D 变体）、`filter` 不为 none、
- *   `backdrop-filter` 不为 none、`will-change: transform|filter|perspective`、
- *   `contain: paint|layout|strict|content`、`container-type`、`perspective`、
- *   `mask`/`clip-path` 的个别情形。**`.auth-card` 上这些属性一个都没有**，
- *   只有 `.auth-btn--gradient:active` 的 `transform: translateY(1px) scale(.995)`
- *   —— 按钮不是任何弹层的祖先，安全。
- * 另外 `filter: blur()` 不是 backdrop-filter，但同样会给后代建包含块 —— 所以背景模糊层
- * `.auth-sky` 是 .auth-content 的**兄弟节点**，永远不是任何弹层的祖先。
+ * 【约束 3 · backdrop-filter 的包含块陷阱 —— 本批**三页都不加**，这是最重要的一条】
+ * CSS 规范规定：backdrop-filter 不为 none 的元素，会成为其 position:fixed 后代的**包含块**
+ * （transform / filter / will-change / contain / perspective 同理）。wd-picker 的底部弹层
+ * 与其遮罩正是 position:fixed（见 node_modules/wot-design-uni/components/wd-picker/wd-picker.vue
+ * 第 41 行的 wd-popup 与 wd-popup.vue 里的 wd-overlay）：一旦「装着 picker 的容器」带上
+ * backdrop-filter，弹层就不再贴屏幕底部、遮罩也只剩容器那么大 → **遮罩点不到、弹层关不掉**
+ * （用户报过「选择学校后下拉栏不会消失」）。
+ *   ⭐ 本批口径（用户：「只把卡片改回白框，其余原样」）：**三页的卡片都不模糊**。
+ *     · **登录页 / 忘记密码页**：卡片里**一个 wd-picker 都没有**（wd-picker 只出现在
+ *       register.vue）→ 当年允许在这里加 backdrop-filter；本批**不加**，卡片就是实心白。
+ *     · **注册页**：卡片里装着 3 个 wd-picker（省份 / 学校 / 性别）→ `.auth-card--plain`
+ *       以及它内部的任何元素**只有实心背景色**，**绝不出现** backdrop-filter / filter /
+ *       transform / will-change / contain / container-type / perspective。
+ *       ⚠️ 这是历史事故线（选择学校后弹层关不掉），**永远不要**在注册页卡片上加模糊。
+ *   ⚠️ 唯一一处 transform 在 `.auth-btn--gradient:active`（按钮内部没有弹层，安全）；
+ *      `.auth-sky` 的 `filter: blur()` 属于兄弟背景层，同样不是任何弹层的祖先。
+ *   ⚠️ 若将来有人想在注册页卡片上加模糊：请先读这一段，答案是**不要加**。
  *
  * ───────────────────────────────────────────────────────────────────────────
  * 背景：auth-bg.jpg 图片槽位 + 手写 SVG 几何场景（双保险，天然降级）
@@ -74,50 +78,70 @@
   --auth-sky-bottom: #edf1fc;
   --auth-sky-base: #d9e4fb;
 
-  /* —— 玻璃面板（外层框 + 内层板，两层见下面的 .auth-card / .auth-card__inner） —— */
-  --auth-glass-border: rgba(255, 255, 255, 0.52);
-  --auth-glass-shadow:
-    0 34px 66px -30px rgba(24, 41, 92, 0.3),
-    0 4px 12px -8px rgba(24, 41, 92, 0.16);
-  /* 外框上下两条「边缘捕捉光」：上沿亮线 + 下沿压暗（玻璃的厚度感几乎全靠这两笔）。
-   * 亮线用两层叠出来：1px 的半透明白看起来会「糊」，所以再补 0.5px 的近纯白细线，
-   * 在偏亮的天空底图上仍能读出一条清晰的受光边。 */
-  --auth-glass-edge:
-    inset 0 0.5px 0 rgba(255, 255, 255, 0.95),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    inset 0 -1px 0 rgba(24, 41, 92, 0.16);
-  /* 内层板的板面：左上微亮、右下微暗，只做 6% 的落差，不引入第二种颜色 */
-  /* ⚠️ 透明度必须按【两层叠加后的总账】来定，不能只看单层：
-     总白度 ≈ 1-(1-外框α)(1-内板α)。上一版 外 .20 / 内 .52~.68 → 总账 .60~.74，
-     背后校园图几乎被完全盖住，用户看到的就是"不透明"。
-     现在 外 .10 / 内 .18~.30 → 总账约 .27~.37，底图能透出来，才像玻璃。 */
-  --auth-panel-bg: linear-gradient(158deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.2) 62%, rgba(244, 247, 255, 0.18) 100%);
-  /* 内层板自己的细边 + 板面高光（内层板与外框之间留 2px 缝，光透进去就是「厚度」） */
-  --auth-panel-line: rgba(255, 255, 255, 0.86);
-  --auth-panel-inset:
-    inset 0 0.5px 0 rgba(255, 255, 255, 0.9),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  /* 无 backdrop-filter 的注册页：纯靠多层半透明白 + 亮边 + 高光模拟玻璃（见 .auth-card--plain）。
-   * 这里没有「实色兜底」变量了 —— 卡片是两层的，实色兜底写在 @supports not 与 .auth-card--plain
-   * 两处（见下），不留一个用不到的变量误导后来者。 */
-  /* ⚠️ 注册页没有 backdrop-filter（内部有 3 个 wd-picker 的 fixed 弹层，模糊会建包含块 → 弹层关不掉），
-     所以它的"玻璃感"全靠多层半透明白；但也不能像上一版那样 .38/.90 叠到近实心 ——
-     那会让它看起来是一块白板。现在外 .20 / 内 .56~.72，既透出底图又不牺牲表单可读性。 */
-  --auth-plain-frame-bg: rgba(255, 255, 255, 0.2);
-  --auth-plain-panel-bg: linear-gradient(158deg, rgba(255, 255, 255, 0.72) 0%, rgba(252, 253, 255, 0.62) 58%, rgba(245, 248, 255, 0.56) 100%);
+  /* —— 卡片材质（外层框 + 内层板，两层见下面的 .auth-card / .auth-card__inner） ——
+   * ⭐ 本批（用户：「只把卡片改回白框，其余原样」）：**三页统一实心白卡**，两套材质合并成一种 ——
+   *   登录 / 注册 / 忘记密码的卡面都是**不透明 #ffffff**，任何一页都不做玻璃。
+   *   卡片上仍然**零** backdrop-filter（见文件头约束 3）。 */
+  /* —— 登录 / 忘记密码：实心白（外框与内板同色，只靠 1px 边框 / 上沿亮线 / 冷调软阴影分层）—— */
+  --auth-card-bg: #ffffff;
+  --auth-panel-bg: #ffffff;
+  /* ⚠️ 已无引用：这两条原来是「没有 backdrop-filter 的端」的兜底（.94 / .9 半透明白）。
+   *    白卡本身不透明，那段 @supports not 兜底已随本批删除，保留仅为对照，勿当活动变量用。 */
+  --auth-card-bg-fallback: rgba(255, 255, 255, 0.94);
+  --auth-panel-bg-fallback: rgba(255, 255, 255, 0.9);
+  /* 上沿 1px 细亮线（受光面）：外框 1px 顶亮 + 内板 1px 顶亮。
+   * ⚠️ 变量名沿用历史的 --auth-glass-*（值一字未改，避免影响其它规则）；白卡上它是极淡的一线高光，
+   *    与「玻璃」无关 —— 本批不启用任何模糊。 */
+  --auth-glass-top: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --auth-glass-inner-top:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.28);
 
-  /* —— 输入胶囊（嵌在玻璃里的凹槽） —— */
-  --auth-field-bg: rgba(255, 255, 255, 0.26);
-  --auth-field-bg-focus: rgba(255, 255, 255, 0.62);
+  /* —— 注册页（.auth-card--plain）：本批**同样实心白**，只是沿用原来那套变量名 ——
+   * ⚠️ 这里**只能**用背景色，绝不能出现 backdrop-filter / filter / transform 等
+   *    「会建包含块」的属性：卡片里装着 3 个 wd-picker 的 position:fixed 弹层。 */
+  --auth-plain-card-bg: #ffffff;
+  /* ⭐ 洗色渐变**本批停用**（白卡不需要）：值设为 none → 规则里的 background-image 解析为 none。
+   *    （选择「设为 none」而不是删掉规则里那两条声明：改动面最小，结果同样确定。） */
+  --auth-plain-card-wash: none;
+  --auth-plain-panel-bg: #ffffff;
+  --auth-plain-panel-wash: none;
+  --auth-plain-top: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --auth-plain-inner-top:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.26);
+  /* 注册页卡片里的输入胶囊：卡片本批回到**实心白** → 槽也必须回到「白卡上的浅灰凹槽」
+   * （3.5% 冷灰，与登录页 --auth-field-bg 完全一致）；原来是 rgba(255,255,255,.58) 的"玻璃槽"。 */
+  --auth-field-bg-on-plain: rgba(24, 41, 92, 0.035);
+  /* 亮背景上的边界：靠 1px 极浅边框 + 一层柔和阴影，不用粗边框、不用纯黑阴影 */
+  --auth-card-line: rgba(24, 41, 92, 0.06);
+  --auth-card-shadow:
+    0 22px 46px -24px rgba(24, 41, 92, 0.26),
+    0 4px 14px -10px rgba(24, 41, 92, 0.12);
+  /* （下面这两条变量从玻璃版起就不再被引用；本批白卡**也没有**启用它们 ——
+   *   `.auth-card` 仍沿用 --auth-glass-top 那条「上沿 1px 细亮线」。保留是为了把「另一种画厚度的方法」
+   *   留在原位，将来若想让白卡边缘更立体可以直接取用。⚠️ 不要复制到别处去当活动变量用。） */
+  --auth-card-edge:
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(24, 41, 92, 0.05);
+  /* 内层板：见上面的 --auth-glass-inner-top（本批白卡同样只用它做 1px 内高光） */
+  --auth-panel-line: rgba(24, 41, 92, 0.05);
+  --auth-panel-inset:
+    inset 0 0.5px 0 rgba(255, 255, 255, 1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  /* —— 输入胶囊（白卡面上的极浅灰凹槽：底比卡面略暗，才能白底上看出是输入框） —— */
+  --auth-field-bg: rgba(24, 41, 92, 0.035);
+  --auth-field-bg-focus: #ffffff;
   --auth-field-border: rgba(58, 80, 126, 0.16);
   --auth-field-border-focus: rgba(79, 70, 229, 0.45);
   --auth-field-icon: #6b7a92;
-  --auth-field-placeholder: #66738a;
-  --auth-field-focus-ring: 0 0 0 4px rgba(99, 102, 241, 0.14);
-  /* 极轻的凹陷 + 顶部一条被压暗的细线：靠明暗而不是粗边框表达「嵌进去」 */
+  --auth-field-placeholder: #5f6b82;
+  --auth-field-focus-ring: 0 0 0 3px rgba(99, 102, 241, 0.16);
+  /* 极轻的凹陷：白卡上的灰底 + 一层 4% 的内阴影就够，不要粗边框 */
   --auth-field-inset:
-    inset 0 1px 2px rgba(24, 41, 92, 0.06),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.5);
+    inset 0 1px 2px rgba(24, 41, 92, 0.05),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.7);
 
   /* —— 文字 —— */
   --auth-card-title: #16203a;
@@ -138,9 +162,15 @@
   z-index: 0;
   display: flex;
   flex-direction: column;
+  /* 与 .auth-content 的 `margin: auto 0` 双保险：内容装得下时居中；
+   * 装不下时（剩余空间为负）auto 外边距退化为 0，居中不生效，页面正常从顶部滚动。 */
+  justify-content: center;
   box-sizing: border-box;
   min-height: 100vh;
-  padding: 0 20px calc(16px + env(safe-area-inset-bottom));
+  /* ⚠️ 底部 56px：给「已加回来的底部署名（.auth-slogan）」预留一段位置，
+   *    这样 `margin:auto` 居中时内容列不会把署名压到屏幕最下沿，
+   *    署名始终挨着内容列、跟着整组一起偏下居中（仍保留 env(safe-area-inset-bottom)）。 */
+  padding: 0 20px calc(56px + env(safe-area-inset-bottom));
   overflow-x: hidden;
   background-color: var(--auth-sky-base);
   background-image:
@@ -171,16 +201,30 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1080 1920' preserveAspectRatio='xMidYMid slice'%3E%3Cdefs%3E%3ClinearGradient id='sky' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%2396b4f2' stop-opacity='0.78'/%3E%3Cstop offset='0.52' stop-color='%23cfddfb' stop-opacity='0.5'/%3E%3Cstop offset='1' stop-color='%23f2f6ff' stop-opacity='0.24'/%3E%3C/linearGradient%3E%3CradialGradient id='sun' cx='0.72' cy='0.3' r='0.4'%3E%3Cstop offset='0' stop-color='%23ffffff' stop-opacity='0.8'/%3E%3Cstop offset='1' stop-color='%23ffffff' stop-opacity='0'/%3E%3C/radialGradient%3E%3ClinearGradient id='glassA' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff' stop-opacity='0.6'/%3E%3Cstop offset='1' stop-color='%23ffffff' stop-opacity='0.06'/%3E%3C/linearGradient%3E%3ClinearGradient id='glassB' x1='0' y1='0' x2='1' y2='0.2'%3E%3Cstop offset='0' stop-color='%23ffffff' stop-opacity='0.34'/%3E%3Cstop offset='1' stop-color='%23ffffff' stop-opacity='0.05'/%3E%3C/linearGradient%3E%3ClinearGradient id='ground' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff' stop-opacity='0.32'/%3E%3Cstop offset='1' stop-color='%23ffffff' stop-opacity='0.02'/%3E%3C/linearGradient%3E%3Cfilter id='soft' x='-25%25' y='-25%25' width='150%25' height='150%25'%3E%3CfeGaussianBlur stdDeviation='7'/%3E%3C/filter%3E%3C/defs%3E%3Crect width='1080' height='1920' fill='url(%23sky)'/%3E%3Ccircle cx='778' cy='576' r='432' fill='url(%23sun)'/%3E%3Cg filter='url(%23soft)'%3E%3Cpath d='M0 1408Q540 1330 1080 1404L1080 1920L0 1920Z' fill='url(%23ground)'/%3E%3Crect x='-40' y='1330' width='300' height='320' rx='16' fill='url(%23glassA)'/%3E%3Crect x='96' y='1258' width='216' height='392' rx='16' fill='url(%23glassA)'/%3E%3Crect x='330' y='1352' width='252' height='298' rx='16' fill='url(%23glassA)'/%3E%3Crect x='600' y='1306' width='196' height='344' rx='16' fill='url(%23glassA)'/%3E%3Crect x='812' y='1372' width='308' height='278' rx='16' fill='url(%23glassA)'/%3E%3Cpath d='M702 1346L922 1302L988 1302L988 1150L798 1150L702 1224Z' fill='url(%23glassB)'/%3E%3Cpath d='M96 1258L312 1258L312 1284L96 1284Z' fill='%23ffffff' fill-opacity='0.4'/%3E%3Cpath d='M600 1306L796 1306L796 1330L600 1330Z' fill='%23ffffff' fill-opacity='0.32'/%3E%3Cpath d='M988 1330L988 1650L1080 1650L1080 1330Z' fill='%23ffffff' fill-opacity='0.18'/%3E%3Cpath d='M-40 1650L0 1650L0 1330L-40 1330Z' fill='%23ffffff' fill-opacity='0.14'/%3E%3C/g%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath d='M120 470C330 350 690 390 940 280' stroke='%23ffffff' stroke-opacity='0.3' stroke-width='1.7'/%3E%3Cpath d='M70 800C340 700 730 740 1010 630' stroke='%23ffffff' stroke-opacity='0.24' stroke-width='1.7'/%3E%3Cpath d='M200 1140C440 1055 700 1090 960 1010' stroke='%23ffffff' stroke-opacity='0.18' stroke-width='1.7'/%3E%3Cpath d='M472 700L865 638L302 886Z' stroke='%23ffffff' stroke-opacity='0.24' stroke-width='1.4'/%3E%3C/g%3E%3Cg fill='%23ffffff'%3E%3Ccircle cx='472' cy='700' r='7.5' fill-opacity='0.62'/%3E%3Ccircle cx='865' cy='638' r='5.5' fill-opacity='0.46'/%3E%3Ccircle cx='302' cy='886' r='5' fill-opacity='0.42'/%3E%3Ccircle cx='640' cy='782' r='4.5' fill-opacity='0.34'/%3E%3Ccircle cx='182' cy='958' r='6' fill-opacity='0.38'/%3E%3Ccircle cx='900' cy='1046' r='4.5' fill-opacity='0.3'/%3E%3Ccircle cx='386' cy='1128' r='4' fill-opacity='0.28'/%3E%3Ccircle cx='140' cy='470' r='5' fill-opacity='0.32'/%3E%3Ccircle cx='940' cy='280' r='4.5' fill-opacity='0.3'/%3E%3Ccircle cx='1010' cy='630' r='4' fill-opacity='0.26'/%3E%3Ccircle cx='250' cy='1780' r='4' fill-opacity='0.2'/%3E%3Ccircle cx='880' cy='1842' r='3.5' fill-opacity='0.18'/%3E%3C/g%3E%3C/svg%3E");
 }
 
-/* 内容容器：z-index 抬到背景层之上；⚠️ 这里绝对不能加 backdrop-filter（内含 picker 弹层） */
+/* 内容容器：z-index 抬到背景层之上；⚠️ 这里绝对不能加 backdrop-filter（内含 picker 弹层）
+ *
+ * ⭐ 白卡垂直居中（用户反馈②「白框放到中间」；本批卡片配色改回白框，居中方式**一字未动**）：
+ *   本容器在 .kean-auth（flex column + min-height:100vh）里是**唯一的 flex 主体**，
+ *   所以用 `margin: auto 0` 把它在剩余空间里上下均分 —— 视觉结果就是
+ *   「Logo + 白卡 + Turnstile」这三件一起垂直居中，而底部署名（.auth-slogan）
+ *   是同级的第二个 flex 项，仍然挨着内容列排在它下面。
+ *   ⚠️ 为什么矮屏 / 键盘弹起 / Turnstile 展开时**不会被裁掉顶部**（这是这一条的验收点）：
+ *      · 容器是 `min-height: 100vh`（高度可增长，不是固定 height），也没有 overflow:hidden；
+ *      · 当内容自然高 > 视口时，flex 剩余空间为**负**，`margin: auto` 在负剩余空间下
+ *        **解析为 0**（CSS 规范：auto 外边距不取负值）→ 内容从容器顶部开始正常排布，
+ *        顶部不可能被推出可视区，页面照常从 top 滚到 bottom；
+ *      · 只有「剩余空间 > 0」（即高屏、内容装得下）时才发生居中。
+ *      另外这里**故意不写** `overflow: hidden`、也**不用** position:fixed / transform 居中
+ *      （transform 会给卡内 3 个 wd-picker 的 position:fixed 弹层建包含块，见文件头约束 3）。 */
 .auth-content {
   display: flex;
   position: relative;
   z-index: 1;
-  flex: 1;
   flex-direction: column;
   width: 100%;
   max-width: 460px;
-  margin: 0 auto;
+  /* 上下 auto：剩余空间为负时自动退化为 0（clamp 语义），这就是「居中但不裁切」的关键 */
+  margin: auto 0;
 }
 
 /* ---------- 顶部返回（浮在背景上的玻璃圆钮，保证任何入口进来都出得去） ---------- */
@@ -200,9 +244,9 @@
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.2);
   box-shadow: 0 8px 20px -10px rgba(19, 34, 78, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4);
-  /* 这颗 40px 圆钮内部没有任何 position:fixed 后代，backdrop-filter 安全（见文件头约束 3） */
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* ⚠️ 这里原来有一层 backdrop-filter（当时确认过它内部没有 position:fixed 后代，是安全的）。
+     本版**保持去掉**：它不是卡片、用户没有要求它变玻璃，而"少一个建包含块的属性"永远更安全。
+     圆钮浮在天空背景上，半透明白底 + 亮边 + 冷调阴影本来就够读。 */
 }
 
 /* 箭头：内联 data-uri SVG，不新增二进制素材、也不依赖图标字体 */
@@ -238,143 +282,148 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: calc(40px + env(safe-area-inset-top)) 8px 22px;
+  padding: calc(32px + env(safe-area-inset-top)) 8px 12px;
 }
 
+/* Logo：76px（上一版 84px / 矮屏 72px；用户反馈整体偏大，本轮统一收到 76）。
+ * 外圈白环从 7px 收到 4px，环本身也占视觉体量，收环比收图更有效。 */
 .auth-logo {
-  width: 84px;
-  height: 84px;
-  border-radius: 24px;
+  width: 76px;
+  height: 76px;
+  border-radius: 22px;
   box-shadow:
-    0 16px 34px -14px rgba(19, 34, 78, 0.5),
-    0 0 0 7px rgba(255, 255, 255, 0.2);
+    0 12px 26px -14px rgba(19, 34, 78, 0.46),
+    0 0 0 4px rgba(255, 255, 255, 0.18);
 }
 
 .auth-title {
-  margin-top: 14px;
+  margin-top: 8px;
   color: #ffffff;
-  font-size: 29px;
+  font-size: 25px;
   font-weight: 700;
   line-height: 1.2;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
   text-shadow: 0 2px 10px rgba(19, 34, 78, 0.32);
 }
 
+/* 顶部副标题：本轮**加回来**（用户要求「文字描述都加回来但要简化」，原话是「校园临时代课互助」）。
+ * 尺寸刻意压到 12.5px / 18px 行高 —— 一行只占 18px，是整个 hero 里最轻的一行，
+ * 绝不会把上一轮收小的 Logo（76 / 56）与标题（25 / 22）又撑大。
+ * 白字 + 顶部暗角（--auth-top-scrim）保证在任何底图上都读得出来；不加 letter-spacing，
+ * 中文用不着字距，英文由 en 词典自己控制长度。 */
 .auth-subtitle {
-  margin-top: 8px;
-  color: rgba(255, 255, 255, 0.94);
-  font-size: 13px;
-  line-height: 20px;
-  letter-spacing: 0.06em;
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 18px;
+  letter-spacing: 0.01em;
   text-align: center;
-  text-shadow: 0 1px 7px rgba(19, 34, 78, 0.28);
+  text-shadow: 0 1px 6px rgba(19, 34, 78, 0.34);
 }
 
-/* 注册 / 忘记密码用的紧凑版顶部：Logo 更小、和卡片贴得更近 */
+/* 注册 / 忘记密码用的紧凑版顶部：Logo 更小（56px）、和卡片贴得更近 */
 .auth-hero--compact {
-  padding: calc(24px + env(safe-area-inset-top)) 8px 16px;
+  padding: calc(20px + env(safe-area-inset-top)) 8px 10px;
 }
 
 .auth-hero--compact .auth-logo {
-  width: 68px;
-  height: 68px;
-  border-radius: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 17px;
   box-shadow:
-    0 12px 26px -12px rgba(19, 34, 78, 0.46),
-    0 0 0 5px rgba(255, 255, 255, 0.18);
+    0 10px 20px -12px rgba(19, 34, 78, 0.42),
+    0 0 0 3px rgba(255, 255, 255, 0.16);
 }
 
 .auth-hero--compact .auth-title {
-  margin-top: 10px;
-  font-size: 24px;
-  letter-spacing: 0.08em;
+  margin-top: 5px;
+  font-size: 22px;
+  letter-spacing: 0.07em;
 }
 
-/* ---------- 悬浮玻璃卡片 = 外层框 + 内层板（两层，才有玻璃的厚度） ----------
- * 真实玻璃的六件事，逐条落在这两层上，克制优先：
- *   ① 边缘捕捉光 → 外框 `--auth-glass-edge`（上沿 1px 亮线 + 下沿压暗）
- *   ② 厚度        → 外框 padding: 2px：内层板比外框四周各小 2px，光从缝里透进去
- *   ③ 环境光/投影 → 冷调深蓝大范围软阴影 `--auth-glass-shadow` + 上方一条极淡反光，
- *                   不用纯黑、不堆彩色发光
- *   ④ 内容内嵌    → 输入胶囊 `--auth-field-inset` + `--auth-field-bg`（见下）
- *   ⑤ 按钮实体感  → `.auth-btn--gradient` 的顶部内高光 + 同色柔光 + 按下位移（见下）
- *   ⑥ 克制        → 只有白/灰/蓝紫三系；分隔靠字重与灰度；内层板只做 6% 明暗落差
+/* ---------- 卡片 = 外层框 + 内层板；**三页统一实心白**（本批用户要求「只把卡片改回白框」）----------
+ * 结构与尺寸与上一版**完全一致**（外框 padding 2px / 圆角 20px，内板 圆角 17px / padding 18 19 17），
+ * **只换材质（配色）**，三页共用同一种：
+ *   ① 登录 / 忘记密码 → `.auth-card` + `.auth-card__inner`：**#ffffff 实心白**，
+ *      `background-image: none`，**没有** backdrop-filter（本批不启用玻璃）。
+ *   ② 注册页（**3 个 wd-picker**）→ `.auth-card--plain` 同样**实心白**、洗色渐变停用；
+ *      这条分支从来（也应该继续）**没有任何** backdrop-filter。
+ *   ③ 分层方式（三页一致）：1px 极浅边框 + 上沿 1px 细亮线（inset 高光）+ 冷调软阴影；
+ *      按钮实体感 → `.auth-btn--gradient` 的顶部内高光 + 同色柔光 + 按下位移（未改）
  *
- * ⚠️ 外框 `padding` 是**结构的一部分**（2px 的缝 + 内层板自己的 1px 细边 = 视觉上 3px 的厚度）。
- * ⚠️ 外框上**没有** transform / filter / will-change / contain / container-type / perspective
- *    —— 注册页的三个 wd-picker 就在这个外框内部，见文件头约束 3。
- * ⚠️ 外框**故意不写 overflow: hidden**：内层板在圆角处会被父级裁掉自己的 `inset` 高光，
- *    而 backdrop-filter 的模糊本来就会按外框圆角裁剪，所以不需要它。
+ * ⚠️ 注册页那条分支上**没有** transform / filter / backdrop-filter / will-change / contain /
+ *    container-type / perspective —— 三个 wd-picker 就在它内部，见文件头约束 3。
+ * ⚠️ 两层都**故意不写 overflow: hidden**：内板在圆角处会被父级裁掉自己的 `inset` 高光。
+ *    （Turnstile 真人验证在卡片**下方**，不受圆角 / overflow 影响。）
  */
 
 .auth-card {
   display: block;
   box-sizing: border-box;
-  /* 内外两层之间留 2px 的缝：靠它 + 内层板自己的细边做出「玻璃有厚度」 */
+  /* 内外两层之间留 2px 的缝（尺寸未变）：白卡的"厚度"就靠这条缝的一线亮边 */
   padding: 2px;
-  border: 1px solid var(--auth-glass-border);
-  border-radius: 34px;
-  background-color: rgba(255, 255, 255, 0.1);
-  box-shadow: var(--auth-glass-shadow), var(--auth-glass-edge);
-  /* 登录 / 忘记密码：真正在玻璃后面做模糊（内部无 position:fixed 后代，安全）
-     ⚠️ 12px 而不是 18px：叠加两层白之后，模糊越大越把底图糊成一片均匀色，反而更"不透明"。
-     透明度才是玻璃感的决定因素（见 --auth-panel-bg 的注释）。 */
-  backdrop-filter: blur(12px) saturate(150%);
-  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid var(--auth-card-line);
+  border-radius: 20px;
+  /* ⭐ 实心白卡：不透明 #ffffff（--auth-card-bg = #ffffff）+ 无背景图 / 无洗色渐变 */
+  background-color: var(--auth-card-bg);
+  background-image: none;
+  /* ① 上沿 1px 细亮线（受光面）② 冷调软阴影（不用纯黑影子）
+   * ⚠️ 顺序：--auth-glass-top 是 inset，放前面，外部阴影在后 —— 与实色版一致。 */
+  box-shadow: var(--auth-glass-top), var(--auth-card-shadow);
+  /* ⭐ 本批**不启用玻璃**：原有的 `backdrop-filter: blur(12px) saturate(150%)` 与
+   *    `-webkit-backdrop-filter: blur(12px) saturate(150%)` 已按用户要求（「只把卡片改回白框，
+   *    其余原样」）删除 —— 本文件现在 backdrop-filter 声明 = **0 条**（已 grep 自证）。
+   *    ⚠️ 将来若要加回来：登录 / 忘记密码页的卡片里没有 wd-picker，当年加是安全的；
+   *       但注册页（.auth-card--plain，内含 3 个 wd-picker）**永远不要加**（见约束 3）。 */
 }
 
-/* 内层玻璃板：真正的板面。外框只管「框」，内层板管「面 + 内容 + 自己的边与高光」。 */
+/* ⭐ 原来这里有一段 `@supports not ((backdrop-filter: …) or (-webkit-backdrop-filter: …))`
+ * 实色兜底（给没有模糊的老内核 / 小程序，把卡面加到 .94 / .9 白）。**本批已整段删除**：
+ *   模糊没了 → 兜底就没意义；而且它会在不支持 backdrop-filter 的端把卡面从"实心白"变回
+ *   "半透明白"，与用户本批要的「白框」正好相反，属于有害的副作用。
+ *   ⚠️ 变量 --auth-card-bg-fallback / --auth-panel-bg-fallback 因此不再被任何规则引用
+ *      （定义处已注明，保留仅为对照）。 */
+
+/* 内层板（三页共用）：本批与 .auth-card 同色 —— **实心白 #ffffff**。
+ * 尺寸与上一版一字不差（圆角 17 / padding 18 19 17），只靠 1px 边框 + 上沿 / 下沿内高光分层。
+ * ⚠️ 这里**从来不加** backdrop-filter（内板在卡片里，卡片里装着 wd-picker 的弹层，见约束 3）。 */
 .auth-card__inner {
   display: block;
   box-sizing: border-box;
-  padding: 26px 20px 22px;
+  padding: 18px 19px 17px;
   border: 1px solid var(--auth-panel-line);
-  /* 比外框小 6px：2px 缝 + 视觉上更薄更贴内容 */
-  border-radius: 28px;
-  /* ⚠️ 底色与 --auth-panel-bg 是【叠加】的（image 盖在 color 上），必须一起降：
-     上一版 .42 + 渐变 .52~.68 → 总账约 .75，这才是"完全不透明"的主因。 */
-  background-color: rgba(255, 255, 255, 0.12);
-  background-image: var(--auth-panel-bg);
-  box-shadow: var(--auth-panel-inset);
+  border-radius: 17px;
+  background-color: var(--auth-panel-bg);
+  box-shadow: var(--auth-glass-inner-top);
 }
 
-/* 外层框里再叠一点点模糊：让「框」比「板」更透、板更实，层次就出来了。
- * ⚠️ 这里**刻意只给 4px**：backdrop-filter 是在「已经模糊过的底板」上再模糊一次，
- *    18px + 大半径会把底图糊成一片均匀色（结构全部丢失，玻璃反而显得平），
- *    所以第二层只加一点点，保证板面后面仍能看出光影与颜色走向。
- * ⚠️ backdrop-filter 会在元素上建出包含块，而 `.auth-card__inner` 里装着 wd-picker，
- *    所以注册页（.auth-card--plain）**同时也必须把这一层关掉**——注意它是 .auth-card
- *    的直接子元素，`.auth-card--plain .auth-card__inner` 特异性高于单独的 `.auth-card__inner`。 */
-/* ⚠️ 内层板【不再】叠加第二层模糊：
-   上一版在内层又加了 blur(4px)，但外层已经有 12px 模糊，再叠一层只会把底图结构糊得更平 ——
-   用户反馈"玻璃不透明"时，视觉上的"糊成一片均匀色"正是元凶之一。现在只保留外框那一层模糊。
-   （保留这条规则的位置与注释，是为了说明：注册页的 .auth-card--plain 依然必须无任何模糊，
-     因为 .auth-card__inner 里装着 wd-picker 的 position:fixed 弹层，模糊会建出包含块。） */
-.auth-card:not(.auth-card--plain) .auth-card__inner {
-  /* 刻意留空：不再重复设置 backdrop-filter */
-  isolation: auto;
-}
-
-/* ⚠️ 注册页：卡片内部装着三个 wd-picker（position:fixed 弹层），所以**整张卡片
- * （外框与内层板，共两层）都不能有 backdrop-filter**，否则弹层与遮罩会被劫持到卡片坐标系里
- * （遮罩点不到、弹层关不掉）。
- * 没有模糊，玻璃感就改由「多层半透明白 + 上下亮暗边 + 内高光 + 冷调软阴影」模拟：
- *   外框 = 一层很淡的白（0.38）+ 亮边 + 上下缘线，让底图亮度先糊一层；
- *   内层板 = 0.74~0.9 的白（不透明白会杀死「这是玻璃」的暗示，所以停在 0.9 而不是 0.97）；
- *   再靠 2px 的缝 + 内层板细边把「厚度」补回来。 */
-.auth-card--plain,
-.auth-card--plain .auth-card__inner {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
+/* ⚠️ 注册页专用（`.auth-card--plain`，register.vue 模板上的固定类）：
+ *    **这里 backdrop-filter 严格为 none** —— 卡片里装着 3 个 wd-picker，
+ *    它们的弹层与遮罩是 position:fixed，一旦祖先带 backdrop-filter 就会被劫持到卡片坐标系，
+ *    结果是「遮罩点不到、弹层关不掉」（用户报过的历史事故）。见文件头约束 3。
+ *    ⭐ 本批（用户：「只把卡片改回白框」）：卡面回到**实心白 #ffffff**，
+ *      原来用来"模拟玻璃"的两层垂直洗色渐变（--auth-plain-*-wash）已停用（值 = none）；
+ *      剩下的分层手段与登录页完全一致：1px 极浅边框 + 上沿 1px 细亮线 + 冷调软阴影。
+ * ⚠️ background-image 是**渐变**，不会建包含块；background-color 也不会。 */
 .auth-card--plain {
-  background-color: var(--auth-plain-frame-bg);
+  background-color: var(--auth-plain-card-bg);
+  background-image: var(--auth-plain-card-wash);
+  box-shadow: var(--auth-plain-top), var(--auth-card-shadow);
 }
 
 .auth-card--plain .auth-card__inner {
-  background-color: rgba(255, 255, 255, 0.86);
-  background-image: var(--auth-plain-panel-bg);
+  border-color: var(--auth-panel-line);
+  background-color: var(--auth-plain-panel-bg);
+  background-image: var(--auth-plain-panel-wash);
+  box-shadow: var(--auth-plain-inner-top);
+}
+
+/* 注册页内板里的输入胶囊：卡面本批是**实心白** → 槽回到"白卡上的浅灰凹槽"
+ * （--auth-field-bg-on-plain 已改成与登录页 --auth-field-bg 相同的 3.5% 冷灰）。
+ * 规则本身保留（只改底色；尺寸 / 圆角 / 间距一字未动）。 */
+.auth-card--plain .auth-card__inner .auth-field {
+  background-color: var(--auth-field-bg-on-plain);
 }
 
 /* 外框里出现两张内层板的情况（本项目暂时没有）也保持 14px 节奏 */
@@ -391,71 +440,107 @@
  * 更高、也更明确地限定在「卡片内层板」里，不会漏到别的地方去。 */
 .auth-card .auth-card__inner .auth-card-title {
   color: var(--auth-card-title);
-  font-size: 23px;
+  font-size: 18.5px;
   font-weight: 700;
   line-height: 1.3;
   letter-spacing: 0.01em;
 }
 
+/* 卡内副标题：登录页「继续连接你的校园互助网络」/ 忘记密码页「通过绑定邮箱的验证码设置新密码」
+ * 各渲染一条短句（12.5px 灰字一行）。
+ * ⚠️ 本轮注册页**不再渲染**它（用户只要"页面标题"，且反复强调"文字太多"）——
+ *    所以严格说：只有登录 / 忘记密码两页有 .auth-card-sub，注册页没有。
+ * 它出现的代价必须小于它带来的信息量：
+ *   · 标题 → 副标题 = 4px，副标题 → 第一个块 = 9px，两段合计 22px，
+ *     与「标题 → 第一个块 = 22px」**完全同高**，整卡不会被这一行撑高。 */
 .auth-card .auth-card__inner .auth-card-sub {
-  margin-top: 7px;
+  margin-top: 4px;
   color: var(--auth-card-sub);
-  font-size: 13.5px;
-  line-height: 20px;
+  font-size: 12.5px;
+  line-height: 18px;
 }
 
-/* 副标题下面紧跟的第一个块：间距交给副标题自己的下边距，避免空档叠加。
- * 登录 / 忘记密码是 .wd-form，注册页是「只显示当前一步」的 .auth-step-head，
- * 这些块自身已经有底 / 边框 / 内边距（或本来就是输入胶囊），所以给 26px，
- * 让「副标题 → 第一个块」始终保持同一段节奏。 */
-.auth-card__inner .auth-card-sub + .wd-form,
-.auth-card__inner .auth-card-sub + .auth-field,
-.auth-card__inner .auth-card-sub + .auth-step-head {
-  margin-top: 26px;
+/* 进度条**节点下面**的那一行（注册页）：当前步的名字，一行 4~6 个汉字。
+ * ⚠️ 它是「每步标题 + 说明句」两行块的**替代品**，也是本轮"节点下面写什么"的答案：
+ *    只写**当前步**一个名字，永远不写四个节点各自的名字（见上面进度条注释的选择理由）。
+ *    块高 = 行高 18px；margin-top 9px 是与上面节点行的间距，两者合计 27px（见上）。 */
+.auth-step-hint {
+  margin-top: 9px;
+  color: var(--auth-card-sub);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+/* 进度条 / 步骤提示下面的第一步表单：输入胶囊自带 11px 上边距，这里再补 13px（合计 24px）。
+ * ⚠️ 注册页的进度块后面永远跟着 .auth-step-hint（节点下面那一行），所以这一条只是
+ *    「万一提示行被去掉」时的兜底；两条同时存在时由 `.auth-step-hint + .wd-form` 生效。 */
+.auth-card__inner .auth-step-progress + .wd-form,
+.auth-card__inner .auth-step-hint + .wd-form {
+  margin-top: 13px;
+}
+
+/* 卡内第一个块是表单（本页没有卡内副标题时）：给标题 → 第一个输入框补一段间距。
+ * ⚠️ 这条必须与 `.auth-card .auth-card__inner .auth-card-title + .auth-step-progress` 成对出现，
+ *    并且要意识到 `.auth-field { margin-top: 11px }` 与它是**不同选择器、不同元素**
+ *    （margin 落在 .wd-form 上、11px 落在 .auth-field 上），两者会叠加，不是互相覆盖。
+ * ⚠️ 但它与 `.auth-divider + .auth-field` 那类是同一档特异性（0,3,0）：改动顺序时请重新核对
+ *    「标题 → 第一个块」这段间距到底是谁生效，别让卡内第一屏又多出一段空白。
+ *    ⚠️ 登录 / 忘记密码页的卡内标题下面都有一条 .auth-card-sub：这条间距由 11px 收到 **9px**，
+ *    于是「标题 →(4px) 副标题 →(9px) 表单」= 22px；注册页**没有**副标题，走的是
+ *    「标题 →(10px) 进度条 →(9px) 当前步那行 →(13px) 表单」这一条链。 */
+.auth-card .auth-card__inner .auth-card-title + .wd-form {
+  margin-top: 9px;
+}
+
+/* 有卡内副标题时：副标题 → 第一个表单块也只补 9px，接手上面那条被替换掉的间距 */
+.auth-card .auth-card__inner .auth-card-sub + .wd-form {
+  margin-top: 9px;
+}
+
+/* 进度条也是卡内标题之后紧跟的另一个块（注册页走的是这条）。
+ * ⚠️ 本轮注册页**补上了卡内标题**（.auth-card-title「加入课安」），这条间距因此从 22px 收到
+ *    **10px**：标题 18.5px/1.3 ≈ 24px 行高 + 10px = 34px，与「上一版『卡内副标题 → 进度条』
+ *    的 9+22=31px」基本同高 —— 即"补标题"没有白白多出一整段空白，这是刻意的补偿。 */
+.auth-card .auth-card__inner .auth-card-title + .auth-step-progress {
+  margin-top: 10px;
 }
 
 /* 卡片内的极细分隔线：只在逻辑分组之间用一条，永远不画成「框」。
- * 用 1px 高的元素 + 两端淡出的白线（不用边框、不用纯色实线），两侧各留 4px 内缩，
- * 让线看起来是被内容「托住」的，而不是从卡片边一直顶到另一边。 */
+ * ⚠️ 玻璃版这里用的是「半透明白线」，在白卡上等于看不见；本版换成极浅的冷灰，
+ *    两端仍然淡出（透明 → 灰 → 透明），两侧各留 4px 内缩。 */
 .auth-divider {
   height: 1px;
-  margin: 18px 4px 0;
-  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.72) 22%, rgba(255, 255, 255, 0.72) 78%, rgba(255, 255, 255, 0) 100%);
+  margin: 14px 4px 0;
+  background-image: linear-gradient(90deg, rgba(24, 41, 92, 0) 0%, rgba(24, 41, 92, 0.12) 22%, rgba(24, 41, 92, 0.12) 78%, rgba(24, 41, 92, 0) 100%);
 }
 
-/* 分隔线下面的第一个块：线是「分组」，不是「间距」，所以只补到 16px
- * （比输入框之间的 13px 松一点、比 26px 的标题空档紧一点）。 */
+/* 分隔线下面的第一个块：线是「分组」，不是「间距」，所以只补到 14px */
 .auth-divider + .auth-field {
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
-/* 没有浏览器原生 backdrop-filter 时退回实色卡片（不退化成半透明+深字这种看不清的组合） */
-@supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
-  .auth-card:not(.auth-card--plain) {
-    background-color: rgba(255, 255, 255, 0.55);
-  }
+/* ⚠️ 实色兜底（`@supports not (backdrop-filter)`）本批**已整段删除**（见文件上半部分、
+ * 紧贴 .auth-card 那段说明）：卡片现在是**实心白**，不再需要"没有模糊时把底色加实"的兜底。
+ * ⚠️ 白卡不依赖任何模糊，所以它也不需要"不支持模糊"的分支。 */
 
-  .auth-card:not(.auth-card--plain) .auth-card__inner {
-    background-color: rgba(255, 255, 255, 0.9);
-    background-image: var(--auth-plain-panel-bg);
-  }
-}
-
-/* ---------- 玻璃输入胶囊 ---------- */
+/* ---------- 卡片上的输入胶囊（白卡面上的极浅灰凹槽） ---------- */
 
 .auth-field {
   display: flex;
   box-sizing: border-box;
   align-items: center;
-  height: 56px;
-  margin-top: 13px;
-  padding: 0 16px;
+  /* 47px：上一版 56px（矮屏 52/50）。用户要求收小，但仍必须 ≥44px 才好点——47 是上限内的最小舒适值 */
+  height: 47px;
+  margin-top: 11px;
+  padding: 0 15px;
   border: 1px solid var(--auth-field-border);
-  border-radius: 18px;
-  /* 嵌在玻璃里的凹槽：底比板面**略暗**（板面是 0.52~0.68 白，这里是 0.52 白 + 一层
-   * 极轻的 inset 阴影），上面再盖一条几乎看不见的顶部渐亮 —— 不能做成贴在表面的白块。 */
+  border-radius: 14px;
+  /* 卡面上的输入框：底比卡面**略暗**（3.5% 冷灰 + 一层极轻的 inset 阴影），
+   * 这样在白卡面上才看得出「这里可以输入」；聚焦时再翻白 + 蓝紫描边 + 一圈淡外发光。
+   * ⚠️ 注册页那三个输入胶囊由下面那条 0,3,0 规则换成 --auth-field-bg-on-plain；
+   *    本批两者取值相同（都是 3.5% 冷灰），三页观感一致。 */
   background-color: var(--auth-field-bg);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.02) 100%);
+  background-image: none;
   box-shadow: var(--auth-field-inset);
   transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
@@ -465,19 +550,20 @@
   border-color: var(--auth-field-border-focus);
   background-color: var(--auth-field-bg-focus);
   /* 外发光在外、凹陷感只留一点点：聚焦时先「亮起来」再「浮起来」 */
-  box-shadow: var(--auth-field-focus-ring), inset 0 1px 2px rgba(24, 41, 92, 0.03);
+  box-shadow: var(--auth-field-focus-ring), inset 0 1px 2px rgba(24, 41, 92, 0.04);
 }
 
-/* 图标统一用内联 data-uri SVG（不新增二进制素材、也不依赖图标字体） */
+/* 图标统一用内联 data-uri SVG（不新增二进制素材、也不依赖图标字体）。
+ * 20px → 18px：跟着 47px 的胶囊一起收，图标不会显得比输入框还重。 */
 .auth-field::before {
   content: "";
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  margin-right: 11px;
+  width: 18px;
+  height: 18px;
+  margin-right: 10px;
   background-repeat: no-repeat;
   background-position: center;
-  background-size: 20px 20px;
+  background-size: 18px 18px;
 }
 
 /* 用户名（登录页 / 注册页通用） */
@@ -518,13 +604,13 @@
 
 /* 下拉选择（省份 / 学校 / 性别）：胶囊里换成 wd-picker 的单元格 */
 .auth-field--pick {
-  padding-left: 16px;
-  padding-right: 14px;
+  padding-left: 15px;
+  padding-right: 13px;
 }
 
 /* 输入框本体：把 wd-input 的默认外观（白底 + 下划线 + 固定行高）全部压掉。
  * ⚠️ 每条都多带一层 .auth-field：组件自身的规则编译后是 `.wd-input[data-v-xxx]`（0,2,0）
- * 且文档顺序在我们后面，只有到 0,3,0 才能稳赢，否则「白底盖住玻璃胶囊」。 */
+ * 且文档顺序在我们后面，只有到 0,3,0 才能稳赢，否则「白底盖住输入胶囊」。 */
 .kean-auth .auth-field .wd-input,
 .kean-auth .auth-field .wd-input.is-cell,
 .kean-auth .auth-field .wd-input.is-no-border,
@@ -550,7 +636,7 @@
   min-width: 0;
 }
 
-/* 输入文字：深色（--auth-card-title #16203a 对玻璃底约 13:1） */
+/* 输入文字：深色（--auth-card-title #16203a 对白卡约 15:1；15.5px 在 47px 胶囊里仍很从容） */
 .kean-auth .auth-field .wd-input__inner {
   width: 100%;
   height: 22px;
@@ -572,7 +658,7 @@
   color: var(--auth-field-placeholder);
 }
 
-/* 清除按钮 / 明文切换眼睛：不给白底（组件 $-input-bg 默认白色，会在玻璃胶囊里显示成白方块） */
+/* 清除按钮 / 明文切换眼睛：不给白底（组件 $-input-bg 默认白色，会在白卡里显示成白方块） */
 .kean-auth .auth-field .wd-input__icon,
 .kean-auth .auth-field .wd-input__clear {
   display: inline-flex;
@@ -587,7 +673,7 @@
 
 /* ---------- wd-picker 单元格：只改外观，不动 DOM 层级与事件 ---------- */
 
-/* wd-cell 自带白底（$-cell-bg），特异性平手时组件赢，会在玻璃胶囊里留一条白条 */
+/* wd-cell 自带白底（$-cell-bg），特异性平手时组件赢，会在胶囊里留一条白条 */
 .kean-auth .auth-field .wd-picker,
 .kean-auth .auth-field .wd-picker__cell,
 .kean-auth .auth-field .wd-cell {
@@ -643,17 +729,18 @@
   line-height: 22px;
 }
 
-/* ---------- 验证码盒子（components/CodeBoxes.vue）在玻璃卡片里的观感 ----------
- * CodeBoxes 的 .box 是 scoped 样式（.box[data-v-xxx] 也是 0,2,0），同样要靠 0,3,0 才盖得住。 */
+/* ---------- 验证码盒子（components/CodeBoxes.vue）在白卡里的观感 ----------
+ * CodeBoxes 的 .box 是 scoped 样式（.box[data-v-xxx] 也是 0,2,0），同样要靠 0,3,0 才盖得住。
+ * 尺寸从上一版的 52px 收到 44px，跟 47px 的输入胶囊对齐。 */
 
 .kean-auth .auth-block .box {
-  height: 52px;
+  height: 44px;
   max-width: 50px;
   border-color: var(--auth-field-border);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.86);
+  border-radius: 13px;
+  background: var(--auth-field-bg);
   color: var(--auth-card-title);
-  font-size: 21px;
+  font-size: 19px;
   font-weight: 700;
 }
 
@@ -663,7 +750,7 @@
 
 .kean-auth .auth-block .box.active {
   border-color: var(--auth-field-border-focus);
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
 }
 
 /* ---------- 卡片内的辅助区块（验证码行、步骤头、提示、隐私勾选） ---------- */
@@ -681,11 +768,18 @@
   font-size: 14px;
 }
 
+/* 注册页输入框下面的**一行极短提示**（本轮加回来，但只留最短版本）：
+ *   · 邮箱「需完整 QQ 邮箱」（8 个汉字）
+ *   · 昵称「选填」（2 个汉字）
+ * ⚠️ 上一版这里是 12px 的两句长说明（authEmailTip / authNicknameTip，30~50 字），
+ *    用户明确说「文字太多」；所以本轮只留最短一行：12px / 17px 行高、低对比灰，
+ *    紧贴输入框（3px）而不另起一段 —— 一行只占 17px，且**不带** margin-bottom，
+ *    不与下面的块叠加出空档。 */
 .auth-tip {
-  margin-top: 12px;
-  color: var(--auth-card-sub);
+  margin-top: 3px;
+  color: rgba(91, 104, 128, 0.9);
   font-size: 12px;
-  line-height: 18px;
+  line-height: 17px;
 }
 
 .auth-agree {
@@ -714,93 +808,143 @@
   line-height: 18px;
 }
 
-/* TurnstileChallenge 自带 12px 16px 的内边距，在玻璃卡片里显得贴边 */
+/* TurnstileChallenge 自带 12px 16px 的内边距；本版它已移到**卡片下方**（白卡外），
+ * 不再贴卡片内壁，所以这里只保留「与上方卡片 / 链接留一点距离 + 横向不撑满」。
+ * 宽度交给组件自身（H5 的 widget 是 size:flexible，宽度自适应并居中）。 */
 .kean-auth .turnstile {
-  padding: 14px 0 0;
+  padding: 10px 0 0;
 }
 
-/* ---------- 注册页步骤头：**只显示当前这一步** ----------
- * 上一版把 4 步全部铺出来（圆点 + 连线 + 已完成打勾），用户明确不要。
- * 现在每页只渲染当前步的一条：「第 N 步」标题 + 一句短语，外加右侧一个极轻的
- * `N / 4`。左侧一小段竖线是唯一的装饰，用来表态「这是一步」，不做成按钮或链接。
+/* 非 H5（小程序 / App）那一端渲染的是「点击完成真人验证」的 wd-button：
+ * 卡片外的这一块没有卡片做视觉容器，整宽按钮会显得又长又散，所以收成内容宽并居中。
+ * ⚠️ 只改外观（宽度 + 居中），不碰组件的任何属性 / 事件；H5 端渲染的是 iframe，没有 .wd-button，
+ *    这一条在那里不生效（H5 的 widget 自带 `display:flex; justify-content:center`）。 */
+.kean-auth .turnstile .wd-button {
+  width: auto;
+  min-width: 200px;
+}
+
+/* ---------- 注册页：带**节点**的四步进度条（本轮用户要求「进度条要有节点」） ----------
+ * 结构在 register.vue 模板里（CSS 注释里不写尖括号）：
+ *   view.auth-step-progress                      ← 一行：轨道 + 右侧 `N/4`
+ *     view.auth-step-progress__track             ← flex:1，整条轨道
+ *       view.auth-step-node.is-done × n          ← 已到达的节点（实心主色 + 白色小内芯）
+ *       view.auth-step-line.is-done|is-todo × n  ← 节点之间的 2px 连接线
+ *       view.auth-step-node.is-current           ← 当前步（实心主色 + 3px 浅色光环，直径 11px）
+ *       view.auth-step-node.is-todo              ← 未到达（浅灰实心，直径 9px）
+ *     text.auth-step-progress__label             ← "2/4"
+ *   view.auth-step-hint                          ← 节点**下面那一行**：当前步的名字（4~6 个字）
  *
- * ⚠️ 这里刻意用左竖线而不是彩色圆点 / 徽章 / 图标：注册页的观感基调是玻璃 + 灰度层级，
- *    加一个彩色圆点会立刻变成"向导组件"，反而比原来的步骤条更抢眼。
- * ⚠️ 这块就在 .auth-card__inner 里（同一容器里装着 3 个 wd-picker 的 position:fixed 弹层），
- *    所以下面这些属性一个都没有：transform / filter / backdrop-filter / will-change /
- *    contain / container-type / perspective。竖线用 border-left 画，不用伪元素 + transform。 */
-.auth-step-head {
+ * ⭐ 「节点下面写什么」的选择（只能有一行）：
+ *   选的是 **B —— 只写当前步的名字**（复用上一版就在用的 `stepHint` → `authStepHintAccount/
+ *   Email/Student/Profile`，4~6 个字），**不写**四个节点各自的名字、也不写「账号 / 邮箱验证 /
+ *   学生认证 / 完善资料」那一整套。理由：
+ *     ① 用户对上一版的差评点就是「四步各一行标题 + 说明 = 文字太多、占地方」，四个标签必然回到那个状态；
+ *     ② 节点本身（实心/光环/浅灰 + 连线颜色）已经把"走到第几步、还剩几步"说完了，
+ *        再给每个节点配名字属于重复表达；当前步的名字才是"我现在该干什么"的新信息；
+ *     ③ 复用已存在的 key 与已存在的 computed（`stepHint`），零新增文案、零新增标识符 → 不会踩
+ *        「新增标识符必须先 grep 确认定义」那条坑。
+ *   原来的 `N/4` **保留**（用户没要求删，而且它是最精确的"第几步"读数），
+ *   它仍在**同一行**、贴在轨道右侧（11px→10px 只是为了不把这一行撑高），不是第二行。
+ *
+ * ⚠️ 竖向占用 = **27px**（这一块自身的盒高；节点行 18px + 与提示行的 9px 间距），逐项相加：
+ *      __track 的 height 显式 = 18px（**节点圆点 11 / 9px、连线 2px、标签 16px 都 ≤ 18px**，
+ *              所以是这条写死的行高决定整块高度，不会被内容撑破）
+ *      __track 的 align-items:center → 圆点在这一行里垂直居中，不需要任何 transform
+ *      与下面 .auth-step-hint 之间的 margin-top 9px
+ *    → 18 + 9 = 27px ≤ 用户的「不超过约 28~32px」。
+ *      加上提示行自身（12.5px/18px）后，这两行合计仍只有 45px，
+ *      与「上一版 20px 进度块 + 一行 8px 间距 + 18px 提示 = 46px」**几乎完全相同** —— 即
+ *      这次加节点**没有让注册页变高**。
+ *    ⚠️ 这一块自身**没有 margin-top**：它与上方卡内标题的间距由
+ *      `.auth-card .auth-card__inner .auth-card-title + .auth-step-progress { margin-top: 10px }` 负责。
+ * ⚠️ 属性克制：这块也在 .auth-card__inner 里（同一容器装着 3 个 wd-picker 的 position:fixed 弹层），
+ *    **没有** transform / filter / backdrop-filter / will-change / contain / container-type /
+ *    perspective。填充与节点位置**全部用 flex + width**：
+ *      · 连接线是 flex:1 的**独立元素**（不是"轨道底色 + 填充条"），所以不需要 overflow / transform；
+ *      · 节点不脱离文档流（不用 position:absolute / fixed），只靠 flex 居中；
+ *      · `translateY(1px)` 这种 transform **一个都没用**（对齐靠 flex 的 align-items:center）。
+ */
+.auth-step-progress {
   display: flex;
   box-sizing: border-box;
-  align-items: flex-start;
-  justify-content: space-between;
-  /* 左侧那 2px 的 padding 是留给竖线的，竖线不额外占宽 */
-  padding: 12px 14px 12px 13px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-left: 2px solid rgba(79, 70, 229, 0.32);
-  border-radius: 16px;
-  background-color: rgba(255, 255, 255, 0.58);
-  box-shadow: 0 12px 26px -22px rgba(24, 41, 92, 0.5);
+  align-items: center;
 }
 
-.auth-step-head__main {
+/* 整条轨道：4px 高的旧版填充条已经退休，轨道本身变成"承载节点与连线的一行"。
+ * height:18px 是显式行高 —— 节点最大 11px，所以圆点永远撑不破这一行。 */
+.auth-step-progress__track {
   display: flex;
   flex: 1;
-  flex-direction: column;
   min-width: 0;
+  align-items: center;
+  height: 18px;
 }
 
-.auth-step-head__title {
-  display: flex;
-  align-items: baseline;
-}
-
-/* 步号：只用字重和灰度拉开层级，不做圆点 / 徽章（见上面的注释） */
-.auth-step-head__no {
+/* 单个节点圆点：三种状态共用几何，只有直径 / 颜色 / 光环不同 */
+.auth-step-node {
   flex-shrink: 0;
-  color: var(--auth-card-title);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 22px;
-  letter-spacing: 0.02em;
+  box-sizing: border-box;
+  border-radius: 50%;
 }
 
-/* 分隔点：比两侧文字都淡，纯粹用来断开「数字」和「标题」 */
-.auth-step-head__dot {
+/* 已到达（含当前步之前的所有步）：实心主色 + 一圈白色小内芯
+ * （内芯靠 inset 内阴影画，**不新增元素**，也不会被裁切） */
+.auth-step-node.is-done {
+  width: 9px;
+  height: 9px;
+  background-color: var(--auth-link);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.92);
+}
+
+/* 当前步：比其它节点大 2px（11px）+ 一圈 3px 浅色光环（用户点名要的写法） */
+.auth-step-node.is-current {
+  width: 11px;
+  height: 11px;
+  background-color: var(--auth-link);
+  box-shadow: 0 0 0 3px rgba(59, 79, 216, 0.15);
+}
+
+/* 未到达：浅灰实心（比空心更"安静"，在玻璃卡上也不会看成一个小圈框） */
+.auth-step-node.is-todo {
+  width: 9px;
+  height: 9px;
+  background-color: rgba(24, 41, 92, 0.16);
+}
+
+/* 节点之间的 2px 连接线：已完成段主色、未到达段浅灰 */
+.auth-step-line {
+  flex: 1;
+  min-width: 0;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.auth-step-line.is-done {
+  background-color: var(--auth-link);
+}
+
+.auth-step-line.is-todo {
+  background-color: rgba(24, 41, 92, 0.12);
+}
+
+/* 轨道右侧的步号：10px / 16px 行高（比 18px 的行矮，因此不参与决定节点行高）。
+ * 数字与斜杠不属于任何语言的文案，所以不新增 i18n key（沿用上一版口径）。 */
+.auth-step-progress__label {
   flex-shrink: 0;
-  margin: 0 7px;
-  color: rgba(91, 104, 128, 0.45);
-  font-size: 13px;
-  line-height: 22px;
-}
-
-.auth-step-head__label {
-  color: var(--auth-card-title);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22px;
-}
-
-/* 这一页要做什么：12px + 中灰，跟 .auth-tip 同一层灰度，不抢标题 */
-.auth-step-head__fields {
-  margin-top: 4px;
-  color: var(--auth-card-sub);
-  font-size: 12px;
-  line-height: 17px;
-}
-
-/* 唯一的进度暗示：小字号 + 中灰 + 等宽数字，不用彩色、不加底色。
- * 数字与斜杠不属于任何语言的文案，因此不新增 i18n key。 */
-.auth-step-head__meta {
-  flex-shrink: 0;
-  margin-left: 10px;
-  color: rgba(91, 104, 128, 0.72);
-  font-size: 11px;
+  margin-left: 9px;
+  color: rgba(91, 104, 128, 0.78);
+  font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  line-height: 16px;
   letter-spacing: 0.06em;
-  line-height: 22px;
 }
+
+/* ⚠️ 上一版的 `.auth-step-head`（每步一个大步骤头：编号 + 标题 + 说明句 + 竖线 + `N / 4`）
+ * 连同 `.auth-step-head__main / __title / __no / __dot / __label / __fields / __meta`
+ * 全部删除：用户明确要求「四步流程改为一条小进度条，别占地方」。
+ * 「这一步干什么」的暗示改由**输入框占位符**表达（占位符文案未改）。 */
 
 /* ---------- 主按钮：整宽胶囊 + 蓝紫渐变 + 柔和发光 + 白色粗体 + 右侧箭头 ----------
  *
@@ -815,13 +959,21 @@
 .auth-actions {
   display: flex;
   flex-direction: column;
-  margin-top: 18px;
+  /* 卡内最后一个块（四个 wd-form / 隐私勾选）与按钮之间：16px（上一版 18px） */
+  margin-top: 16px;
 }
 
+/* ⚠️ 按钮高度：组件 `.wd-button.is-large` 的高度来自 `--wot-button-large-height`（默认 44px），
+ *    编译后是 `.wd-button.is-large[data-v-x]`（0,3,0）且异步分包 CSS 在入口 CSS 之后。
+ *    所以高度用两条一起钉：CSS 里 `.auth-btn`（0,1,0，但组件那条是 `.wd-button.is-large[data-v-x]`
+ *    0,3,0，单靠它压不住，真正生效的是下面 0,4,0 的 `.kean-auth .wd-button.auth-btn--gradient.is-primary`
+ *    与 `.auth-btn--ghost` 那两条的 height），模板上再补一个内联 `style="height: 48px"` 兜底
+ *    ——「大按钮默认 44px」是组件读 CSS 变量的，内联能保证无论变量被谁改过都还是 48px。 */
 .auth-btn {
   display: flex;
   width: 100%;
-  margin-top: 20px;
+  height: 48px;
+  margin-top: 16px;
 }
 
 .auth-actions .auth-btn {
@@ -832,7 +984,9 @@
 .kean-auth .wd-button.auth-btn--gradient.is-primary {
   display: flex;
   width: 100%;
-  border-radius: 18px;
+  height: 48px;
+  padding: 0;
+  border-radius: 15px;
   background-color: var(--auth-btn-from);
   background-image: linear-gradient(102deg, var(--auth-btn-from) 0%, var(--auth-btn-mid) 52%, var(--auth-btn-to) 100%);
   /* ① 顶部 1px 内高光：渐变按钮的「上表面受光」，缺了它就是一整块扁平色块
@@ -859,7 +1013,7 @@
 
 .kean-auth .wd-button.auth-btn--gradient.is-primary::after {
   border: none;
-  border-radius: 18px;
+  border-radius: 15px;
 }
 
 /* loading / disabled 时按钮会自动变成「白字 + 组件默认底」，这里补一条更具体的兜底，
@@ -904,18 +1058,22 @@
   display: none;
 }
 
-/* 「上一步」：白色玻璃 + 蓝字描边胶囊（同样 0,4,0，压过 .wd-button.is-primary 的主题蓝底） */
+/* 「上一步」：白底 + 蓝字描边胶囊（同样 0,4,0，压过 .wd-button.is-primary 的主题蓝底）。
+ * ⚠️ 上一版这里是 rgba(255,255,255,.78) 的半透明白（在玻璃卡上才成立）；
+ *    现在卡面本身就是纯白，改用极浅冷灰底才看得出是一枚按钮。 */
 .kean-auth .wd-button.auth-btn--ghost.is-primary {
-  border: 1px solid rgba(58, 80, 126, 0.24);
-  border-radius: 18px;
-  background-color: rgba(255, 255, 255, 0.78);
+  height: 48px;
+  padding: 0;
+  border: 1px solid rgba(58, 80, 126, 0.22);
+  border-radius: 15px;
+  background-color: rgba(24, 41, 92, 0.04);
   background-image: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .kean-auth .wd-button.auth-btn--ghost.is-primary::after {
   border: none;
-  border-radius: 18px;
+  border-radius: 15px;
 }
 
 .kean-auth .wd-button.auth-btn--ghost.is-primary .wd-button__text {
@@ -940,15 +1098,16 @@
 
 /* ---------- 「获取验证码」小胶囊 ----------
  * wd-button 的 type 默认就是 primary，这枚按钮身上同时有 .is-primary 和 .is-small。
- * 只保留小胶囊这一套外观（浅蓝玻璃底 + 蓝字），不走渐变分支 —— 否则
+ * 只保留小胶囊这一套外观（浅蓝底 + 蓝字），不走渐变分支 —— 否则
  * 「.is-primary 里写白字」会和浅蓝底撞成白字浅底，又变成看不清。
  * ⚠️ 同样用 background-color 长属性覆盖组件的 `background:` 简写，不动任何 --wot-* 变量。 */
 
 .kean-auth .wd-button.auth-code-btn.is-primary {
-  height: 34px;
-  padding: 0 15px;
+  /* 34px → 32px：跟着整页收小，仍高于 28px 的组件 small 默认高度，好点 */
+  height: 32px;
+  padding: 0 14px;
   border: 1px solid rgba(59, 79, 216, 0.22);
-  border-radius: 17px;
+  border-radius: 16px;
   background-color: rgba(59, 79, 216, 0.1);
   background-image: none;
   box-shadow: none;
@@ -956,7 +1115,7 @@
 
 .kean-auth .wd-button.auth-code-btn.is-primary::after {
   border: none;
-  border-radius: 17px;
+  border-radius: 16px;
 }
 
 .kean-auth .wd-button.auth-code-btn .wd-button__text {
@@ -983,13 +1142,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 18px;
+  margin-top: 14px;
   padding: 0 2px;
 }
 
 .auth-link {
   color: var(--auth-link);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -998,107 +1157,103 @@
   font-weight: 400;
 }
 
-/* ---------- 卡片外的底部标语 ---------- */
-
+/* ---------- 卡片外的底部署名：**本轮加回来，但缩到 11px 低对比一行** ----------
+ * 文案沿用 i18n 的 `authSloganText`「让知识与时间更有价值」，两端的破折号写在模板里
+ * （「— … —」，中英文都用同一对符号，不进词典）。
+ * 位置：它是 .kean-auth（flex column）里 .auth-content 之后的**第二个 flex 项**，
+ *      所以永远挨着内容列下方 —— 内容居中时它跟着居中偏下，内容超高时它在最下面。
+ *      ⚠️ 它不是 position:absolute/fixed，不参与「居中」的包含块计算，也不会盖住内容。
+ * 尺寸：11px / 15px 行高、低对比灰、居中、一行；`break-word` 只是超窄屏的兜底，正常不换行。 */
 .auth-slogan {
-  padding: 20px 0 4px;
-  color: rgba(255, 255, 255, 0.86);
-  font-size: 11.5px;
-  line-height: 18px;
-  letter-spacing: 0.22em;
+  display: block;
+  margin-top: 10px;
+  padding: 0 4px;
+  color: rgba(58, 74, 106, 0.5);
+  font-size: 11px;
+  line-height: 15px;
+  letter-spacing: 0.06em;
   text-align: center;
-  text-shadow: 0 1px 7px rgba(19, 34, 78, 0.3);
+  overflow-wrap: break-word;
 }
 
-/* ---------- 矮屏（iPhone SE 667 等）：压缩留白，保证卡片不溢出、可滚动 ---------- */
+/* ---------- 矮屏（iPhone SE 667 等）：压缩留白，保证一屏放完、放不下时也能滚动 ---------- */
 
 @media screen and (max-height: 760px) {
   .auth-hero {
-    padding: calc(26px + env(safe-area-inset-top)) 8px 14px;
+    padding: calc(20px + env(safe-area-inset-top)) 8px 8px;
   }
 
   .auth-hero .auth-logo {
-    width: 72px;
-    height: 72px;
+    width: 68px;
+    height: 68px;
     border-radius: 20px;
   }
 
   .auth-hero .auth-title {
-    margin-top: 10px;
-    font-size: 26px;
+    margin-top: 6px;
+    font-size: 23px;
   }
 
   .auth-card {
-    border-radius: 30px;
+    border-radius: 19px;
   }
 
   .auth-card__inner {
-    padding: 22px 18px 18px;
-    border-radius: 25px;
-  }
-
-  .auth-card__inner .auth-card-sub + .wd-form,
-  .auth-card__inner .auth-card-sub + .auth-field,
-  .auth-card__inner .auth-card-sub + .auth-step-head {
-    margin-top: 22px;
+    padding: 16px 17px 15px;
+    border-radius: 16px;
   }
 
   .auth-field {
-    height: 52px;
+    height: 46px;
     margin-top: 11px;
   }
 
   .auth-btn {
-    margin-top: 16px;
-  }
-
-  .auth-slogan {
-    padding: 14px 0 2px;
+    margin-top: 14px;
   }
 }
 
 @media screen and (max-height: 640px) {
   .auth-hero {
-    padding: calc(18px + env(safe-area-inset-top)) 8px 10px;
+    padding: calc(14px + env(safe-area-inset-top)) 8px 6px;
   }
 
   .auth-hero .auth-logo {
-    width: 62px;
-    height: 62px;
+    width: 60px;
+    height: 60px;
     border-radius: 18px;
   }
 
   .auth-hero .auth-title {
-    font-size: 22px;
+    font-size: 21px;
   }
 
-  .auth-hero .auth-subtitle {
-    margin-top: 6px;
-    font-size: 12px;
-  }
-
-  .auth-card {
-    border-radius: 28px;
-  }
-
+  /* ⚠️ 46px 是输入胶囊的下限：再小就不好点了（用户要求「别小于 44px」）。
+   *    这里 46px 已经贴住这条线，所以矮屏不再往下压，改为压缩卡片内边距与顶部留白。 */
   .auth-card__inner {
-    padding: 20px 16px 16px;
-    border-radius: 23px;
+    padding: 15px 16px 14px;
   }
 
   .auth-field {
-    height: 50px;
+    height: 46px;
     margin-top: 10px;
-  }
-
-  .auth-slogan {
-    display: none;
   }
 }
 
-/* 更矮的屏幕（横屏 / 小窗）：背景模糊是纯装饰，直接关掉省一次全屏合成 */
+/* 更矮的屏幕（横屏 / 小窗，内容必然装不下）：背景模糊是纯装饰，直接关掉省一次全屏合成；
+ * 同时把居中彻底交给顶部对齐 —— 这些高度下 `margin:auto` 本来就退化为 0，这里只是
+ * 再明确一次，保证「顶部永远不被裁掉、底部永远滚得到」。 */
 @media screen and (max-height: 560px) {
   .auth-sky {
     filter: none;
+  }
+
+  .auth-content {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+
+  .auth-slogan {
+    margin-top: 8px;
   }
 }

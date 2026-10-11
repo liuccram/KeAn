@@ -26,18 +26,25 @@ const model = reactive({
 /**
  * 页面文案：统一走 i18n，不在模板里硬编码中文。
  * 用 computed 包一层，语言偏好变更后重新进入页面就会整体跟着变。
+ * ⚠️ 本轮把两条描述**加回来但都用短的**（用户要求「文字描述都加回来、但要简化」）：
+ *    heroSlogan → 顶部副标题「校园临时代课互助」（5 个汉字，12.5px 一行）
+ *    sub        → 卡内副标题（12 个汉字，12.5px 一行）
+ *    slogan     → 底部署名「让知识与时间更有价值」（10 个汉字，11px 低对比一行）
+ *    三条都复用 i18n.ts 里**已经存在**的 key（authHeroSlogan / authResetSub / authSloganText），
+ *    本轮没有为本页新增任何 key。
  */
 const i18n = computed(() => ({
   brand: t("authBrand"),
+  heroSlogan: t("authHeroSlogan"),
   headline: t("authResetHeadline"),
-  headlineSub: t("authResetSub"),
+  sub: t("authResetSub"),
+  slogan: t("authSloganText"),
   emailPlaceholder: t("authEmailExample"),
   smsLabel: t("authSmsLabel"),
   sendSms: t("authSendSms"),
   newPasswordPlaceholder: t("authPasswordNewPlaceholder"),
   confirmPlaceholder: t("authPasswordConfirmPlaceholder"),
   submit: t("authResetSubmit"),
-  slogan: t("authSloganText"),
   captchaFailed: t("authCaptchaFailed"),
   captchaMissing: t("authCaptchaMissingReset"),
   ruleEmail: t("authRuleEmailRequired"),
@@ -216,14 +223,17 @@ function handleSubmit() {
       <view class="auth-hero auth-hero--compact">
         <image class="auth-logo" src="/static/app-logo.jpg" mode="aspectFit" />
         <view class="auth-title">{{ i18n.brand }}</view>
+        <!-- 顶部副标题：短句、一行、小字号（12.5px） -->
+        <text class="auth-subtitle">{{ i18n.heroSlogan }}</text>
       </view>
 
-      <!-- 悬浮玻璃卡片 = 外层玻璃框（.auth-card）+ 内层玻璃板（.auth-card__inner），
-           两层之间留 2px 缝做厚度。本页没有 wd-picker，外框用 backdrop-filter 是安全的。 -->
+      <!-- 白卡 = 外层框（.auth-card）+ 内层板（.auth-card__inner），两层都是实心白。
+           ⚠️ 本版卡片上**没有** backdrop-filter（见 auth-theme.css 文件头约束 3）。 -->
       <view class="auth-card">
         <view class="auth-card__inner">
           <view class="auth-card-title">{{ i18n.headline }}</view>
-          <view class="auth-card-sub">{{ i18n.headlineSub }}</view>
+          <!-- 卡内副标题：一条短句（12.5px 一行），不改变标题 → 第一个输入框的节奏 -->
+          <view class="auth-card-sub">{{ i18n.sub }}</view>
 
           <wd-form ref="formRef" :model="model" error-type="toast">
             <view class="auth-field auth-field--mail">
@@ -252,18 +262,6 @@ function handleSubmit() {
               </view>
               <CodeBoxes v-model="model.smsCode" />
             </view>
-
-            <TurnstileChallenge
-              v-if="captcha.enabled && captcha.siteKey"
-              ref="turnstileRef"
-              box-id="kean-ts-forgot"
-              :site-key="captcha.siteKey"
-              v-model="model.turnstileToken"
-            />
-            <!-- 配置请求失败：单独一行，且绝不在失败时渲染验证控件（H5 与非 H5 都渲染这个普通 view） -->
-            <view v-else-if="captcha.error" class="auth-hint">{{ i18n.captchaFailed }}</view>
-            <!-- 只有后端明确 enabled:true、却没给 siteKey 才是"未配置"；enabled:false 时这里也不显示 -->
-            <view v-else-if="captcha.loaded && captcha.enabled" class="auth-hint">{{ i18n.captchaMissing }}</view>
 
             <!-- 极细分隔线：验证码区与「新密码」区属于两件事，用一条淡线分开即可 -->
             <view class="auth-divider" />
@@ -295,6 +293,7 @@ function handleSubmit() {
                 size="large"
                 block
                 custom-class="auth-btn auth-btn--gradient"
+                style="height: 48px"
                 :loading="loading"
                 @click="handleSubmit"
               >
@@ -305,8 +304,23 @@ function handleSubmit() {
         </view>
       </view>
 
-      <view class="auth-slogan">— {{ i18n.slogan }} —</view>
+      <!-- 真人验证：移到**白卡外面**（卡片之后），不再被卡片的圆角 / overflow 裁切，宽度自适应并居中。
+           ⚠️ 逻辑一字未动：v-if / v-model / box-id / ref 与两条错误提示的 v-else-if 分支原样搬迁。 -->
+      <TurnstileChallenge
+        v-if="captcha.enabled && captcha.siteKey"
+        ref="turnstileRef"
+        box-id="kean-ts-forgot"
+        :site-key="captcha.siteKey"
+        v-model="model.turnstileToken"
+      />
+      <!-- 配置请求失败：单独一行，且绝不在失败时渲染验证控件（H5 与非 H5 都渲染这个普通 view） -->
+      <view v-else-if="captcha.error" class="auth-hint">{{ i18n.captchaFailed }}</view>
+      <!-- 只有后端明确 enabled:true、却没给 siteKey 才是"未配置"；enabled:false 时这里也不显示 -->
+      <view v-else-if="captcha.loaded && captcha.enabled" class="auth-hint">{{ i18n.captchaMissing }}</view>
     </view>
+
+    <!-- 底部署名：加回来但缩到 11px 低对比一行 -->
+    <text class="auth-slogan">— {{ i18n.slogan }} —</text>
     <wd-toast />
   </view>
 </template>

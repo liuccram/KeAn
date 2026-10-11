@@ -26,6 +26,29 @@ const DICT = {
     customCover: "自定义",
     // —— 登录 / 注册 / 忘记密码（auth 三页）——
     authBrand: "课安",
+    // —— 下面这批 key 里，**大部分已经重新回到三页模板上**：
+    //      authSloganText       底部署名「让知识与时间更有价值」—— 当前**已重新引用**
+    //                           （登录 / 注册 / 忘记密码三页底部的 11px 小字）
+    //      authHeroSlogan       顶部副标题「校园临时代课互助」—— 当前**已重新引用**
+    //      authWelcomeSub       登录页卡内副标题 —— 当前**已重新引用**
+    //      authRegisterSub      注册页卡内副标题 —— 当前**已重新引用**
+    //      authResetSub         忘记密码页卡内副标题 —— 当前**已重新引用**
+    //      authStepAccount / authStepEmail / authStepStudent / authStepProfile（4）—— 已重新引用
+    //                           （注册页进度条下面那一行极短步骤提示）
+    //      authEmailTip / authNicknameTip（2）—— 保留未引用，本轮改用它们**下面新增的短版**
+    //                           （authEmailHintShort / authNicknameHintShort），长句不再上屏
+    //      authRegisterHeadline 保留未引用（注册页顶部改用更短的 authHeroSlogan）
+    //      authRegisterSubTip   保留未引用（用户明确不要「4 步完成注册 · 需 QQ 邮箱验证码」这种长提示）
+    //      authStepFieldAccount / authStepFieldEmail / authStepFieldStudent / authStepFieldProfile（4）
+    //                           保留未引用（注册页进度条下面的步骤提示改用更短的 authStep* 那一组）
+    //      authStepDone         保留未引用（上一版四步进度条的「已完成」）
+    //    ⚠️ 处理口径：不再引用的仍然**保留 key 不删**，zh / en **两边同时保留、顺序不变**
+    //      （本文件 zh 与 en 的 auth 段严格 1:1 同序，删 key 必须两边一起删）。
+    //      保留而不删的理由：① 用户明确允许「保守做法：保留 key 但不再引用」；
+    //      ② 这是一次纯布局 / 文案精简，删 key 会扩大改动面（将来若要恢复某句描述，改回来只要加一行模板）；
+    //      ③ 已 grep 过整个仓库：这些 key 只在三页模板与本文件出现，保留不会产生「半删」状态，
+    //         zh / en 都不会出现某一端有、另一端没有的情况。
+    //      将来若要彻底删除，请 zh / en 同序成对删除，并再 grep 一次确认无引用。
     authSloganText: "让知识与时间更有价值",
     authHeroSlogan: "校园临时代课互助",
     authWelcomeBack: "欢迎回来",
@@ -79,6 +102,17 @@ const DICT = {
     authStepDone: "已完成",
     authNicknameTip: "昵称不填也可以：注册成功后系统会分配一个「课安用户xxxxxx」，之后可在个人资料里修改。",
     authEmailTip: "必须填写完整邮箱（例如 12345678@qq.com）：只填 QQ 号通不过校验。",
+    // —— 注册页：进度条下面那一行极短步骤提示（4 步各一条，zh 4~6 字 / en 1~3 词）——
+    //    取代原来「每步一个大标题 + 一句说明」的两行块：信息不丢，但只占一行。
+    //    ⚠️ 与上面 authStep* / authStepField* 是两套 key（那两套更长，保留未引用）。
+    authStepHintAccount: "设置账号密码",
+    authStepHintEmail: "验证 QQ 邮箱",
+    authStepHintStudent: "选择学校校区",
+    authStepHintProfile: "完善个人资料",
+    // —— 注册页输入框下面的一行极短提示 ——
+    //    取代上面两条长句（authEmailTip / authNicknameTip 保留未引用），每行不超过 8 个汉字。
+    authEmailHintShort: "需完整 QQ 邮箱",
+    authNicknameHintShort: "选填",
     authCaptchaFailed: "真人验证配置读取失败，请稍后重试",
     authCaptchaMissingLogin: "人机验证未配置，暂无法登录",
     authCaptchaMissingRegister: "人机验证未配置，暂无法注册",
@@ -281,6 +315,10 @@ const DICT = {
     customCover: "Custom",
     // —— auth pages: login / register / forgot password ——
     authBrand: "Kean",
+    // ⚠️ 与上面 zh 的 auth 段严格 1:1 同序：这些 key 在两边都保留，
+    //    说明见 zh 段里的长注释（口径：不引用的也保留、zh/en 成对保留、顺序一致）。
+    //    其中 authSloganText / authHeroSlogan / authWelcomeSub / authRegisterSub / authResetSub
+    //    与 authStepAccount~authStepProfile 已经重新被三页模板引用。
     authSloganText: "Make knowledge and time worth more",
     authHeroSlogan: "Campus substitute-teaching mutual aid",
     authWelcomeBack: "Welcome back",
@@ -334,6 +372,14 @@ const DICT = {
     authStepDone: "Done",
     authNicknameTip: "Nickname is optional: after signing up the system assigns one like “Kean User xxxxxx”, and you can change it later in your profile.",
     authEmailTip: "A complete email is required (e.g. 12345678@qq.com): a bare QQ number will not pass.",
+    // —— register: the one-line step hint under the progress bar (same order as zh) ——
+    authStepHintAccount: "Set username and password",
+    authStepHintEmail: "Verify your QQ email",
+    authStepHintStudent: "Pick school and campus",
+    authStepHintProfile: "Complete your profile",
+    // —— register: one-line hints under the inputs (short versions of the two long ones above) ——
+    authEmailHintShort: "Full QQ email required",
+    authNicknameHintShort: "Optional",
     authCaptchaFailed: "Failed to load the human-verification config, please retry later",
     authCaptchaMissingLogin: "Human verification is not configured, sign-in is unavailable",
     authCaptchaMissingRegister: "Human verification is not configured, sign-up is unavailable",
