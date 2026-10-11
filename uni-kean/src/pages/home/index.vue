@@ -23,6 +23,9 @@ const toast = useToast();
 const userStore = useUserStore();
 const { wallpaperOn, wallpaperImage, prefs } = usePageWallpaper();
 const { items: ongoing, error: ongoingError, load: loadOngoing } = useOngoingTasks();
+// 顶部标题栏改成页面内自绘（pages.json 的 navigationStyle: custom，见下）后，刘海屏要自己
+// 让出状态栏高度；取值与 pages/mine/index.vue 完全同一套（同一行、同一个 20 兜底）。
+const statusBarHeight = uni.getSystemInfoSync().statusBarHeight || 20;
 const nowTick = useNowTick();
 const loading = ref(false);
 const error = ref("");
@@ -272,6 +275,11 @@ onReachBottom(() => {
 <template>
   <view class="page" :class="{ skinned: wallpaperOn }">
     <PageBackdrop :src="wallpaperImage" />
+    <!-- 顶部标题栏（原框架导航栏，现按「我的」页的做法自绘）：
+         ⚠️ 它就在页面内容的滚动流里，**没有** position: fixed / sticky → 随内容一起滚走。
+         文案取 pages.json 的 navigationBarTitleText「首页」，不另造文案。 -->
+    <view class="status-bar" :style="{ height: statusBarHeight + 'px' }" />
+    <view class="nav-title">首页</view>
     <view v-if="announcement" class="announce-mask">
       <view class="announce-window">
         <view class="announce-kicker">平台公告</view>
@@ -354,6 +362,41 @@ onReachBottom(() => {
 </template>
 
 <style scoped>
+/* ===========================================================================
+ * 顶部标题栏（自绘，替代被 navigationStyle: custom 移除的框架导航栏）
+ * ---------------------------------------------------------------------------
+ * 排版逐字照抄 pages/mine/index.vue 的 .status-bar / .nav-title（含全局表
+ * design-kit.css 的 `.kean-mine .nav-title`：17px / 600 / 居中 / 10-6 内边距），
+ * 一个字都没有新发明：
+ *   · .status-bar —— 状态栏高度的占位条（高度由模板的行内 style 给）；
+ *   · .nav-title  —— 标题行，单行高度 ≈ 10+22+6 = 38px，与框架导航栏的 44px
+ *     同一量级，所以页面内容往下推的距离与原框架栏基本一致。
+ * ⚠️ 这里**不写** position: fixed / sticky：它必须是普通文档流里的元素，
+ *    才会随页面内容一起滚走（这正是本次需求）。
+ * ⚠️ 也**不写** backdrop-filter / transform / filter / will-change / contain /
+ *    perspective：本页 <wd-toast> 与 .announce-mask 都是 position: fixed 的
+ *    .page 直接子节点，祖先链上出现这些属性会把它们劫持成"关不掉的弹层"。
+ * 颜色：原框架栏是全局 style 的白底黑字（navigationBarBackgroundColor #FFFFFF /
+ *    navigationBarTextStyle black），所以字色取 --kean-text（#1d2129）并带同值兜底；
+ *    底色刻意留透明 —— 白底块在滚动中段会糊成一条白带子，而「我的」页的自绘标题
+ *    也是透明底。壁纸/深色那两态下与「我的」页同向改成浅色字（见下）。
+ * =========================================================================== */
+.status-bar {
+  width: 100%;
+}
+.nav-title {
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--kean-text, #1d2129);
+  padding: 10px 0 6px;
+}
+/* 壁纸态：本页页面底变成深色流星图（wallpaper-skin.css），黑字会看不见 ——
+   与「我的」页 `.page.skinned.kean-mine .guest .nav-title` 同向改浅色。
+   特异性 0,3,0 > 上面 scoped 的 0,2,0（scoped 的 .page.skinned + .nav-title[data-v]）。 */
+.page.skinned .nav-title {
+  color: #f4f7ff;
+}
 .announce-mask {
   position: fixed;
   inset: 0;

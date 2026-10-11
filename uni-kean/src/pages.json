@@ -10,13 +10,15 @@
       "path": "pages/home/index",
       "style": {
         "navigationBarTitleText": "首页",
-        "enablePullDownRefresh": true
+        "enablePullDownRefresh": true,
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/publish/index",
       "style": {
-        "navigationBarTitleText": "发布"
+        "navigationBarTitleText": "发布",
+        "navigationStyle": "custom"
       }
     },
     {
@@ -25,7 +27,8 @@
         "navigationBarTitleText": "消息",
         "enablePullDownRefresh": true,
         "backgroundColor": "#F5F6F8",
-        "backgroundColorTop": "#FFFFFF"
+        "backgroundColorTop": "#FFFFFF",
+        "navigationStyle": "custom"
       }
     },
     {

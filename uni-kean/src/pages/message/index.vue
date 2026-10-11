@@ -73,6 +73,9 @@ const page = ref(1);
 const dots = ref({ system: 0, task: 0, chat: 0 });
 const currentUnread = computed(() => tab.value === "system" ? dots.value.system : tab.value === "task" ? dots.value.task : dots.value.chat);
 const messageDescription = computed(() => tab.value === "system" ? "账号提醒与平台公告" : tab.value === "task" ? "跟进每一次申请与代课进展" : "和一起互助的同学保持联系");
+// 顶部标题栏改成页面内自绘（pages.json 的 navigationStyle: custom）后，刘海屏要自己
+// 让出状态栏高度；取值与 pages/mine/index.vue 完全同一套（同一行、同一个 20 兜底）。
+const statusBarHeight = uni.getSystemInfoSync().statusBarHeight || 20;
 const noticeScope = computed(() => (tab.value === "system" ? "SYSTEM" : "TASK") as "SYSTEM" | "TASK");
 // 系统通知（没有可跳转的任务/会话）点开后，在原地用弹层展示完整内容
 const activeNotice = ref<NotificationItem | null>(null);
@@ -1347,8 +1350,23 @@ onReachBottom(() => {
     </view>
     <template v-else>
       <view class="msg-shell">
+        <!-- 顶部标题栏（原框架导航栏，现按「我的」页的做法自绘）：
+             ⚠️ 只在登录态分支里（与下面的 .msg-page-head / .msg-tabs 同一个 v-else）——
+             原框架导航栏在未登录态也在，但本页未登录态是整屏「去登录」兜底，
+             保持与它一致的既有结构，不把标题栏塞进 guest 分支。
+             ⚠️ 它就在页面内容的滚动流里，**没有** position: fixed / sticky → 随内容一起滚走。
+             ⚠️ 它**不是**下面那层三档 tab（系统 / 申请与履约 / 私信）：.msg-tabs 与
+             .msg-chips 这次一个字都没动，仍然照旧跟着页面滚。
+             文案取 pages.json 的 navigationBarTitleText「消息」，不另造文案。 -->
+        <view class="status-bar" :style="{ height: statusBarHeight + 'px' }" />
+        <view class="nav-title">消息</view>
         <view class="msg-page-head">
-          <view class="msg-page-head__copy"><text class="msg-page-head__eyebrow">CAMPUS CONNECTION</text><text class="msg-page-head__title">消息</text><text class="msg-page-head__subtitle">{{ messageDescription }}</text></view>
+          <!-- ⚠️ 这里原本还有一个 23px 的「消息」大标题（.msg-page-head__title），
+               自绘标题栏（上面 .nav-title「消息」）加入后两者完全重复，已按用户要求移除；
+               只去掉那一行文字，eyebrow / 副标题 / 未读胶囊与整个 .msg-page-head 结构都保持原样。
+               （对应的 .msg-page-head__title 样式规则保留未删：它是全局表里的规则，
+                 删它属于额外改动，留着无引用、零运行影响。） -->
+          <view class="msg-page-head__copy"><text class="msg-page-head__eyebrow">CAMPUS CONNECTION</text><text class="msg-page-head__subtitle">{{ messageDescription }}</text></view>
           <view class="msg-page-head__status" :class="{ 'msg-page-head__status--unread': currentUnread > 0 }"><view class="msg-page-head__status-dot" />{{ currentUnread > 0 ? `${currentUnread > 99 ? '99+' : currentUnread} 条未读` : '已读完' }}</view>
         </view>
         <!-- A 节：三档平级分段控件（结构 / 交互与原 tabs 完全一致；视觉已还原成
@@ -1617,6 +1635,42 @@ onReachBottom(() => {
   min-height: 100vh;
   overflow-x: hidden;
   max-width: 100%;
+}
+
+/* ===========================================================================
+ * 顶部标题栏（自绘，替代被 navigationStyle: custom 移除的框架导航栏）
+ * ---------------------------------------------------------------------------
+ * 排版逐字照抄 pages/mine/index.vue 的 .status-bar / .nav-title（含全局表
+ * design-kit.css 的 `.kean-mine .nav-title`：17px / 600 / 居中 / 10-6 内边距），
+ * 一个字都没有新发明。
+ * ⚠️ 这里**不写** position: fixed / sticky：它必须是普通文档流里的元素，
+ *    才会随页面内容一起滚走（这正是本次需求）。
+ * ⚠️ 也**不写** backdrop-filter / transform / filter / will-change / contain /
+ *    perspective：本页 <wd-toast> / <wd-popup>（系统通知详情弹层）都是 position: fixed
+ *    的 .page 直接子节点，祖先链上出现这些属性会把它们劫持成"关不掉的弹层"
+ *    （design-messages.css 文件头铁律 2 的同一条约束）。
+ * 颜色：原框架栏是全局 style 的白底黑字（navigationBarBackgroundColor #FFFFFF /
+ *    navigationBarTextStyle black），故字色取 --kean-text（#1d2129）并带同值兜底；
+ *    底色透明 —— 壁纸态下 wallpaper-skin.css 会给 .page.skinned 的每个直接子元素
+ *    建层叠上下文（position: relative + z-index: 1），透明才不会盖住流星底图；
+ *    深色态（html.kean-dark page）--kean-text 自动变 #ffffff。
+ * ⚠️ 只写 .status-bar / .nav-title 两个类，**不碰** .msg-tabs / .msg-chips /
+ *    .msg-page-head —— 那一层三档 tab 与筛选 chip 本轮零改动。
+ * =========================================================================== */
+.status-bar {
+  width: 100%;
+}
+.nav-title {
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--kean-text, #1d2129);
+  padding: 10px 0 6px;
+}
+/* 壁纸态：本页页面底变成深色流星图，黑字会看不见 —— 与「我的」页同向改浅色。
+   特异性 0,3,0 > 上面 scoped 的 0,2,0。 */
+.page.skinned .nav-title {
+  color: #f4f7ff;
 }
 
 /* ---------- 「申请与履约 → 全部」档的业务分区标题（原有结构，原样保留） ---------- */
