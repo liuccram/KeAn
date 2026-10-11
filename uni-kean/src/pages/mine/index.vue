@@ -98,20 +98,15 @@ useLiveUpdates((event) => {
 <template>
   <view class="page" :class="{ skinned: wallpaperOn }">
     <PageBackdrop :src="wallpaperImage" />
+    <!-- 未登录兜底（方案 A）：加了全站登录门禁后 guest 态基本不可达（只有 token 恰好失效的
+         那一帧会渲染），所以这里**不再做**「大头像 + 未登录大标题 + 登录按钮」的 hero 区，
+         只留一行灰字。⚠️ 之所以还留一行可点的字而不是纯空白：冷启动直接打开本页时，
+         getCurrentRoute() 有一瞬可能还取不到当前页（守卫会 no-op 等下一次），
+         那种情况下这行字是用户唯一的手动出口；行为仍是原有的 goLogin()，未改跳转方式。 -->
     <view v-if="!isLoggedIn" class="guest">
       <view class="status-bar" :style="{ height: statusBarHeight + 'px' }" />
       <view class="nav-title">我的</view>
-      <view class="guest-body">
-        <view class="lock-avatar">
-          <text class="lock-person">👤</text>
-          <view class="lock-badge">🔒</view>
-        </view>
-        <view class="guest-name">未登录</view>
-        <view class="guest-sub">登录后即可使用全部功能</view>
-        <view class="login-wrap">
-          <wd-button type="primary" round block @click="goLogin">登录 / 注册</wd-button>
-        </view>
-      </view>
+      <view class="guest-hint" @click="goLogin">正在跳转登录…如未跳转，点此登录</view>
     </view>
 
     <view v-else class="logged">
@@ -299,53 +294,16 @@ useLiveUpdates((event) => {
 .hero.custom .limit-line {
   color: #ffd666;
 }
-.guest-body {
-  padding-top: 72px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.lock-avatar {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  background: var(--kean-primary-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-.lock-person {
-  font-size: 42px;
-}
-.lock-badge {
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--kean-card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  box-shadow: 0 2px 6px rgba(77, 128, 240, 0.2);
-}
-.guest-name {
-  margin-top: 18px;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--kean-text);
-}
-.guest-sub {
-  margin-top: 8px;
+/* 未登录兜底：一行 13px 辅助灰，位置压在页面中偏下（读起来像"正在跳转"），不做 hero 区。
+   ⚠️ 这里**只有排版与颜色**，绝不加 backdrop-filter / transform / filter / will-change /
+   contain / perspective：本页 <wd-toast> 的根节点带内联 position:fixed + translate，
+   一旦祖先链上出现这些属性，toast 就会被劫持到祖先坐标系里（证据见 wd-toast.vue:107~119）。 */
+.guest-hint {
+  margin-top: 36vh;
+  padding: 0 24px;
+  text-align: center;
   color: var(--kean-muted);
   font-size: 13px;
-}
-.login-wrap {
-  margin-top: 28px;
-  width: 220px;
 }
 .nickname {
   color: var(--kean-text);

@@ -162,14 +162,20 @@
   z-index: 0;
   display: flex;
   flex-direction: column;
-  /* 与 .auth-content 的 `margin: auto 0` 双保险：内容装得下时居中；
-   * 装不下时（剩余空间为负）auto 外边距退化为 0，居中不生效，页面正常从顶部滚动。 */
-  justify-content: center;
+  /* ⚠️⚠️ 这一层**故意没有** `justify-content: center`（本轮修的就是它，详见文件末尾
+   *   「垂直居中修正」一节）：居中只交给 `.auth-content` 的 `margin: auto 0` 一条通道。
+   *   原因：`justify-content: center` 与「底部预留 56px 的 padding」是矛盾的 ——
+   *   它把子元素在这个**不对称**的 padding 盒里居中，于是内容整体被顶高约 28px；
+   *   而且一旦内容超过视口、容器开始滚动，`justify-content: center` 会把溢出推到
+   *   滚动区顶部之上，**顶部会滚不到**（矮屏 / 横屏 / 键盘弹起正是这种场景）。
+   *   只留 `margin: auto` 时：剩余空间为负 → auto 解析为 0 → 内容从顶部正常排布，顶部永不裁切。 */
   box-sizing: border-box;
   min-height: 100vh;
   /* ⚠️ 底部 56px：给「已加回来的底部署名（.auth-slogan）」预留一段位置，
-   *    这样 `margin:auto` 居中时内容列不会把署名压到屏幕最下沿，
-   *    署名始终挨着内容列、跟着整组一起偏下居中（仍保留 env(safe-area-inset-bottom)）。 */
+   *    这样居中时内容列不会把署名压到屏幕最下沿，
+   *    署名始终挨着内容列、跟着整组一起偏下居中（仍保留 env(safe-area-inset-bottom)）。
+   *    ⚠️ 这块 padding **不会**再让内容偏上：下面 `.kean-auth::after` 用同高度的
+   *      伪元素把上方的空白补齐了（详见文件末尾「垂直居中修正」一节）。 */
   padding: 0 20px calc(56px + env(safe-area-inset-bottom));
   overflow-x: hidden;
   background-color: var(--auth-sky-base);
@@ -203,11 +209,16 @@
 
 /* 内容容器：z-index 抬到背景层之上；⚠️ 这里绝对不能加 backdrop-filter（内含 picker 弹层）
  *
- * ⭐ 白卡垂直居中（用户反馈②「白框放到中间」；本批卡片配色改回白框，居中方式**一字未动**）：
- *   本容器在 .kean-auth（flex column + min-height:100vh）里是**唯一的 flex 主体**，
- *   所以用 `margin: auto 0` 把它在剩余空间里上下均分 —— 视觉结果就是
- *   「Logo + 白卡 + Turnstile」这三件一起垂直居中，而底部署名（.auth-slogan）
- *   是同级的第二个 flex 项，仍然挨着内容列排在它下面。
+ * ⭐ 白卡垂直居中：**本容器是 .kean-auth（flex column + min-height:100vh）里唯一的
+ *   "会用 margin:auto 吸收剩余空间"的 flex 项**，所以 `margin: auto 0` 会把上面
+ *   「剩余空间的一半」和下面「剩余空间的一半」分别分给它 —— 视觉结果就是白卡落在正中。
+ *   （`.auth-slogan` 与 `.kean-auth::after` 都**不写** margin:auto，它们的 auto 值恒为 0。）
+ *   ⚠️ 所以 `.kean-auth` 上**不能**再有 `justify-content: center`：
+ *      flex 规范里，只要主轴上有任一子项存在 auto 外边距，`justify-content` 就**完全失效**，
+ *      改由 auto 外边距吸收全部剩余空间 —— 也就是说这条 justify-content 在旧代码里其实
+ *      从来没生效过，真正决定落点的一直是 `margin:auto`；它留在那里只会误导下一个人
+ *      （而且万一哪天 `.auth-content` 的 auto 外边距被去掉，它就会立刻接管并带来
+ *      "溢出时顶部滚不到"的老毛病）。本轮已删掉，居中只有 `margin:auto` 这一条通道。
  *   ⚠️ 为什么矮屏 / 键盘弹起 / Turnstile 展开时**不会被裁掉顶部**（这是这一条的验收点）：
  *      · 容器是 `min-height: 100vh`（高度可增长，不是固定 height），也没有 overflow:hidden；
  *      · 当内容自然高 > 视口时，flex 剩余空间为**负**，`margin: auto` 在负剩余空间下
@@ -225,6 +236,27 @@
   max-width: 460px;
   /* 上下 auto：剩余空间为负时自动退化为 0（clamp 语义），这就是「居中但不裁切」的关键 */
   margin: auto 0;
+}
+
+/* ⭐ 垂直居中修正的关键一笔（本轮问题①的补丁）：
+ *   `.kean-auth` 的 `padding-bottom: calc(56px + env(safe-area-inset-bottom))` 是**不对称**的，
+ *   而 `margin:auto` 分的是"内容盒"里的剩余空间 —— 内容盒下边比上边少 56px，
+ *   于是白卡会比真正的屏幕中点**高约 28px**（56 ÷ 2；桌面端一眼能看出来，手机端不明显）。
+ *   这里用一个零成本、不可见、不占事件的伪元素当"配重"：它的高度**完全等于那条 padding-bottom**，
+ *   于是上方被补出同高的空白 → 内容盒重新对称 → `margin:auto` 落点回到屏幕正中。
+ *   ⚠️ 为什么用 `::after` 而不是给 `.kean-auth` 写 padding-top：padding-top 是**固定**占位，
+ *      矮屏内容超高时会白白多出 56px 把内容整体往下推；而"配重"的本质是参与 flex 剩余空间分配，
+ *      剩余空间为负时 `margin:auto` 退化为 0，伪元素只是排在最末、不产生任何位移。
+ *   ⚠️ 它不写 margin:auto（否则会抢走一半剩余空间，白卡又被顶上去）；也不写任何
+ *      backdrop-filter / filter / transform / contain（会建包含块劫持 wd-picker 的 fixed 弹层）。
+ *   ⚠️ 它**不是** position: absolute/fixed —— 只是一个高度可参与布局的普通 flex 项，
+ *      不会盖住任何内容、也不参与命中测试。 */
+.kean-auth::after {
+  content: "";
+  flex: 0 0 auto;
+  /* 宽度不用管：父级是 flex column，`align-items` 默认 stretch 会把它拉满整行 */
+  height: calc(56px + env(safe-area-inset-bottom));
+  pointer-events: none;
 }
 
 /* ---------- 顶部返回（浮在背景上的玻璃圆钮，保证任何入口进来都出得去） ---------- */
@@ -1257,3 +1289,62 @@
     margin-top: 8px;
   }
 }
+
+/* ---------- 宽屏（桌面浏览器 ≥768px）：只放宽内容列，**不改布局结构** ----------
+ * 用户要求「桌面端可以适当加宽卡片」，例如把 460px 提到 420~480px；这里取 **480px**（上限）。
+ * 只动 `.auth-content` 的 `max-width` 这一个值：
+ *   · 卡片本身没有自己的宽度 / max-width（它靠 flex column 的 align-items: stretch 撑满
+ *     内容列），所以列一放宽，白卡与输入胶囊就一起变宽，不需要改第二处；
+ *   · **不做两栏**、不新增任何元素、不动字号与内边距（用户明确「别改成两栏布局」）；
+ *   · 手机端（<768px）完全不受影响：这条媒体查询在那边根本不命中。
+ * ⚠️ 为什么用 768px 而不是 900/1024：768 就是"平板竖屏 / 桌面浏览器"的常规分界，
+ *    与用户原话「宽度 ≥ 768px 左右」一致。 */
+@media screen and (min-width: 768px) {
+  .auth-content {
+    max-width: 480px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 垂直居中修正（本轮问题①「电脑网页端登录注册白框并不居中」的根因与补丁）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 【根因】不是"容器链没撑满"，而是**容器自己有 56px 的不对称底部内边距**。
+ *   逐层核实过的事实（都有文件证据，不是猜的）：
+ *     · html / body → `height: 100%`；
+ *     · #app / uni-app / uni-page / uni-page-wrapper → `height: 100%`；
+ *     · uni-page-body → 只有 `display:block; width:100%; box-sizing:border-box`（**没有** height）。
+ *       证据：node_modules/@dcloudio/uni-h5/style/framework/base.css 第 6~37 行。
+ *       HTML 里 uni-app / uni-page / uni-page-wrapper 都是 display:block 的定高盒子，
+ *       所以 uni-page-body（高度 auto）会自动长到 100vh 的父高（block 盒 in-flow 子元素
+ *       的 auto 高度不会超过定高父级的可视高度），`.kean-auth` 的 `min-height: 100vh`
+ *       又独立保证自己至少一屏高 —— 两层一起兜住了，**这一层不是问题**。
+ *     · 真正的偏移来自 `.kean-auth` 的 `padding: 0 20px calc(56px + env(safe-area-inset-bottom))`：
+ *       flex 容器的"内容盒"高度 = 100vh − 56px（桌面端 safe-area 恒为 0），
+ *       而 `margin:auto`（.auth-content 上那条）分配的是**内容盒**里的剩余空间 →
+ *       白卡落在「内容盒」的正中 = 距屏幕顶 `(100vh − 56 − 组高)/2`，
+ *       真正的屏幕正中是 `(100vh − 组高)/2` → **白卡偏高正好 56 ÷ 2 = 28px**。
+ *       高屏时剩余空间大、20~30px 的偏移一眼可见；手机端剩余空间小，所以"看起来还行"。
+ *       （同时确认：`@media (max-height: 560px)` 那条只在矮屏命中，桌面不受它影响；
+ *         `.kean-auth` 上的 `justify-content: center` 因为子项存在 auto 外边距而**本就没生效**，
+ *         它同样不是原因 —— 但它是个会误导人的隐患，本轮一并删掉。）
+ *
+ * 【补丁】两处，配合起来才成立：
+ *   ① `.kean-auth` 上的 `justify-content: center` **删除**（居中只走 `margin:auto` 一条通道）；
+ *   ② 新增 `.kean-auth::after`：高度 = 同一条 56px（+ env(safe-area-inset-bottom)）的
+ *      不可见配重项，把"内容盒上方缺少的那 56px"补回来 → 内容盒重新对称 →
+ *      `margin:auto` 的落点回到屏幕正中。
+ *
+ * 【为什么这样就居中，而且不违反那些硬约束】
+ *   · 用一个**参与正常流的 flex 项**补配重，而不是加 `padding-top`：剩余空间为负（矮屏、
+ *     横屏、键盘弹起、Turnstile 展开）时 `margin:auto` 退化为 0，配重项只是排在最末，
+ *     不会像固定 padding-top 那样把内容硬往下推；无论哪种情况，**顶部永远从 0 开始**，
+ *     不可能被裁掉（内容超出时照常滚动到最底 —— 容器是 min-height 不是 height，
+ *     且没有任何 overflow:hidden）。
+ *   · 没有 `position: fixed`、没有 `transform`、没有 `backdrop-filter` / `filter` /
+ *     `will-change` / `contain` / `perspective` —— `::after` 上一条都没有，
+ *     所以不会成为卡内 3 个 wd-picker（position:fixed 弹层）的包含块（见文件头约束 3）。
+ *   · 手机端行为不变：那些高度下内容本来就基本填满一屏，`margin:auto` ≈ 0、
+ *     配重项不产生可见位移，观感与修改前一致。
+ *   · 宽屏卡片加宽另见上面 `min-width: 768px` 那条（只改 `max-width`，不改结构）。
+ * ═══════════════════════════════════════════════════════════════════════════ */

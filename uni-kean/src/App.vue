@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // 注意：App.vue 是应用入口，**不能编写视图元素 / 不能写模板**（uni-app 官方约束）。
 // 全局性的界面请放到页面里。
-import { onHide, onLaunch, onShow } from "@dcloudio/uni-app";
+import { onHide, onLaunch, onPageNotFound, onShow } from "@dcloudio/uni-app";
 import { heartbeat } from "@/api/auth";
 import { useUserStore } from "@/store/user";
+import { guardCurrentPage, installAuthGuard } from "@/utils/authGuard";
 import { refreshMessageBadge } from "@/utils/messageBadge";
 import { applyDisplayAppearance } from "@/utils/prefs";
 import { startRealtime, stopRealtime } from "@/utils/realtime";
@@ -37,12 +38,26 @@ function stopHeartbeat() {
 
 onLaunch(() => {
   applyDisplayAppearance();
+  // 未登录守卫的"点击跳转"那一半：拦 navigateTo / redirectTo / reLaunch / switchTab。
+  // ⚠️ 只在这里注册一次（App 只会 launch 一次）。注册本身不跳转，真正的判定在 invoke 里。
+  installAuthGuard();
 });
 
 onShow(() => {
+  // 未登录守卫的"打开就在"那一半：冷启动 / 直接打开 URL / 从后台切回。
+  // ⚠️ 必须放在 onShow 而不是 onLaunch：uni-app H5 在路由 isReady() 后才调
+  //    onLaunch → onShow，而首屏页的页面栈实例是挂载期才建出来的，
+  //    onLaunch 时 getCurrentPages() 还是空的（详见 utils/authGuard.ts 文件头）。
+  guardCurrentPage();
   refreshMessageBadge();
   startHeartbeat();
   applyDisplayAppearance();
+});
+
+// 路由兜底：直接打开一个不存在的 URL（不匹配任何已注册页面）时，同样按"未登录 → 登录页"处理。
+// 拿不到有效当前页时 guardCurrentPage() 内部会自己 no-op，不会硬跳。
+onPageNotFound(() => {
+  guardCurrentPage();
 });
 
 onHide(() => {
