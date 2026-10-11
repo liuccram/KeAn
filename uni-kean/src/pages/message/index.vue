@@ -1357,7 +1357,10 @@ onReachBottom(() => {
              ⚠️ 它就在页面内容的滚动流里，**没有** position: fixed / sticky → 随内容一起滚走。
              ⚠️ 它**不是**下面那层三档 tab（系统 / 申请与履约 / 私信）：三档 tab
              （.msg-tabs）已改成 position: sticky 吸顶（规则在 styles/design-messages.css，
-             前置条件是本文件 .page 的 overflow-x 用 clip 而不是 hidden，原因见下面 .page 一节）；
+             前置条件有两处、缺一不可：① 本文件 scoped .page 的 overflow-x 必须是
+             visible/clip 而不是 hidden；② styles/design-messages.css A 节里对
+             uni-page-body 的那条覆盖 —— 它是 App.vue 的 `page{overflow-x:hidden}`
+             被 uni-app H5 改写到外层包装元素上的结果，是吸顶的真正拦路虎）；
              二层筛选 chip（.msg-chips）与它下面的一切仍然照旧跟着页面滚 —— 两层分工不同，
              只有三档这一层吸顶。
              文案取 pages.json 的 navigationBarTitleText「消息」，不另造文案。 -->
@@ -1636,23 +1639,27 @@ onReachBottom(() => {
 .page {
   position: relative;
   min-height: 100vh;
-  /* ⚠️ 为什么是 clip 而不是 hidden —— 这是三档 tab 吸顶（.msg-tabs 的 position: sticky）
-     的**前置条件**，两处必须成套看：
-       · `overflow-x: hidden` 会被 CSS 强制换算成 `overflow-y: auto`，于是 .page 自己变成
-         **滚动容器**；而 .page 是 min-height、不是固定高度，内容再长也只是把自己撑高，
-         它**永远不滚动**（真正滚的是 document：uni-h5 的下拉刷新就是读
-         document.documentElement.scrollTop 判断的，见 uni-h5.es.js:27530）。
-       · .page 里写 position: sticky 的元素于是以「这个不滚动的 .page」为滚动参照
-         → 永远不触发 → 吸顶写了等于没写（极难查）。
-       · `overflow-x: clip` 只裁剪、**不建滚动容器**（这正是它区别于 hidden 的设计用途），
-         所以 sticky 重新以视口为参照，横向溢出照样被裁掉。
-     两行顺序有意为之：老内核（不认 clip）解析期丢掉第二行、保留第一行，
-     横向裁剪行为与改动前完全一致（只是吸顶在那里不生效）—— 不会比改动前更差。
-     ⚠️ 本页没有任何一处会横向溢出到 .page：.msg-chips 自己就是 overflow-x: auto 的
-     横向滚动容器（design-messages.css:355-363），行内长文本都有 overflow: hidden +
-     省略号；另外 uni-h5 框架的 `body { overflow-x: hidden }`（base.css:14-17）
-     本身就会把这个裁剪传导到视口。 */
-  overflow-x: hidden;
+  /* ⚠️⚠️ 这两行是吸顶（.msg-tabs 的 position: sticky）的**生死线**：只要有一个轴是
+     hidden / auto / scroll，这一层就成了**滚动容器**，sticky 立刻改以它为参照；
+     而 .page 是 min-height（高度随内容长、自己从不滚动）→ 吸顶写了等于没写。
+     所以两行都必须是"不建滚动容器"的值：
+       · `overflow-x: visible`（第一行＝**老内核兜底**）：不认 clip 的内核在解析期丢掉
+         第二行、留下的就是它。visible 是唯一绝对不建滚动容器的取值。
+         为什么安全：横向裁剪的最终落点在**视口** —— uni-h5 的 `body{overflow-x:hidden}`
+         (base.css:14-17) 会被规范传导到视口，页面横向照样拉不动；而且本页没有任何一处
+         会横向溢出到 .page（.msg-chips 自己就是 overflow-x:auto 的横向滚动容器，
+         行内长文本都有 overflow:hidden + 省略号），两条 tab 底衬的外阴影左右各只多出
+         10px，正好落在视口裁剪区之外 → 裁剪位置与观感都和原来一致。
+       · `overflow-x: clip`（第二行＝**现代内核**）：只裁剪、不建滚动容器（这正是它
+         区别于 hidden 的设计用途），横向裁剪语义一行不减。
+     ⚠️⚠️ 只改这一层**不够**：真正挡住吸顶的是更外面的 uni-page-body
+     （App.vue 的 `page{overflow-x:hidden}` 被 uni-app H5 改写成
+     `uni-page-body{…;overflow-x:hidden}`）—— 覆盖规则在 styles/design-messages.css
+     的 A 节（`uni-page[data-page="pages/message/index"] uni-page-body`），
+     **两处必须成套看**，缺任何一处三档 tab 都不会吸顶。
+     （真正滚的是 document：uni-h5 的下拉刷新就是读
+     document.documentElement.scrollTop 判断的，见 uni-h5.es.js:27530。） */
+  overflow-x: visible;
   overflow-x: clip;
   max-width: 100%;
 }

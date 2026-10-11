@@ -284,6 +284,44 @@
   background-color: var(--kean-msg-bg);
 }
 
+/* ⭐⭐ 吸顶（三档 tab 的 .msg-tabs position: sticky）的**真正拦路虎**：外层的
+   uni-page-body 被设了 overflow-x: hidden。
+   ---------------------------------------------------------------------------
+   【它从哪来】App.vue 的全局 `page { background-color: …; font-size: …;
+     overflow-x: hidden }` 被 uni-app H5 的 postcss 插件改写 ——
+     @dcloudio/uni-cli-shared/dist/postcss/plugins/uniapp.js:79-87 的
+     rewriteUniH5Tags()：`if (tag === 'page') return 'uni-page-body';`
+     → 构建产物里就是（已 grep 逐字符核对，dist/build/h5/assets/index-DzbDLsvI.css）：
+       uni-page-body{background-color:var(--kean-page-bg,#f5f6f8);
+                     font-size:var(--kean-fs,16px);overflow-x:hidden}
+     注意：源码里那个 `page{}` 选择器在产物里**已经不存在**（也是 grep 实证），
+     所以平时按 `page{…}` 去搜是搜不到的，本条极易被漏掉。
+   【为什么它让吸顶"完全没有效果"】单轴 hidden 会被规范强制把另一轴换算成 auto
+     → uni-page-body 成了**滚动容器**（最近的 scrollport）；而它的高度是 auto
+     （框架只给它 display:block / width:100%，没有 height —— base.css:19-37 已核对），
+     内容再长也只是把它自己撑高，它**永远不滚动** → .msg-tabs 的 sticky 以它为
+     滚动参照 → 永远不触发。它比 .page 还靠外一层：**即使 .page 已经改成 clip，
+     只要这条还在，吸顶照样全废**（上一轮"改了 .page 却没效果"就是这个原因）。
+   【为什么只覆盖消息页】选择器用 uni-page 的 data-page 属性做闸门：
+     uni-h5 渲染的是 <uni-page data-page="pages/message/index">（uni-h5.es.js:27686-27691
+     的 createVNode("uni-page", {"data-page": pageMeta.route})），
+     而 route 就是 pages.json 里的路径、不带前导斜杠
+     （initPageInternalInstance: `path = addLeadingSlash(route)` —— 即 route 本身
+     等于 "pages/message/index"，pages.json:25 同值）。
+     → 只命中消息页自己的那一个 uni-page-body；别的页面（含页面栈里停留的其他页）
+       一个像素都不动。
+   【为什么不用 !important】特异性 (0,1,2) > App.vue 那条的 (0,0,1)，
+     与 CSS 文档顺序无关（本文件在入口样式表里，本来也早于页面分包 CSS）。
+   【为什么是这两行】与 pages/message/index.vue 的 scoped .page 同款：
+     先 `visible`（不认 clip 的老内核解析期丢掉第二行、留下的就是它，visible 是唯一
+     绝对不建滚动容器的值；横向裁剪交给视口 —— 框架 `body{overflow-x:hidden}`
+     (base.css:14-17) 会被规范传导到视口，横向一样拉不动），
+     再 `clip`（现代内核取值：只裁剪、不建滚动容器，横向裁剪语义一行不减）。 */
+uni-page[data-page="pages/message/index"] uni-page-body {
+  overflow-x: visible;
+  overflow-x: clip;
+}
+
 .kean-msg .msg-shell {
   display: flex;
   position: relative;
@@ -313,10 +351,15 @@
      切档不必再滚回页首。二层筛选 chip（.msg-chips）**不**吸顶：两层都吸会吃掉
      100~120px，矮屏就没内容了。
    · 它必须是普通滚动流的参与者：祖先链上任何一层建了**滚动容器**，sticky 都会
-     改以那一层为参照而失效 —— .page 原来的 overflow-x: hidden 正是这种情况
-     （hidden 会被强制换算成 overflow-y: auto → .page 自己成了滚动容器，
-     但它 min-height、自己从不滚动）。已在 pages/message/index.vue 的 scoped .page
-     里改成 overflow-x: clip，**两处必须成套看**。
+     改以那一层为参照而失效。本页要清掉的是**两层**，缺任何一层吸顶都是全废：
+       ① **uni-page-body（外层，真正的拦路虎）** —— App.vue 的 `page{overflow-x:hidden}`
+          被改写到这里；覆盖它的规则就在本文件上面 A 节
+          （`uni-page[data-page="pages/message/index"] uni-page-body`）。
+       ② **.page（内层）** —— 原来是 `overflow-x: hidden` 兜底行；
+          已改成 `visible` + `clip`，见 pages/message/index.vue 的 scoped .page。
+     两处都是同一个坑：单轴 hidden 会被强制换算成另一轴 auto → 该层成了滚动容器，
+     而它的高度是 auto / min-height（随内容长、自己从不滚动）→ sticky 永远不触发。
+     **两处必须成套看**。
    · sticky 只建**层叠上下文**，不会成为 position: fixed 后代的包含块
      → <wd-popup> / <wd-toast>（.page 的直接子节点）不受影响（铁律 2）。
    · top 写两行是"老内核兜底"（与 pages/home/index.vue 的 .publish-fab 同一套写法）：
@@ -352,7 +395,8 @@
      外阴影的几何正好等于我们要的那条带：offset-x ±(16px + 10px)、blur/spread 0 的
         阴影 = 本条边框盒平移后的形状，且**只画在边框盒形状之外**。
         · 平移量比外边距多一个「本条圆角半径」(上面的 10px)：阴影自己的那两个外圆角
-          于是被推到 .page 的 overflow 裁剪（pages/message/index.vue:1655-1656）之外，
+          于是被推到 .page 的 overflow 裁剪（pages/message/index.vue 的 scoped .page
+          那两行 overflow-x）之外，
           缝里那一竖条是**方**的；否则它的外沿会跟着 10px 圆角缺一个角。
           写大无害（只多推到裁剪区外），写小才会缺角。
         · 中间（分段条自身）一个像素都不覆盖 —— 顺带把 10px 圆角外、边框盒内的
