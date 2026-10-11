@@ -1355,8 +1355,11 @@ onReachBottom(() => {
              原框架导航栏在未登录态也在，但本页未登录态是整屏「去登录」兜底，
              保持与它一致的既有结构，不把标题栏塞进 guest 分支。
              ⚠️ 它就在页面内容的滚动流里，**没有** position: fixed / sticky → 随内容一起滚走。
-             ⚠️ 它**不是**下面那层三档 tab（系统 / 申请与履约 / 私信）：.msg-tabs 与
-             .msg-chips 这次一个字都没动，仍然照旧跟着页面滚。
+             ⚠️ 它**不是**下面那层三档 tab（系统 / 申请与履约 / 私信）：三档 tab
+             （.msg-tabs）已改成 position: sticky 吸顶（规则在 styles/design-messages.css，
+             前置条件是本文件 .page 的 overflow-x 用 clip 而不是 hidden，原因见下面 .page 一节）；
+             二层筛选 chip（.msg-chips）与它下面的一切仍然照旧跟着页面滚 —— 两层分工不同，
+             只有三档这一层吸顶。
              文案取 pages.json 的 navigationBarTitleText「消息」，不另造文案。 -->
         <view class="status-bar" :style="{ height: statusBarHeight + 'px' }" />
         <view class="nav-title">消息</view>
@@ -1633,7 +1636,24 @@ onReachBottom(() => {
 .page {
   position: relative;
   min-height: 100vh;
+  /* ⚠️ 为什么是 clip 而不是 hidden —— 这是三档 tab 吸顶（.msg-tabs 的 position: sticky）
+     的**前置条件**，两处必须成套看：
+       · `overflow-x: hidden` 会被 CSS 强制换算成 `overflow-y: auto`，于是 .page 自己变成
+         **滚动容器**；而 .page 是 min-height、不是固定高度，内容再长也只是把自己撑高，
+         它**永远不滚动**（真正滚的是 document：uni-h5 的下拉刷新就是读
+         document.documentElement.scrollTop 判断的，见 uni-h5.es.js:27530）。
+       · .page 里写 position: sticky 的元素于是以「这个不滚动的 .page」为滚动参照
+         → 永远不触发 → 吸顶写了等于没写（极难查）。
+       · `overflow-x: clip` 只裁剪、**不建滚动容器**（这正是它区别于 hidden 的设计用途），
+         所以 sticky 重新以视口为参照，横向溢出照样被裁掉。
+     两行顺序有意为之：老内核（不认 clip）解析期丢掉第二行、保留第一行，
+     横向裁剪行为与改动前完全一致（只是吸顶在那里不生效）—— 不会比改动前更差。
+     ⚠️ 本页没有任何一处会横向溢出到 .page：.msg-chips 自己就是 overflow-x: auto 的
+     横向滚动容器（design-messages.css:355-363），行内长文本都有 overflow: hidden +
+     省略号；另外 uni-h5 框架的 `body { overflow-x: hidden }`（base.css:14-17）
+     本身就会把这个裁剪传导到视口。 */
   overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100%;
 }
 
@@ -1655,7 +1675,7 @@ onReachBottom(() => {
  *    建层叠上下文（position: relative + z-index: 1），透明才不会盖住流星底图；
  *    深色态（html.kean-dark page）--kean-text 自动变 #ffffff。
  * ⚠️ 只写 .status-bar / .nav-title 两个类，**不碰** .msg-tabs / .msg-chips /
- *    .msg-page-head —— 那一层三档 tab 与筛选 chip 本轮零改动。
+ *    .msg-page-head —— 三档 tab 的吸顶规则不在这里，在 styles/design-messages.css。
  * =========================================================================== */
 .status-bar {
   width: 100%;

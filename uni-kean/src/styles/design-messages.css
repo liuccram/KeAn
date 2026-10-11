@@ -250,6 +250,9 @@
  *     .msg-day / .msg-skel 上**一律没有** backdrop-filter / transform /
  *     filter / will-change / contain / perspective
  *     → 弹层与遮罩仍以视口为包含块，关得掉、点得到。
+ *   · 本轮 .msg-tabs 新加的 `position: sticky` **不在**上面那份禁用清单里：
+ *     sticky 只建层叠上下文，不会成为 fixed 后代的包含块（而且 .msg-tabs 本来
+ *     也不是弹层的祖先 —— wd-popup / wd-toast 是 .page 的直接子节点）。
  *   （骨架屏用的是 background-position 扫光，不作合成、不建包含块；
  *     头像上的圆角与 6px 圆点都是纯静态几何。）
  * ⚠️ 下一轮做气泡时：**不要**因为"想给气泡加毛玻璃"就把 backdrop-filter 加到
@@ -304,10 +307,33 @@
    --kean-primary-active，定义在 theme-vars.css），所以深色模式由 theme-vars.css
    的 `html.kean-dark` 分支自动接管，本文件第六节只需要补"壁纸"一节。
    ⚠️ 这条栏上**没有** backdrop-filter：改版前就没有模糊，还原时一并去掉
-   （见文末「包含块自检」）。 */
+   （见文末「包含块自检」）。
+   ── 三档吸顶（本轮）───────────────────────────────────────────────────────
+   · 自绘标题栏（.status-bar / .nav-title）随内容滚走后，这一层停在视口顶部，
+     切档不必再滚回页首。二层筛选 chip（.msg-chips）**不**吸顶：两层都吸会吃掉
+     100~120px，矮屏就没内容了。
+   · 它必须是普通滚动流的参与者：祖先链上任何一层建了**滚动容器**，sticky 都会
+     改以那一层为参照而失效 —— .page 原来的 overflow-x: hidden 正是这种情况
+     （hidden 会被强制换算成 overflow-y: auto → .page 自己成了滚动容器，
+     但它 min-height、自己从不滚动）。已在 pages/message/index.vue 的 scoped .page
+     里改成 overflow-x: clip，**两处必须成套看**。
+   · sticky 只建**层叠上下文**，不会成为 position: fixed 后代的包含块
+     → <wd-popup> / <wd-toast>（.page 的直接子节点）不受影响（铁律 2）。
+   · top 写两行是"老内核兜底"（与 pages/home/index.vue 的 .publish-fab 同一套写法）：
+     不认 env() 的内核在解析期丢掉第二行、保留 top: 0。H5 端 uni-h5 的
+     statusBarHeight 就是量出来的 env(safe-area-inset-top)（uni-h5.es.js:19519），
+     所以让出的正好是上面那条 .status-bar 占位条的高度：刘海屏 / 独立窗口下
+     tab 不会钻到状态栏底下；普通浏览器里该值为 0，就是"贴视口顶部"。
+   · 背景必须**不透明**（吸顶后下面会有行滚过）：浅色/深色两态本来就是实色
+     （--kean-line），壁纸态在下文另加一条把它做到 0.88。
+   · z-index 仍是 2（值未改）：高于列表行（.msg-notice / .msg-chat 是
+     position: relative + z-index: auto），低于本页的 wd-toast（组件默认 100）
+     与 wd-popup（模板上传的 999），也低于 uni-h5 的下拉刷新指示器（997）。 */
 .kean-msg .msg-tabs {
   display: flex;
-  position: relative;
+  position: sticky;
+  top: 0;
+  top: env(safe-area-inset-top);
   z-index: 2;
   box-sizing: border-box;
   gap: var(--kean-sp-2);
@@ -315,6 +341,32 @@
   padding: 4px;
   border-radius: 10px;
   background-color: var(--kean-line);
+  /* ── 通栏底衬（补吸顶后左右 16px 漏行的缝）─────────────────────────────
+     ⚠️ 为什么**不**用 `::after{ inset: 0 -16px; z-index: -1 }`：本条是
+        position: sticky + z-index: 2 → **自己就是一个层叠上下文**。在它内部，
+        负层叠级的伪元素按 CSS 2.1 附录 E 的绘制顺序（step 1 = 本元素自己的
+        背景与边框 → step 2 = 负层叠级后代）是画在**本元素背景之上**的，不是之下 ——
+        一条整宽的页面底衬会把 --kean-line 的分段条底色整片盖掉（深色态最明显：
+        #2b2b2e 被盖成 #111113，"浅灰分段条"直接消失，只剩一枚白胶囊）；
+        改成 z-index: 0 只会更糟（::after 在树序上晚于三个 .msg-tab，连胶囊一起盖）。
+     外阴影的几何正好等于我们要的那条带：offset-x ±(16px + 10px)、blur/spread 0 的
+        阴影 = 本条边框盒平移后的形状，且**只画在边框盒形状之外**。
+        · 平移量比外边距多一个「本条圆角半径」(上面的 10px)：阴影自己的那两个外圆角
+          于是被推到 .page 的 overflow 裁剪（pages/message/index.vue:1655-1656）之外，
+          缝里那一竖条是**方**的；否则它的外沿会跟着 10px 圆角缺一个角。
+          写大无害（只多推到裁剪区外），写小才会缺角。
+        · 中间（分段条自身）一个像素都不覆盖 —— 顺带把 10px 圆角外、边框盒内的
+          那点缺口也填上（主流内核按**圆角形状**裁剪外阴影；就算哪个内核按矩形裁剪，
+          也只是退回"只填两侧缝"，不会更差）。
+        · 不建层叠上下文 / 不建包含块 / 阴影不参与命中测试 → 三段 tab 的点击与
+          <wd-popup> / <wd-toast> 的包含块都不受影响（铁律 2），**不需要** pointer-events。
+        · 颜色取 --kean-msg-bg（页面底色语义：浅 #f5f6f8 / 深 #111113，与:284 的
+          .page.kean-msg 同一个值）→ 浅/深两态、不滚动时这条底衬完全看不出来。
+          壁纸态该令牌是 transparent（design-tokens.css:280/290），所以第六节那条
+          壁纸规则里另给一次实色（同一个 rgba(12,18,34,0.88)）。 */
+  box-shadow:
+    calc(-1 * var(--kean-sp-4) - 10px) 0 0 0 var(--kean-msg-bg),
+    calc(var(--kean-sp-4) + 10px) 0 0 0 var(--kean-msg-bg);
 }
 
 .kean-msg .msg-tab {
@@ -1049,6 +1101,22 @@ html .page.skinned.kean-msg .msg-chip,
 html .page.skinned.kean-msg .msg-hintbar,
 html .page.skinned.kean-msg .msg-page-head__status {
   background-color: rgba(12, 18, 34, 0.34);
+}
+
+/* ⚠️ 三档条吸顶后，底下会有列表行滚过：0.34 的深色玻璃会把滚动中的行透出来。
+   所以**只给 .msg-tabs** 一条更实的底（同一支笔、同一个色值，只提高不透明度；
+   不是新颜色，方向与 pages/home/index.vue 那条 `.page.skinned .home-filters`
+   的 rgba(12, 14, 18, 0.88) 一致）。选择器特异性与上一条完全相同、且写在后面
+   → 按文档顺序胜出，不需要 !important（铁律 1）。 */
+html .page.skinned.kean-msg .msg-tabs {
+  background-color: rgba(12, 18, 34, 0.88);
+  /* ⚠️ 壁纸态 --kean-msg-bg 是 transparent（design-tokens.css:280/290），上面基规则里
+     那条"通栏底衬"的 box-shadow 在这里等于**没补** → 用与 bar 自己同一个色再给一次，
+     保证吸顶时左右 16px 的缝里也是（0.88 的）实色，不会透出滚过去的行。
+     特异性与上一条相同（0,4,1）、写在后面 → 按文档顺序胜出，不堆 !important（铁律 1）。 */
+  box-shadow:
+    calc(-1 * var(--kean-sp-4) - 10px) 0 0 0 rgba(12, 18, 34, 0.88),
+    calc(var(--kean-sp-4) + 10px) 0 0 0 rgba(12, 18, 34, 0.88);
 }
 
 html .page.skinned.kean-msg .msg-page-head__title { color: #f4f7ff; }
