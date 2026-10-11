@@ -7,9 +7,7 @@ import {
   type ChatMessageItem,
   type ChatSessionItem
 } from "@/api/chat";
-import { goReport } from "@/utils/report";
 import { actionBlockReason, formatChatTime, shouldShowChatTime } from "@/utils/format";
-import { blockUser } from "@/api/blacklist";
 import { refreshMessageBadge } from "@/utils/messageBadge";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import {
@@ -411,19 +409,20 @@ function scrollToBottom() {
  * ③ 收消息只有「用户本来就在底部附近」时才跟随，他翻过历史就不许拽回来。
  *
  * ⚠️ 为什么**不能**直接用 `scrollHeight > clientHeight` 这条字面公式：
- *    本页 `.page` 是 `min-height: 100vh` + `padding-bottom: 112px`，而 uni-app H5 的
+ *    本页 `.page` 是 `min-height: 100vh` + `padding-bottom: 68px`（删 .actions 前的旧值是 112px，
+ *    下面的算术与结论对两个值都成立），而 uni-app H5 的
  *    框架 CSS 只给 uni-app / uni-page / uni-page-wrapper / uni-page-body 设了
  *    `box-sizing: border-box`（node_modules/@dcloudio/uni-h5/style/framework/base.css:19-26），
  *    `uni-view` 没有 → `.page` 是 content-box；再加上顶部 44px 导航栏
  *    （uni-h5 给本页把 `--window-top` 设成 44px，见 dist/uni-h5.es.js:7153-7166），
- *    **哪怕一条消息都没有，document 也能滚 156px（112 + 44）** →
+ *    **哪怕一条消息都没有，document 也能滚 112px（68 + 44）** →
  *    `scrollHeight - clientHeight` 恒 > 1 → 字面公式永远判定「溢出」，等于没修。
  *    （uni 自己的 pageScrollTo 就是在 document 上按这两个值夹取的：
  *     node_modules/@dcloudio/uni-shared/dist/uni-shared.es.js:1594-1600）
  *
  * ⭐ 所以判据改成量「消息列表自身」的几何：列表高 vs 列表真正能占的高度
  *    （视口高 − 列表上方占位 − 列表下方占位）。两个占位都由实测相减得到，
- *    不写死 112 / 44，因此完全不受上面那 156px 的干扰。
+ *    不写死 68 / 44，因此完全不受上面那 112px 的干扰。
  *
  * 取值方式：`uni.createSelectorQuery().boundingClientRect()`（与 `uni.pageScrollTo` 同属
  *    uni API 家族，不引入第二套；`uni.getSystemInfoSync()` 在仓库里已有用法：
@@ -1329,44 +1328,25 @@ async function resendMessage(localId: string, item: ChatMessageItem) {
  * 它服务于**自己的未读角标**，与双勾是两条完全不同的链路。
  */
 
-function handleReportUser() {
-  const peerId = session.value?.peerUserId;
-  if (!goReport("USER", peerId, session.value?.peerNickname)) {
-    return;
-  }
-}
-
-function handleReportLastMessage() {
-  const item = [...messages.value].reverse().find((msg) => !resolveMine(msg));
-  if (!item) {
-    toast.info("暂无对方消息可举报");
-    return;
-  }
-  goReport("MESSAGE", item.id, session.value?.peerNickname || "对方消息");
-}
-
-function handleBlockPeer() {
-  const peerId = session.value?.peerUserId;
-  if (!peerId) {
-    return;
-  }
-  uni.showModal({
-    title: "加入黑名单",
-    content: `加入黑名单后，你将无法再与 ${session.value?.peerNickname || "对方"} 互发消息，确定继续？`,
-    success: async (res) => {
-      if (!res.confirm) {
-        return;
-      }
-      try {
-        await blockUser(peerId);
-        toast.success("已加入黑名单");
-        setTimeout(() => uni.navigateBack(), 400);
-      } catch (error) {
-        toast.error((error as Error).message || "加入黑名单失败");
-      }
-    }
-  });
-}
+/**
+ * ⚠️ 本轮**已从本页迁移走**三个函数（连同上面对应的 .actions 操作条一起删除）：
+ *
+ * <pre>
+ * handleReportUser()            goReport("USER", session.peerUserId, session.peerNickname)
+ * handleReportLastMessage()     goReport("MESSAGE", 最后一条对方消息的 id, 昵称)
+ * handleBlockPeer()             uni.showModal 二次确认 → blockUser(peerUserId)
+ *                               → toast.success("已加入黑名单") → 400ms 后 uni.navigateBack()
+ * </pre>
+ *
+ * 迁移去向：**对方主页** `pages/mine/user.vue`（会话点头像 / 消息列表点会话都去那里，
+ * 见本文件 {@code openUser} 与 pages/message/index.vue:1298 的 {@code openPeer}）。
+ * 在那里：两个举报按用户要求**合并成一个**「举报该用户」（targetType=USER，不再有
+ * 「举报消息」这条需要具体消息 id 的能力 —— 这正是「举报消息」被取消的那条能力，
+ * 已在交付说明里写明）；「加入黑名单」逐字复用上面那套确认弹窗 + blockUser + 提示 + 返回。
+ *
+ * 因此本文件不再需要 `goReport` / `blockUser` 两个 import，已一并移除；
+ * 其余发送 / 已读上报 / 滚动 / 数据层逻辑**一行未动**。
+ */
 
 onLoad(async (query) => {
   sessionId.value = Number(query?.id || 0);
@@ -1605,24 +1585,24 @@ onMounted(() => {
     </view>
     <!-- ④「有新消息」提示（微信/QQ 同款做法）：只在「列表确实溢出 **且** 用户不在底部附近」
          时才挂出来（newMessagePending 由 followIncoming 决定），点它一下直接到底。
-         位置在右下、悬在输入栏之上；与 .composer/.actions/.panel 同层（.page 的直接子元素），
+         位置在右下、悬在输入栏之上；与 .composer/.panel 同层（.page 的直接子元素），
          所以**不含任何 transform/filter/backdrop-filter**，出现动画只用 opacity（见文件头铁律 2）。
          图标是 border 拼的实心下三角（本页不引图片素材、也不用 emoji 字符，同 .more-item__icon）。 -->
     <view v-if="newMessagePending" class="new-msg-tip" @click.stop="jumpToBottom">
       <view class="new-msg-arrow" />
     </view>
-    <view class="actions">
-      <text @click="handleReportUser">举报对方</text>
-      <text @click="handleReportLastMessage">举报消息</text>
-      <text @click="handleBlockPeer">加入黑名单</text>
-    </view>
+    <!-- ⚠️ 本页底部原来的 .actions 操作条（举报对方 / 举报消息 / 加入黑名单）已**整块删除**：
+         三个入口改到对方主页 pages/mine/user.vue —— 「举报对方 + 举报消息」在那里合并成一个
+         「举报该用户」（targetType=USER，举报页自己再选原因），「加入黑名单」复用同一套
+         blockUser 逻辑。这里**刻意不留空壳**（不留空 fixed 容器、不留空的 .actions 包裹层），
+         因为本页还剩 5 个 fixed 元素，任何多余的一层都可能成为新的定位/命中区域风险。 -->
     <view v-if="sendBlocked" class="mute-tip" :class="{ banned: peerBanned }">{{ sendBlocked }}</view>
     <view v-else class="composer">
       <!-- 微信输入栏的从左到右顺序：[输入框 flex:1] [表情] [＋ / 发送]。
            语音/键盘切换那格因为本页不做语音而省略（见交付说明）。
            ⚠️ 这里没有任何 position/transform/backdrop-filter：.composer 是 .page 的直接子元素，
            一旦在它或 .page、.page 的任何祖先上引入「会创建 containing block」的属性，
-           本页 6 个 fixed 元素（含这张输入栏本身与右下角的「新消息」提示）就会被劫持（仓库铁律 3）。 -->
+           本页剩余 5 个 fixed 元素（含这张输入栏本身与右下角的「新消息」提示）就会被劫持（仓库铁律 3）。 -->
       <!-- 多行输入：auto-height 随内容增高，高度上下限由 .input 的 min-/max-height 卡住（≈1~5 行），
            超出上限后由 overflow-y 内部滚动。仍是同一个 v-model 与同一个 @confirm（回车发送），
            类名仍是 .input —— insertEmoji 就是用 `.composer .input` 找这个原生 DOM 节点取光标的。 -->
@@ -1737,8 +1717,9 @@ onMounted(() => {
  * box 用 rpx，本页用 px，按 750rpx = 375px 即 **rpx ÷ 2 = px** 换算，逐条写在注释里。
  *
  * ⚠️ 本文件**绝不**出现 backdrop-filter / transform / filter / will-change /
- *    contain / perspective：本页有 6 个 position: fixed 的元素（.peer-status /
- *    .composer / .actions / .mute-tip / .panel / .new-msg-tip）+ wd-toast 自带的 fixed 遮罩，
+ *    contain / perspective：本页有 5 个 position: fixed 的元素（.peer-status /
+ *    .composer / .mute-tip / .panel / .new-msg-tip）+ wd-toast 自带的 fixed 遮罩
+ *    （原来还有第 6 个 .actions 操作条，本轮已随「入口改到对方主页」一起删除），
  *    它们的祖先都是 .page 这一层，一旦给 .page 或任何祖先加上这些属性，就会把
  *    fixed 后代劫持成「相对该容器定位」，弹层遮罩会点不到、关不掉（本链已翻车两次）。
  *    下面用到的 position: relative / absolute 只服务于气泡小尖角，
@@ -1754,9 +1735,15 @@ onMounted(() => {
   --kean-chat-self-text: #1e3a5c;
   min-height: 100vh;
   background: var(--kean-bg);
-  /* 底部两条 fixed 栏占位：composer 56px + .actions ≈35px = 91px，再留 21px 余量
-     （本轮把 composer 从 48px 抬到 56px：8 + 36 + 12） */
-  padding-bottom: 112px;
+  /* 底部只剩一条 fixed 栏：.composer，高度 = 8 + 36 + 12 = **56px**。
+     删除 .actions 操作条后，这里从 112px（56 composer + 56 操作条）收到 **68px**
+     = 56px（正好等于输入栏高度，保证最后一条消息不会被它遮住）+ 12px 视觉余量。
+     ⚠️ 必须叠 env(safe-area-inset-bottom)：.composer 自己的 padding-bottom 也含这个安全区，
+     所以它在刘海屏上的实际高度是 56 + 安全区 —— 这里只写 68px 的话，全面屏上最后一条会被压住。
+     先给不带 env 的裸值兜底，再用 calc 覆盖（env() 不被支持时整条声明会作废，
+     那时这两行保证 padding 至少是 68px，输入栏高度也同样退化成 56px，两者仍然对齐）。 */
+  padding-bottom: 68px;
+  padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
 }
 .page.has-peer-status {
   padding-top: 48px;
@@ -1947,21 +1934,6 @@ onMounted(() => {
   font-weight: 700;
   text-align: center;
 }
-.actions {
-  position: fixed;
-  left: 0;
-  right: 0;
-  /* ⚠️ 必须等于 .composer 的总高度（8 + 36 + 12 = 56px）：
-     这两个值加 .page 的 padding-bottom 是一组联动量，改一个就要同时改另外两个 */
-  bottom: 56px;
-  display: flex;
-  justify-content: space-around;
-  padding: 8px 12px;
-  background: var(--kean-card);
-  border-top: 1px solid var(--kean-line);
-  color: var(--kean-primary);
-  font-size: 13px;
-}
 .composer {
   position: fixed;
   left: 0;
@@ -1996,8 +1968,9 @@ onMounted(() => {
 }
 /* 输入框：微信的浅灰底圆角输入框，但按 box 的层次做「白底 + 4px 小圆角」（不是大胶囊）。
    ⚠️ 高度是一组联动量里的一员：min 36px（单行）→ max 112px（≈5 行，line-height 20px），
-   超过上限内部滚动。这三个值与 .composer 的 56px 栏高、.panel 的 bottom、.actions 的 bottom、
-   .page 的 padding-bottom 必须一起改。 */
+   超过上限内部滚动。这三个值与 .composer 的 56px 栏高、.panel 的 bottom、
+   .page 的 padding-bottom（68px）必须一起改。
+   （.actions 的 bottom 原本也在这组里，该操作条本轮已删除，不再是联动量。） */
 .input {
   flex: 1;
   min-height: 36px;
@@ -2189,8 +2162,8 @@ onMounted(() => {
  * ---------------------------------------------------------------------------
  * ⚠️ 面板固定在输入区上沿：bottom = **composer 高度 56px**（8 + 36 + 12）+ 安全区，
  *    因此**永远不会盖住输入框、表情钮和最右侧按钮**；关掉时是 v-if，不占位。
- *    （这个 56px 与 .composer 的 padding、.actions 的 bottom、.page 的 padding-bottom
- *    是一组联动量：改一个必须同时改另外三个。）
+ *    （这个 56px 与 .composer 的 padding、.page 的 padding-bottom（68px）
+ *    是一组联动量：改一个必须同时改另外一个。.actions 已删除，不再参与这组联动。）
  * ⚠️ 两个面板互斥（emojiOpen / moreOpen），不同时出现，所以共用同一套定位。
  * =========================================================================== */
 .panel {
@@ -2324,12 +2297,14 @@ onMounted(() => {
 /* ===========================================================================
  * ④「有新消息」提示（微信/QQ 的悬浮小圆钮，点击滚到底）
  * ---------------------------------------------------------------------------
- * ⚠️ 它是 .page 的**直接子元素**且 position: fixed —— 与 .composer / .actions /
- *    .panel / .mute-tip / .peer-status 同一层。所以：
+ * ⚠️ 它是 .page 的**直接子元素**且 position: fixed —— 与 .composer / .panel /
+ *    .mute-tip / .peer-status 同一层。所以：
  *    ① 自身一条 containing-block 属性都不加（本轮连 transform 都没用：下三角是
  *       border 拼的实心三角，出现动画只用 opacity）；
- *    ② bottom 与 .actions 的 56px、.composer 的 56px、.page 的 padding-bottom 112px
- *       是同一组联动量 —— 112px 正好落在 .actions 上沿（56 + 输入栏外沿），不会压住输入区。
+ *    ② bottom 与 .composer 的 56px 高度、.page 的 padding-bottom 68px
+ *       是同一组联动量：68px = 56px 输入栏 + 12px 间距，正好悬在输入栏上沿之上，
+ *       不会压住输入区（原来这个值是 112px，那是按「composer 56 + .actions 56」
+ *       算的；.actions 本轮已删除，故同步改为 68px）。
  * ⚠️ z-index 55：低于 .panel 的 60（面板弹出来要盖住它），高于消息列表本身。
  * ⚠️ 文案：这里**只画一个下三角、不写「新消息」** —— 本页新增文案必须走 i18n（t()），
  *    而本轮限定只改本文件，utils/i18n.ts 里没有可复用的「新消息」key，所以不加文字。
@@ -2338,7 +2313,8 @@ onMounted(() => {
 .new-msg-tip {
   position: fixed;
   right: 12px;
-  bottom: calc(112px + env(safe-area-inset-bottom));
+  bottom: 68px;
+  bottom: calc(68px + env(safe-area-inset-bottom, 0px));
   z-index: 55;
   width: 34px;
   height: 34px;

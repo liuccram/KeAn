@@ -14,6 +14,22 @@ const toast = useToast();
 const loading = ref(false);
 const sending = ref(false);
 const countdown = ref(0);
+/**
+ * 「本次进页面**已经成功发出过一次**验证码」。
+ *
+ * 只服务于一件事：第 2 步那 6 个验证码格子（components/CodeBoxes.vue）
+ * **发送成功后才出现**，未发送 / 发送失败时那个位置只有「获取验证码」按钮。
+ *
+ * ⚠️ 为什么不用 countdown 代替：countdown 是**倒计时**（60 → 0），60s 走完会归 0，
+ *    而用户此时**已经拿到了验证码**、格子里的内容必须继续留着；用 countdown 会让格子
+ *    在倒计时结束时凭空消失。所以这个语义（"发过至少一次"）countdown / sending 都表达不了，
+ *    按"能复用就复用、不能复用就加最小 ref"的原则新增这一个 ref。
+ * ⚠️ 只在 handleSendSms 的**成功分支**（await sendSms 之后）置 true；
+ *    失败分支（catch）与前置校验（邮箱不合法 / 倒计时中 / 真人验证未通过）都不置。
+ * ⚠️ 它**不在切步时重置**：从第 3 步返回第 2 步时格子必须还在（用户已填的内容不能被藏起来）；
+ *    只有重新进入本页（组件重建）才会回到"未发送"的初始态。
+ */
+const codeSent = ref(false);
 /** 四步各自的表单校验入口：每一步只校验自己这一块的字段，不用一次性校验整张长表单 */
 const step1Ref = ref();
 const step2Ref = ref();
@@ -130,7 +146,13 @@ const i18n = computed(() => ({
   ruleSchool: t("authRuleSchoolRequired"),
   /** 下面两条是从「下一步」搬到「提交前」的补充规则文案（不是新增校验，只是换了个触发时机） */
   rulePasswordMismatch: t("authPasswordMismatch"),
-  ruleSmsCodeInvalid: t("authSmsCodeInvalid")
+  ruleSmsCodeInvalid: t("authSmsCodeInvalid"),
+  /**
+   * 「请先获取验证码」：只在**第 2 步还没成功发过码**时用（此时 6 个格子还没出现，
+   * 报「请填写 6 位验证码」会让用户找不到可以填的地方）。
+   * ⚠️ 单独一条 key（authSendCodeFirst），不能拿 authSmsCodeInvalid 顶替。
+   */
+  ruleSendCodeFirst: t("authSendCodeFirst")
 }));
 /**
  * 进度节点**下面那一行**的当前步名字（4~6 个汉字，一行放得下）。
@@ -321,6 +343,12 @@ function stepExtraRule(target: number): boolean {
       toast.error(QQ_EMAIL_HINT);
       return false;
     }
+    if (!codeSent.value) {
+      // 6 个格子还没出现（没成功发过码）：提示"先获取验证码"，
+      // 而不是"请填写 6 位验证码"——用户此刻根本看不到输入框。
+      toast.error(i18n.value.ruleSendCodeFirst);
+      return false;
+    }
     if (!/^\d{6}$/.test(model.smsCode)) {
       toast.error(i18n.value.ruleSmsCodeInvalid);
       return false;
@@ -463,6 +491,9 @@ async function handleSendSms() {
   sending.value = true;
   try {
     await sendSms({ email, scene: "REGISTER", turnstileToken: model.turnstileToken || undefined });
+    // ⭐ 只有走到这里才算"发码成功"：6 个验证码格子从这一刻起才出现（见 codeSent 的注释）。
+    // 失败分支（catch）绝不会执行到这里，所以发送失败时格子仍然不出现，错误提示照旧。
+    codeSent.value = true;
     // 发码成功即作废本次真人验证 token：第 4 步提交前必须重新完成验证（保持既有逻辑不变）
     turnstileRef.value?.reset();
     startCountdown();
@@ -651,7 +682,22 @@ async function handleRegister() {
                   {{ countdown > 0 ? `${countdown}s` : i18n.sendSms }}
                 </wd-button>
               </view>
-              <CodeBoxes v-model="model.smsCode" />
+              <!-- ⭐ 6 个验证码格子：**发送成功后才出现**（用户要求「不要一直摆着」）。
+                   · 用 v-if（而不是 v-show）是安全的：CodeBoxes 是普通组件，
+                     **它没有任何 prop 属性、不参与表单注册**（组件内部只有一个原生 <input>
+                     + 6 个装饰格子，全文见 components/CodeBoxes.vue）。
+                     wd-form 收集的是「调用过 useParent(FORM_KEY) 的子组件」，
+                     本库只有 wd-input / wd-picker 会注册（node_modules/.../wd-input.vue:145
+                     `useParent(FORM_KEY)`，wd-form.vue:149 `children.map(child => child.prop)`
+                     再按 prop 合并 rules）。所以挂载/卸载它不会让任何字段的 prop 消失、
+                     不会让校验静默失效。本页第 2 步唯一的 wd-form 字段是上面那个
+                     prop="email" 的 wd-input，它在 v-if 之外、DOM 上恒定存在、rules 一字未动。
+                     用 v-if 同时兑现了「未发送时不留空白占位」：不发码就不渲染那个 input。
+                   · v-show 在这里反而不合适：它会把隐藏的 input 留在 DOM 里占位，
+                     与"那个位置只放按钮"的诉求不符（且 v-show 隐藏的 input 仍可被点到/聚焦）。
+                   · 发送成功后 model.smsCode 原样保留在同一个 wd-form / 同一个 reactive model 里，
+                     从第 3 步返回第 2 步时格子还在、已填的 6 位也还在（codeSent 不随切步重置）。 -->
+              <CodeBoxes v-if="codeSent" v-model="model.smsCode" />
             </view>
           </wd-form>
 

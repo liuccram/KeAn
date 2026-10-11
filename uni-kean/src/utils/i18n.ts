@@ -129,6 +129,9 @@ const DICT = {
     // 原本硬编码在注册页「下一步」里的两条提示，改成提交前校验后统一走 i18n
     authPasswordMismatch: "两次输入的密码不一致",
     authSmsCodeInvalid: "请填写 6 位验证码",
+    // 6 个验证码格子"发送成功后才出现"：还没发过码时点「下一步」/「重置密码」的提示。
+    // 不能复用上面一条（用户此刻看不到输入框，说"请填写"会让人找不到地方填）。
+    authSendCodeFirst: "请先获取验证码",
     // 返回入口文案（auth 三页是自定义导航栏、没有原生返回键，登录页的返回胶囊会用到这里）
     authBack: "返回",
     // —— 消息体系（消息 Tab / 会话列表 / 通知列表 / 聊天页）——
@@ -395,6 +398,8 @@ const DICT = {
     authRuleNewConfirmRequired: "Please enter the new password again",
     authPasswordMismatch: "The two passwords do not match",
     authSmsCodeInvalid: "Please enter the 6-digit code",
+    // same position / same meaning as the zh key above (1:1 parity)
+    authSendCodeFirst: "Please get the code first",
     authBack: "Back",
     // —— messages (message tab / session list / notification list / chat) ——
     msgYesterday: "Yesterday",

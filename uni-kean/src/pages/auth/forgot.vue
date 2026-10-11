@@ -13,6 +13,16 @@ const toast = useToast();
 const loading = ref(false);
 const sending = ref(false);
 const countdown = ref(0);
+/**
+ * 「本次进页面**已经成功发出过一次**验证码」——语义与 register.vue 的同名 ref 完全一致：
+ * 6 个验证码格子（components/CodeBoxes.vue）**发送成功后才出现**，未发送 / 发送失败时
+ * 那个位置只有「获取验证码」按钮。
+ *
+ * ⚠️ 不用 countdown 代替：它 60s 后归 0，而格子里的内容必须继续留着（用户已经拿到码了）。
+ * ⚠️ 只在 handleSendSms 的成功分支（await sendSms 之后）置 true；失败分支与前置校验都不置。
+ * ⚠️ 本页没有分步，所以不存在"切步返回"的场景；只有重新进入本页才会回到初始的未发送态。
+ */
+const codeSent = ref(false);
 const formRef = ref();
 const turnstileRef = ref<{ reset: () => void } | null>(null);
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -49,7 +59,9 @@ const i18n = computed(() => ({
   captchaMissing: t("authCaptchaMissingReset"),
   ruleEmail: t("authRuleEmailRequired"),
   ruleNewPassword: t("authRuleNewPasswordRequired"),
-  ruleConfirm: t("authRuleNewConfirmRequired")
+  ruleConfirm: t("authRuleNewConfirmRequired"),
+  /** 同注册页：还没成功发过码时（6 个格子尚未出现）提示"请先获取验证码" */
+  ruleSendCodeFirst: t("authSendCodeFirst")
 }));
 /**
  * 真人验证配置。必须严格区分这几种状态，否则运维会被误导：
@@ -152,6 +164,9 @@ async function handleSendSms() {
   sending.value = true;
   try {
     await sendSms({ email, scene: "FORGOT_PASSWORD", turnstileToken: model.turnstileToken || undefined });
+    // ⭐ 只有走到这里才算"发码成功"：6 个验证码格子从这一刻起才出现。
+    // catch 分支不会执行到这里，所以发送失败时格子仍然不出现，错误提示照旧。
+    codeSent.value = true;
     turnstileRef.value?.reset();
     startCountdown();
     toast.success(tf("authSmsSent", { email }));
@@ -177,6 +192,11 @@ function handleSubmit() {
       const email = normalizeQqEmail(model.email);
       if (!email) {
         toast.error(QQ_EMAIL_HINT);
+        return;
+      }
+      if (!codeSent.value) {
+        // 6 个格子还没出现（没成功发过码）：提示"先获取验证码"，而不是"请填写 6 位验证码"。
+        toast.error(i18n.value.ruleSendCodeFirst);
         return;
       }
       if (!/^\d{6}$/.test(model.smsCode)) {
@@ -259,7 +279,13 @@ function handleSubmit() {
                   {{ countdown > 0 ? `${countdown}s` : i18n.sendSms }}
                 </wd-button>
               </view>
-              <CodeBoxes v-model="model.smsCode" />
+              <!-- ⭐ 6 个验证码格子：**发送成功后才出现**（与注册页同一套交互）。
+                   用 v-if 是安全的：CodeBoxes 是普通组件、**没有任何 prop 属性**
+                   （wd-form 的字段收集靠 wd-input / wd-picker 自己的 prop，本页三个
+                     wd-input 的 prop="email" / "newPassword" / "confirmPassword" 全在
+                     v-if 之外，DOM 上恒定存在、rules 一字未动），
+                   所以隐藏/挂载它不会让任何 prop 消失、不会让校验静默失效。 -->
+              <CodeBoxes v-if="codeSent" v-model="model.smsCode" />
             </view>
 
             <!-- 极细分隔线：验证码区与「新密码」区属于两件事，用一条淡线分开即可 -->
