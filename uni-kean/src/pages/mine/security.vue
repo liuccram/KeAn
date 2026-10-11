@@ -4,6 +4,7 @@ import { useUserStore } from "@/store/user";
 import { t } from "@/utils/i18n";
 import { refreshMessageBadge } from "@/utils/messageBadge";
 import { loadDisplayPrefs } from "@/utils/prefs";
+import PageIntro from "@/components/PageIntro.vue";
 import { computed, reactive, ref } from "vue";
 import { useToast } from "wot-design-uni";
 
@@ -82,11 +83,15 @@ async function confirmDeleteAccount() {
 </script>
 
 <template>
-  <view class="page">
-    <wd-cell-group border>
+  <view class="page security-page">
+    <PageIntro eyebrow="ACCOUNT PROTECTION" title="安全中心" description="保护账号凭据，并管理登录设备" marker="安全" />
+    <view class="security-group">
+      <view class="security-heading">登录与验证</view>
+      <wd-cell-group border>
       <wd-cell :title="copy.password" is-link @click="goPassword" />
       <wd-cell :title="copy.devices" is-link @click="goDevices" />
-    </wd-cell-group>
+      </wd-cell-group>
+    </view>
     
 
     <view class="danger-group">
@@ -138,6 +143,7 @@ async function confirmDeleteAccount() {
 </template>
 
 <style scoped>
+.security-group { margin: 12px 16px 0; padding: 14px; border: 1px solid rgba(224,232,243,.9); border-radius: 16px; background: var(--kean-card); box-shadow: 0 5px 16px rgba(34,59,97,.035); }.security-heading { padding: 2px 2px 10px; color: var(--kean-muted); font-size: 11px; font-weight: 650; }.security-group :deep(.wd-cell-group) { overflow: hidden; border-radius: 11px; }
 .page {
   min-height: 100vh;
   background: var(--kean-bg);
@@ -151,7 +157,11 @@ async function confirmDeleteAccount() {
   line-height: 1.6;
 }
 .danger-group {
-  margin-top: 12px;
+  margin: 20px 16px 0;
+  overflow: hidden;
+  border: 1px solid rgba(227,77,89,.15);
+  border-radius: 15px;
+  background: var(--kean-card);
 }
 /* wd-cell 内部元素在组件作用域里，必须用 :deep 才能把标题染成危险色 */
 :deep(.danger-cell .wd-cell__title) {

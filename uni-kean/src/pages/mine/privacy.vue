@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { fetchMe } from "@/api/auth";
 import { updatePrivacy } from "@/api/user";
+import PageIntro from "@/components/PageIntro.vue";
 import { useUserStore } from "@/store/user";
 import { useToast } from "wot-design-uni";
 import { computed, ref } from "vue";
@@ -33,12 +34,19 @@ async function toggle(value: boolean | { value?: boolean }) {
 
 <template>
   <view class="page">
-    <wd-cell-group border>
-      <wd-cell title="隐私账号" label="开启后，他人只能看到头像、昵称和学校；其他同学不能主动向你发起新的私信（你们已有的会话不受影响）">
+    <PageIntro eyebrow="PRIVACY CONTROL" title="隐私与可见范围" description="由你决定个人主页展示哪些信息" marker="隐私" />
+    <view class="privacy-card">
+      <view class="privacy-head">
+        <view class="privacy-copy"><text class="privacy-title">隐私账号</text><text class="privacy-state">{{ on ? "已开启 · 主页信息受限" : "已关闭 · 主页完整展示" }}</text></view>
         <wd-switch :model-value="on" :disabled="saving" @change="toggle" />
-      </wd-cell>
-    </wd-cell-group>
-    <view class="tip">头像始终公开：任务列表、聊天列表、黑名单等处都会显示你的头像，开启隐私只隐藏统计信息（性别、校区、完成数、评分与评价）。打开后，其他同学不能主动向你发起新的私信，你们已有的会话不受影响。关闭后，其他同学可再次看到完整主页并主动向你发起新的私信。</view>
+      </view>
+      <view class="divider" />
+      <text class="section-label">开启后会发生什么</text>
+      <view class="rule"><text class="rule-mark">01</text><text>头像、昵称和学校仍会出现在任务与聊天等场景。</text></view>
+      <view class="rule"><text class="rule-mark">02</text><text>性别、校区、完成次数、评分和评价不会展示在公开主页。</text></view>
+      <view class="rule"><text class="rule-mark">03</text><text>其他同学无法主动发起新私信；已有会话不受影响。</text></view>
+      <view class="privacy-foot">关闭后，完整主页信息和新私信入口会恢复对其他同学可见。</view>
+    </view>
     <wd-toast />
   </view>
 </template>
@@ -47,12 +55,15 @@ async function toggle(value: boolean | { value?: boolean }) {
 .page {
   min-height: 100vh;
   background: var(--kean-bg);
-  padding-top: 12px;
 }
-.tip {
-  padding: 12px 16px;
-  color: var(--kean-muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
+.privacy-card { margin: 0 16px 24px; padding: 18px; border: 1px solid rgba(224,232,243,.9); border-radius: 18px; background: var(--kean-card); box-shadow: 0 8px 24px rgba(34,59,97,.045); }
+.privacy-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.privacy-copy { display:flex; flex-direction:column; gap:5px; }
+.privacy-title { color:var(--kean-text); font-size:16px; font-weight:700; }
+.privacy-state { color:var(--kean-muted); font-size:11px; }
+.divider { height:1px; margin:16px 0; background:var(--kean-line); }
+.section-label { display:block; margin-bottom:10px; color:var(--kean-sub); font-size:12px; font-weight:700; }
+.rule { display:flex; align-items:flex-start; gap:10px; margin:10px 0; color:var(--kean-sub); font-size:12px; line-height:1.65; }
+.rule-mark { flex-shrink:0; color:#88a2c4; font-size:10px; font-weight:700; }
+.privacy-foot { margin-top:15px; padding:11px 12px; border-radius:11px; background:#f3f7fc; color:var(--kean-muted); font-size:11px; line-height:1.6; }
 </style>

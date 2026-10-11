@@ -527,7 +527,7 @@ async function handleRegister() {
 </script>
 
 <template>
-  <view class="page kean-auth">
+  <view class="page kean-auth auth-register-page">
     <!-- 背景装饰层：手写 SVG 几何校园场景（矢量 / 已柔化），纯装饰、不参与交互。
          它是 .auth-content 的兄弟节点，永远不是 wd-picker 弹层的祖先，
          所以这里的 filter: blur() 不会劫持任何 position:fixed 的定位。 -->
@@ -537,12 +537,11 @@ async function handleRegister() {
       <view class="auth-back__arrow" />
     </view>
 
-    <view class="auth-content">
-      <view class="auth-hero auth-hero--compact">
-        <image class="auth-logo" src="/static/app-logo.jpg" mode="aspectFit" />
-        <view class="auth-title">{{ i18n.brand }}</view>
-        <!-- 顶部副标题：短句、一行、小字号（12.5px） -->
-        <text class="auth-subtitle">{{ i18n.heroSlogan }}</text>
+    <view class="auth-content register-layout">
+      <view class="register-story">
+        <view class="brand-lockup"><image class="auth-logo" src="/static/app-logo.jpg" mode="aspectFit" /><view class="brand-lockup__copy"><text class="brand-lockup__name">{{ i18n.brand }}</text><text class="brand-lockup__tag">{{ i18n.heroSlogan }}</text></view></view>
+        <view class="register-story__title">从一次互助开始，<br />连接你的校园。</view>
+        <view class="register-story__footer"><text class="register-story__eyebrow">YOUR CAMPUS, YOUR COMMUNITY</text><text class="register-story__count">第 {{ step }} / {{ totalSteps }} 步</text></view>
       </view>
 
       <!-- ⚠️ 本页用 .auth-card--plain：卡片内部装着三个 wd-picker，而 backdrop-filter / filter /
@@ -552,7 +551,7 @@ async function handleRegister() {
            而**本页的卡片上这些属性一个都没有**：玻璃感由 auth-theme.css 的 `.auth-card--plain`
            用「外层 + 内板 + 两层极淡洗色」的半透明白叠层模拟（总账 ≈ 64% 白），零风险。
            真人验证在卡片**下方**，也不受卡片圆角 / overflow 影响。 -->
-      <view class="auth-card auth-card--plain">
+      <view class="auth-card auth-card--plain register-card">
         <view class="auth-card__inner">
           <!-- ⭐ 卡内页面标题（用户反馈②「要让人知道当前是注册页」）：
                直接复用 i18n.ts 里**已经存在但一直未被引用**的 key `authRegisterHeadline`

@@ -2,6 +2,7 @@
 import { APPLICATION_STATUS_TEXT } from "@/api/application";
 import { listMyApplied, TASK_STATUS_TEXT, type TaskItem } from "@/api/task";
 import ListState from "@/components/ListState.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { formatReward } from "@/utils/format";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { onShow } from "@dcloudio/uni-app";
@@ -58,6 +59,7 @@ useLiveUpdates((event) => {
 
 <template>
   <view class="page">
+    <PageIntro eyebrow="YOUR APPLICATIONS" title="我申请的" description="跟进你接下的每一节课" marker="申请" />
     <ListState
       :loading="loading"
       :error="error"
@@ -91,9 +93,11 @@ useLiveUpdates((event) => {
 }
 .card {
   background: var(--kean-card);
-  border-radius: 12px;
+  border: 1px solid rgba(224,232,243,.9);
+  border-radius: 16px;
   padding: 16px;
   margin-bottom: 12px;
+  box-shadow: 0 5px 15px rgba(34,59,97,.035);
 }
 .top {
   display: flex;

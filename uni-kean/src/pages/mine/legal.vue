@@ -30,11 +30,12 @@ const doc = privacyDoc;
 <style scoped>
 .page {
   min-height: 100vh;
-  background: var(--kean-card);
+  background: #f7f9fc;
   padding-bottom: 40px;
 }
 .header {
-  padding: 20px 16px 12px;
+  margin:0 16px;
+  padding: 20px 4px 14px;
   border-bottom: 1px solid var(--kean-line);
 }
 .title {
@@ -48,18 +49,21 @@ const doc = privacyDoc;
   color: var(--kean-muted);
 }
 .body {
-  padding: 8px 16px 0;
+  margin:0 16px;
+  padding: 8px 4px 0;
 }
 .h {
-  margin: 20px 0 8px;
+  margin: 24px 0 9px;
+  padding-left:10px;
+  border-left:3px solid #9eb8dc;
   font-size: 15px;
   font-weight: 600;
   color: var(--kean-text);
 }
 .p {
-  margin: 8px 0;
+  margin: 9px 0;
   font-size: 13px;
-  line-height: 1.75;
+  line-height: 1.9;
   color: var(--kean-sub);
 }
 .li {
@@ -75,12 +79,12 @@ const doc = privacyDoc;
 .li-text {
   flex: 1;
   font-size: 13px;
-  line-height: 1.75;
+  line-height: 1.9;
   color: var(--kean-sub);
 }
 .foot {
-  margin: 24px 16px 0;
-  padding-top: 16px;
+  margin: 24px 20px 0;
+  padding: 16px 12px 0;
   border-top: 1px solid var(--kean-line);
   font-size: 12px;
   color: var(--kean-muted);

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { listMyPublished, TASK_STATUS_TEXT, type TaskItem } from "@/api/task";
 import ListState from "@/components/ListState.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { formatReward } from "@/utils/format";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { onShow } from "@dcloudio/uni-app";
@@ -53,6 +54,7 @@ useLiveUpdates((event) => {
 
 <template>
   <view class="page">
+    <PageIntro eyebrow="YOUR REQUESTS" title="我发布的" description="查看需求状态与同学响应" marker="发布" />
     <ListState
       :loading="loading"
       :error="error"
@@ -85,9 +87,11 @@ useLiveUpdates((event) => {
 }
 .card {
   background: var(--kean-card);
-  border-radius: 12px;
+  border: 1px solid rgba(224,232,243,.9);
+  border-radius: 16px;
   padding: 16px;
   margin-bottom: 12px;
+  box-shadow: 0 5px 15px rgba(34,59,97,.035);
 }
 .top {
   display: flex;

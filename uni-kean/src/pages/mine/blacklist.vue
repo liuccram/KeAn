@@ -2,6 +2,7 @@
 import { listBlacklist, unblockUser, type BlacklistItem } from "@/api/blacklist";
 import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { resolveMediaUrl } from "@/utils/request";
 import { onShow } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
@@ -60,6 +61,7 @@ onShow(() => {
 
 <template>
   <view class="page">
+    <PageIntro eyebrow="YOUR BOUNDARIES" title="黑名单" description="管理不希望再联系的账号" marker="屏蔽" />
     <ListState
       :loading="loading"
       :error="error"
@@ -93,9 +95,11 @@ onShow(() => {
 }
 .row {
   background: var(--kean-card);
-  border-radius: 12px;
+  border:1px solid rgba(224,232,243,.9);
+  border-radius: 16px;
   padding: 12px 16px;
   margin-bottom: 10px;
+  box-shadow:0 5px 16px rgba(34,59,97,.04);
   display: flex;
   align-items: center;
   gap: 12px;

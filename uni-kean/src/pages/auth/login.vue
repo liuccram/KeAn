@@ -158,7 +158,7 @@ function handleLogin() {
 </script>
 
 <template>
-  <view class="page kean-auth">
+  <view class="page kean-auth auth-login-page">
     <!-- 背景装饰层：手写 SVG 几何校园场景（矢量 / 已柔化），纯装饰、不参与交互。
          它是 .auth-content 的兄弟节点，永远不是 wd-picker 弹层的祖先，
          所以这里的 filter: blur() 不会劫持任何 position:fixed 的定位。 -->
@@ -171,21 +171,16 @@ function handleLogin() {
       <text class="auth-back__label">{{ i18n.back }}</text>
     </view>
 
-    <view class="auth-content">
-      <view class="auth-hero">
-        <image class="auth-logo" src="/static/app-logo.jpg" mode="aspectFit" />
-        <view class="auth-title">{{ i18n.brand }}</view>
-        <!-- 顶部副标题：短句、一行、小字号（12.5px），只为「这是什么产品」给一句最短说明 -->
-        <text class="auth-subtitle">{{ i18n.heroSlogan }}</text>
+    <view class="auth-content login-layout">
+      <view class="auth-brand-story">
+        <view class="brand-lockup"><image class="auth-logo" src="/static/app-logo.jpg" mode="aspectFit" /><view class="brand-lockup__copy"><text class="brand-lockup__name">{{ i18n.brand }}</text><text class="brand-lockup__tag">{{ i18n.heroSlogan }}</text></view></view>
+        <view class="brand-message"><text class="brand-eyebrow">CAMPUS MUTUAL HELP</text><text class="brand-headline">临时有事，<br />放心把课交给同学。</text><text class="brand-description">在熟悉的校园里，找到愿意接力课堂的人。</text></view>
+        <view class="brand-signals"><view class="brand-signal"><view class="signal-dot signal-dot--blue" />同校互助</view><view class="brand-signal"><view class="signal-dot signal-dot--green" />实名校园</view><view class="brand-signal"><view class="signal-dot signal-dot--violet" />安心沟通</view></view>
       </view>
 
-      <!-- 登录区 = 外层白卡（.auth-card：实心白 + 1px 极浅边框 + 一层柔和阴影）+ 内层白板
-           （.auth-card__inner）。⚠️ 本版卡片上**没有** backdrop-filter（见 auth-theme.css 文件头约束 3）。 -->
-      <view class="auth-card">
+      <view class="auth-card login-card">
         <view class="auth-card__inner">
-          <view class="auth-card-title">{{ i18n.welcome }}</view>
-          <!-- 卡内副标题：一条短句（12.5px 一行），紧贴标题下方；不改变标题 → 第一个输入框的 22px 节奏 -->
-          <view class="auth-card-sub">{{ i18n.welcomeSub }}</view>
+          <view class="login-card-heading"><view><text class="auth-card-title">{{ i18n.welcome }}</text><text class="auth-card-sub">{{ i18n.welcomeSub }}</text></view><view class="login-card-mark">↗</view></view>
 
           <wd-form ref="formRef" :model="model" error-type="toast">
             <view class="auth-field auth-field--user">
@@ -224,7 +219,6 @@ function handleLogin() {
             </view>
           </wd-form>
 
-          <!-- 极细分隔线：把「表单」与「底部两个链接」轻轻分开，不用边框框住任何区域 -->
           <view class="auth-divider" />
 
           <view class="auth-links">
@@ -248,8 +242,7 @@ function handleLogin() {
       <view v-else-if="captcha.loaded && captcha.enabled" class="auth-hint">{{ i18n.captchaMissing }}</view>
     </view>
 
-    <!-- 底部署名：加回来但缩到 11px 低对比一行，排在内容列之后（挨着内容，不飘到屏幕最底） -->
-    <text class="auth-slogan">— {{ i18n.slogan }} —</text>
+    <text class="auth-slogan">{{ i18n.slogan }}</text>
     <wd-toast />
   </view>
 </template>

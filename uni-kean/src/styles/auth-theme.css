@@ -1348,3 +1348,87 @@
  *     配重项不产生可见位移，观感与修改前一致。
  *   · 宽屏卡片加宽另见上面 `min-width: 768px` 那条（只改 `max-width`，不改结构）。
  * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 新版身份入口：把品牌叙事与操作区拆开，先说明课安能帮用户什么，再进入登录 / 注册。 ── */
+.kean-auth.auth-login-page {
+  --auth-card-shadow: 0 24px 54px -28px rgba(17, 38, 77, 0.32), 0 8px 24px -16px rgba(30, 58, 105, 0.18);
+  padding-right: 22px;
+  padding-left: 22px;
+  background-image:
+    url("/static/auth-bg.jpg"),
+    radial-gradient(ellipse at 50% 0%, rgba(25, 54, 104, .43), transparent 56%),
+    linear-gradient(180deg, rgba(241, 247, 255, .1) 0%, rgba(246, 249, 255, .84) 56%, #f4f7fc 100%),
+    linear-gradient(180deg, var(--auth-sky-top) 0%, var(--auth-sky-mid) 54%, var(--auth-sky-bottom) 100%);
+}
+.kean-auth.auth-register-page { padding-right: 18px; padding-left: 18px; }
+.auth-login-page .auth-content { max-width: 430px; }
+.auth-register-page .auth-content { max-width: 480px; }
+.auth-login-page .login-layout { gap: 16px; }
+.auth-brand-story { padding: 6px 3px 0; }
+.brand-lockup { display: flex; align-items: center; gap: 12px; }
+.brand-lockup .auth-logo { width: 46px; height: 46px; border-radius: 14px; box-shadow: 0 9px 22px -12px rgba(16, 37, 76, .38), 0 0 0 3px rgba(255,255,255,.36); }
+.brand-lockup__copy { display: flex; flex-direction: column; }
+.brand-lockup__name { color: #ffffff; font-size: 20px; line-height: 1.2; font-weight: 750; letter-spacing: .06em; text-shadow: 0 2px 10px rgba(24,43,83,.26); }
+.brand-lockup__tag { margin-top: 4px; color: rgba(255,255,255,.9); font-size: 11px; text-shadow: 0 1px 5px rgba(24,43,83,.2); }
+.brand-message { margin-top: 28px; }
+.brand-eyebrow { display: block; color: rgba(255,255,255,.86); font-size: 9px; font-weight: 700; letter-spacing: 1.7px; text-shadow: 0 1px 5px rgba(24,43,83,.2); }
+.brand-headline { display: block; margin-top: 9px; color: #ffffff; font-size: 27px; font-weight: 750; line-height: 1.38; letter-spacing: -.5px; text-shadow: 0 2px 14px rgba(24,43,83,.24); }
+.brand-description { display: block; margin-top: 8px; color: rgba(255,255,255,.92); font-size: 12px; line-height: 1.6; text-shadow: 0 1px 7px rgba(24,43,83,.18); }
+.brand-signals { display: flex; gap: 8px; margin-top: 15px; }
+.brand-signal { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid rgba(255,255,255,.33); border-radius: 20px; color: rgba(255,255,255,.96); background: rgba(255,255,255,.14); font-size: 10px; }
+.signal-dot { width: 6px; height: 6px; border-radius: 50%; }.signal-dot--blue { background: #cce3ff; }.signal-dot--green { background: #b8f0df; }.signal-dot--violet { background: #e1d5ff; }
+.auth-login-page .login-card { border-radius: 23px; }
+.auth-login-page .login-card .auth-card__inner { padding: 21px 20px 19px; border-radius: 20px; }
+.login-card-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 15px; }
+.login-card-heading > view:first-child { display: flex; flex-direction: column; }
+.auth-login-page .login-card .auth-card-title { margin: 0; font-size: 20px; }
+.auth-login-page .login-card .auth-card-sub { margin-top: 5px; font-size: 11px; }
+.login-card-mark { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 11px; color: #6489c3; background: #eef4ff; font-size: 19px; }
+.auth-login-page .login-card .auth-divider { margin-top: 16px; }
+.auth-login-page .auth-slogan { color: rgba(71, 91, 123, .65); font-size: 10px; letter-spacing: .04em; }
+
+.register-story { padding: 7px 4px 16px; }
+.register-story .brand-lockup .auth-logo { width: 40px; height: 40px; border-radius: 13px; }
+.register-story .brand-lockup__name { color: #274166; text-shadow: none; font-size: 17px; }
+.register-story .brand-lockup__tag { color: #6f819d; text-shadow: none; }
+.register-story__title { margin-top: 20px; color: #1c3456; font-size: 23px; font-weight: 750; line-height: 1.4; letter-spacing: -.4px; }
+.register-story__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 11px; }
+.register-story__eyebrow { color: #7890b3; font-size: 9px; font-weight: 700; letter-spacing: 1px; }
+.register-story__count { padding: 5px 9px; border: 1px solid rgba(120,150,195,.2); border-radius: 12px; color: #5579ae; background: rgba(255,255,255,.52); font-size: 10px; }
+.auth-register-page .register-card { border-radius: 22px; }
+.auth-register-page .register-card .auth-card__inner { padding: 19px 18px 18px; border-radius: 19px; }
+.auth-register-page .register-card .auth-card-title { margin-bottom: 12px; font-size: 18px; }
+.auth-register-page .register-card .auth-step-hint { margin-top: 3px; }
+.auth-register-page .auth-slogan { color: rgba(71, 91, 123, .6); font-size: 10px; }
+
+.kean-auth.auth-reset-page { padding-right: 22px; padding-left: 22px; }
+.auth-reset-page .reset-layout { max-width: 430px; gap: 17px; }
+.reset-story { padding: 8px 4px 0; }
+.reset-story .brand-lockup .auth-logo { width: 42px; height: 42px; border-radius: 13px; }
+.reset-story .brand-lockup__name { color: #294166; font-size: 17px; text-shadow: none; }
+.reset-story .brand-lockup__tag { color: #6f819d; text-shadow: none; }
+.reset-story__title { display: block; margin-top: 21px; color: #1c3456; font-size: 25px; font-weight: 750; line-height: 1.36; letter-spacing: -.4px; }
+.reset-story__caption { display: block; margin-top: 8px; color: #7688a2; font-size: 12px; line-height: 1.6; }
+.auth-reset-page .reset-card { border-radius: 22px; }
+.auth-reset-page .reset-card .auth-card__inner { padding: 20px; border-radius: 19px; }
+.auth-reset-page .reset-card .auth-card-title { font-size: 18px; }
+.auth-reset-page .auth-slogan { color: rgba(71, 91, 123, .6); font-size: 10px; }
+@media screen and (max-height: 760px) { .reset-story__title { margin-top: 13px; font-size: 22px; } .auth-reset-page .reset-layout { gap: 11px; } }
+
+@media screen and (max-height: 760px) {
+  .brand-message { margin-top: 18px; }
+  .brand-headline { font-size: 24px; }
+  .brand-signals { margin-top: 10px; }
+  .register-story { padding-bottom: 10px; }
+  .register-story__title { margin-top: 13px; font-size: 21px; }
+}
+
+@media screen and (min-width: 768px) {
+  .auth-login-page .login-layout { max-width: 860px; display: grid; grid-template-columns: 1fr 400px; align-items: center; column-gap: 64px; }
+  .auth-login-page .auth-brand-story { padding: 0 10px; }
+  .auth-login-page .brand-message { margin-top: 42px; }
+  .auth-login-page .brand-headline { font-size: 36px; }
+  .auth-login-page .login-card { width: 400px; }
+  .auth-login-page .turnstile,.auth-login-page .auth-hint { grid-column: 2; justify-self: center; }
+  .auth-register-page .auth-content { max-width: 520px; }
+}

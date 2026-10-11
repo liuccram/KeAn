@@ -4,6 +4,7 @@ import { listProvinces, listSchools } from "@/api/catalog";
 import { sendSms } from "@/api/sms";
 import CodeBoxes from "@/components/CodeBoxes.vue";
 import FallbackImage from "@/components/FallbackImage.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import PersonAvatar from "@/components/PersonAvatar.vue";
 import { useUserStore } from "@/store/user";
 import { QQ_EMAIL_HINT, normalizeQqEmail } from "@/utils/qqEmail";
@@ -243,7 +244,8 @@ function handleSave() {
 </script>
 
 <template>
-  <view class="page">
+  <view class="page profile-page">
+    <PageIntro eyebrow="YOUR CAMPUS ID" title="个人资料" description="完善校园身份，让互助更安心" marker="资料" />
     <view class="head">
       <FallbackImage v-if="avatarSrc" class="avatar" :src="avatarSrc" mode="aspectFill" @click="chooseAvatar" />
       <view v-else class="avatar avatar-fallback" @click="chooseAvatar">
@@ -253,7 +255,9 @@ function handleSave() {
       <view class="hint-avatar">{{ uploading ? uploadLabel || "上传中..." : "点击头像更换，可框选出展示区域" }}</view>
     </view>
     <wd-form ref="formRef" :model="model" error-type="toast">
-      <wd-cell-group border>
+      <view class="profile-group">
+        <view class="group-heading"><view><text class="group-title">基本信息</text><text class="group-sub">同学会通过这些信息认识你</text></view><text class="group-number">01</text></view>
+        <wd-cell-group border>
         <wd-input
           v-model="model.nickname"
           label="昵称"
@@ -271,6 +275,11 @@ function handleSave() {
           :columns="genderColumns"
           :rules="[{ required: true, message: '请选择性别' }]"
         />
+        </wd-cell-group>
+      </view>
+      <view class="profile-group">
+        <view class="group-heading"><view><text class="group-title">校园身份</text><text class="group-sub">学校还可修改 {{ remainChanges }} 次</text></view><text class="group-number">02</text></view>
+        <wd-cell-group border>
         <wd-picker
           v-model="model.provinceId"
           label="省份"
@@ -298,16 +307,22 @@ function handleSave() {
           :maxlength="50"
           placeholder="选填，例如 西校区"
         />
-        <wd-input
-          v-model="model.email"
-          label="QQ邮箱"
-          label-width="80px"
-          prop="email"
-          clearable
-          :placeholder="bound ? '换绑请填写新QQ邮箱' : '请先绑定QQ邮箱'"
-          :rules="[{ required: true, message: bound ? '请填写QQ邮箱' : '请先绑定QQ邮箱' }]"
-        />
-      </wd-cell-group>
+        </wd-cell-group>
+      </view>
+      <view class="profile-group">
+        <view class="group-heading"><view><text class="group-title">联系邮箱</text><text class="group-sub">用于账号验证与安全通知</text></view><text class="group-number">03</text></view>
+        <wd-cell-group border>
+          <wd-input
+            v-model="model.email"
+            label="QQ邮箱"
+            label-width="80px"
+            prop="email"
+            clearable
+            :placeholder="bound ? '换绑请填写新QQ邮箱' : '请先绑定QQ邮箱'"
+            :rules="[{ required: true, message: bound ? '请填写QQ邮箱' : '请先绑定QQ邮箱' }]"
+          />
+        </wd-cell-group>
+      </view>
       <view v-if="needEmailCode" class="code-block">
         <view class="code-head">
           <text>邮箱验证码</text>
@@ -335,9 +350,19 @@ function handleSave() {
   min-height: 100vh;
   background: var(--kean-bg);
 }
+.profile-group { margin: 14px 16px 0; padding: 14px; border: 1px solid rgba(224,232,243,.9); border-radius: 17px; background: var(--kean-card); box-shadow: 0 5px 16px rgba(34,59,97,.035); }
+.group-heading { display: flex; align-items: center; justify-content: space-between; padding: 1px 2px 11px; }
+.group-title { display: block; color: var(--kean-text); font-size: 14px; font-weight: 700; }
+.group-sub { display: block; margin-top: 4px; color: var(--kean-muted); font-size: 10px; }
+.group-number { color: #a6b6cd; font-size: 10px; letter-spacing: 1px; }
+.profile-group :deep(.wd-cell-group) { overflow: hidden; border-radius: 11px; }
 .head {
+  margin: 0 16px 12px;
   background: var(--kean-card);
-  padding: 28px 16px 20px;
+  padding: 22px 16px 18px;
+  border: 1px solid rgba(224,232,243,.9);
+  border-radius: 17px;
+  box-shadow: 0 7px 20px rgba(34,59,97,.045);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -378,7 +403,8 @@ function handleSave() {
   margin: 12px 16px 0;
   padding: 14px 16px 16px;
   background: var(--kean-card);
-  border-radius: 8px;
+  border: 1px solid rgba(224,232,243,.9);
+  border-radius: 15px;
 }
 .code-head {
   display: flex;

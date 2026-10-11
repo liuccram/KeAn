@@ -210,7 +210,7 @@ function handleSubmit() {
 </script>
 
 <template>
-  <view class="page kean-auth">
+  <view class="page kean-auth auth-reset-page">
     <!-- 背景装饰层：手写 SVG 几何校园场景（矢量 / 已柔化），纯装饰、不参与交互。
          它是 .auth-content 的兄弟节点，永远不是弹层的祖先，filter: blur() 安全。 -->
     <view class="auth-sky" />
@@ -219,17 +219,16 @@ function handleSubmit() {
       <view class="auth-back__arrow" />
     </view>
 
-    <view class="auth-content">
-      <view class="auth-hero auth-hero--compact">
-        <image class="auth-logo" src="/static/app-logo.jpg" mode="aspectFit" />
-        <view class="auth-title">{{ i18n.brand }}</view>
-        <!-- 顶部副标题：短句、一行、小字号（12.5px） -->
-        <text class="auth-subtitle">{{ i18n.heroSlogan }}</text>
+    <view class="auth-content reset-layout">
+      <view class="reset-story">
+        <view class="brand-lockup"><image class="auth-logo" src="/static/app-logo.jpg" mode="aspectFit" /><view class="brand-lockup__copy"><text class="brand-lockup__name">{{ i18n.brand }}</text><text class="brand-lockup__tag">{{ i18n.heroSlogan }}</text></view></view>
+        <text class="reset-story__title">重新找回<br />账号的安全感。</text>
+        <text class="reset-story__caption">验证绑定邮箱，再设置新的登录密码。</text>
       </view>
 
       <!-- 白卡 = 外层框（.auth-card）+ 内层板（.auth-card__inner），两层都是实心白。
            ⚠️ 本版卡片上**没有** backdrop-filter（见 auth-theme.css 文件头约束 3）。 -->
-      <view class="auth-card">
+      <view class="auth-card reset-card">
         <view class="auth-card__inner">
           <view class="auth-card-title">{{ i18n.headline }}</view>
           <!-- 卡内副标题：一条短句（12.5px 一行），不改变标题 → 第一个输入框的节奏 -->
@@ -320,7 +319,7 @@ function handleSubmit() {
     </view>
 
     <!-- 底部署名：加回来但缩到 11px 低对比一行 -->
-    <text class="auth-slogan">— {{ i18n.slogan }} —</text>
+    <text class="auth-slogan">{{ i18n.slogan }}</text>
     <wd-toast />
   </view>
 </template>

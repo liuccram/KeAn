@@ -2,6 +2,7 @@
 import { listFavorites, removeFavorite } from "@/api/favorite";
 import { TASK_STATUS_TEXT, type TaskItem } from "@/api/task";
 import ListState from "@/components/ListState.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { formatReward } from "@/utils/format";
 import { onShow } from "@dcloudio/uni-app";
 import { useToast } from "wot-design-uni";
@@ -57,6 +58,7 @@ onShow(() => {
 
 <template>
   <view class="page">
+    <PageIntro eyebrow="SAVED FOR LATER" title="我的收藏" description="把感兴趣的代课需求留在这里" marker="收藏" />
     <ListState
       :loading="loading"
       :error="error"
@@ -90,9 +92,11 @@ onShow(() => {
 }
 .card {
   background: var(--kean-card);
-  border-radius: 12px;
+  border: 1px solid rgba(224,232,243,.9);
+  border-radius: 16px;
   padding: 16px;
   margin-bottom: 12px;
+  box-shadow: 0 5px 15px rgba(34,59,97,.035);
 }
 .top {
   display: flex;

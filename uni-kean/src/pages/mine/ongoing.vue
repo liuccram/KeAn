@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import ListState from "@/components/ListState.vue";
 import OngoingTasks from "@/components/OngoingTasks.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { useOngoingTasks } from "@/composables/useOngoingTasks";
 import { onShow } from "@dcloudio/uni-app";
@@ -34,6 +35,7 @@ useLiveUpdates((event) => {
 
 <template>
   <view class="page">
+    <PageIntro eyebrow="IN MOTION" title="进行中的代课" description="课程安排和当前进度一目了然" marker="进行" />
     <ListState
       :loading="loading"
       :error="error"

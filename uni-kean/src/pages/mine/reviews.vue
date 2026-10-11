@@ -2,6 +2,7 @@
 import { listMyReviews, listPendingReviews, type ReviewItem, type ReviewPendingItem } from "@/api/review";
 import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { useUserStore } from "@/store/user";
 import { parseDateTime, starText, trustRoleLabel } from "@/utils/format";
 import { resolveMediaUrl } from "@/utils/request";
@@ -93,6 +94,7 @@ onShow(() => {
 
 <template>
   <view class="page">
+    <PageIntro eyebrow="TRUST BUILT TOGETHER" title="互助评价" description="每一次准时与认真，都会累积成信任" marker="信誉" />
     <view class="score-card">
       <view class="score-row">
         <view class="score-col">

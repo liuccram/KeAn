@@ -2,6 +2,7 @@
 import { createReview, listReviewTags } from "@/api/review";
 import { getTask, type TaskItem } from "@/api/task";
 import ListState from "@/components/ListState.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { useUserStore } from "@/store/user";
 import { genderLabel, starText } from "@/utils/format";
 import { onLoad } from "@dcloudio/uni-app";
@@ -134,7 +135,8 @@ onLoad((query) => {
 </script>
 
 <template>
-  <view class="page">
+  <view class="page rate-page">
+    <PageIntro eyebrow="CLOSE THE LOOP" title="评价这次代课" description="你的真实反馈，会让下一次互助更安心" marker="评价" />
     <!-- 没有内容可显示时才由 ListState 接管：加载中 / 加载失败+重新加载 / 任务不存在 -->
     <ListState
       :loading="loading"
@@ -143,9 +145,9 @@ onLoad((query) => {
       empty-text="任务不存在"
       @retry="load"
     />
-    <view v-if="task" class="card">
-      <view class="course">{{ task.courseName }}</view>
-      <view class="peer-name">{{ peerTitle }}：{{ peer?.nickname || task.matchedApplicantNickname || "同学" }}</view>
+    <view v-if="task" class="card rating-card">
+      <view class="course-block"><text class="course-label">本次课程</text><view class="course">{{ task.courseName }}</view><view class="course-date">{{ task.taskDate }} · {{ task.startTime }}–{{ task.endTime }}</view></view>
+      <view class="peer-block"><view class="peer-avatar">{{ (peer?.nickname || task.matchedApplicantNickname || '同').slice(0, 1) }}</view><view><text class="peer-label">{{ peerTitle }}</text><view class="peer-name">{{ peer?.nickname || task.matchedApplicantNickname || "同学" }}</view></view></view>
       <view v-if="peer" class="peer-meta">
         {{ genderLabel(peer.gender) }} · {{ peer.schoolName || "未设置学校" }}{{ peer.campusName ? ` · ${peer.campusName}` : "" }}
       </view>
@@ -154,7 +156,7 @@ onLoad((query) => {
         <view class="hint">已完成评价</view>
       </view>
       <template v-else>
-        <wd-rate v-model="rating" size="28" />
+        <view class="rate-prompt"><text class="rate-prompt__title">这次互助体验如何？</text><text class="rate-prompt__sub">选择星级，表达你的感受</text><wd-rate v-model="rating" size="30" /></view>
         <view v-if="availableTags.length" class="tag-block">
           <view class="tag-title">补充标签（选填，最多 {{ MAX_TAGS }} 个）</view>
           <view class="tag-list">
@@ -167,7 +169,7 @@ onLoad((query) => {
             >{{ tag }}</text>
           </view>
         </view>
-        <wd-textarea v-model="content" :maxlength="MAX_CONTENT" placeholder="补充说明（选填）" />
+        <view class="comment-heading"><text class="comment-title">说说具体感受</text><text class="comment-optional">选填</text></view><wd-textarea v-model="content" :maxlength="MAX_CONTENT" placeholder="哪些地方做得好？有什么建议？" />
         <view class="hint">{{ rateHint }}</view>
         <wd-button type="primary" block :loading="submitting" @click="handleSubmit">提交评价</wd-button>
       </template>
@@ -184,13 +186,16 @@ onLoad((query) => {
 }
 .card {
   background: var(--kean-card);
-  border-radius: 16px;
-  padding: 28px 20px;
+  border: 1px solid rgba(224,232,243,.9);
+  border-radius: 18px;
+  padding: 17px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 16px;
+  align-items: stretch;
+  gap: 13px;
+  box-shadow: 0 7px 22px rgba(34,59,97,.045);
 }
+.course-block { padding: 13px; border-radius: 13px; background: linear-gradient(125deg,#edf4ff,#f8faff); }.course-label,.peer-label { display:block; color:var(--kean-muted); font-size:10px; }.course-date { margin-top:5px; color:var(--kean-sub); font-size:11px; }.peer-block { display:flex; align-items:center; gap:10px; padding:2px 3px; }.peer-avatar { width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:50%; color:#557eb8; background:#eaf2ff; font-size:13px; font-weight:700; }.rate-prompt { display:flex; flex-direction:column; align-items:center; gap:7px; padding:14px 8px; border-top:1px solid rgba(224,232,243,.8); border-bottom:1px solid rgba(224,232,243,.8); }.rate-prompt__title { color:var(--kean-text); font-size:15px; font-weight:700; }.rate-prompt__sub { color:var(--kean-muted); font-size:10px; }.comment-heading { display:flex; justify-content:space-between; margin-bottom:-7px; }.comment-title { color:var(--kean-sub); font-size:12px; font-weight:600; }.comment-optional { color:var(--kean-muted); font-size:10px; }
 .course {
   font-size: 18px;
   font-weight: 600;

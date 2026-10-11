@@ -290,6 +290,15 @@
   padding: var(--kean-sp-3) 0 0;
 }
 
+/* 页面标题沿用消息体系的字色与令牌：标题说明当前通知分区，胶囊只反映当前档未读数。 */
+.kean-msg .msg-page-head__eyebrow { color: var(--kean-primary-active); font-weight: 700; }
+.kean-msg .msg-page-head__title { color: var(--kean-t1); }
+.kean-msg .msg-page-head__subtitle { color: var(--kean-t3); }
+.kean-msg .msg-page-head__status { color: var(--kean-t3); background-color: var(--kean-line); }
+.kean-msg .msg-page-head__status-dot { background-color: var(--kean-t3); }
+.kean-msg .msg-page-head__status--unread { color: var(--kean-primary-active); }
+.kean-msg .msg-page-head__status--unread .msg-page-head__status-dot { background-color: var(--kean-primary); }
+
 /* 三档分段控件（**改版前的视觉**）：一条浅灰底的分段条 + 选中项一枚白胶囊。
    ⚠️ 取值全部是主题令牌（--kean-line / --kean-card / --kean-muted /
    --kean-primary-active，定义在 theme-vars.css），所以深色模式由 theme-vars.css
@@ -1037,9 +1046,18 @@ html.kean-dark .page.kean-msg .msg-chat__avatar--text {
    ⚠️ 特异性用 html 前缀提到 0,4,1，不堆 !important（铁律 1）。 */
 html .page.skinned.kean-msg .msg-tabs,
 html .page.skinned.kean-msg .msg-chip,
-html .page.skinned.kean-msg .msg-hintbar {
+html .page.skinned.kean-msg .msg-hintbar,
+html .page.skinned.kean-msg .msg-page-head__status {
   background-color: rgba(12, 18, 34, 0.34);
 }
+
+html .page.skinned.kean-msg .msg-page-head__title { color: #f4f7ff; }
+html .page.skinned.kean-msg .msg-page-head__eyebrow,
+html .page.skinned.kean-msg .msg-page-head__status--unread { color: #9fd0ff; }
+html .page.skinned.kean-msg .msg-page-head__subtitle,
+html .page.skinned.kean-msg .msg-page-head__status { color: rgba(235, 244, 255, 0.66); }
+html .page.skinned.kean-msg .msg-page-head__status-dot { background-color: rgba(235, 244, 255, 0.55); }
+html .page.skinned.kean-msg .msg-page-head__status--unread .msg-page-head__status-dot { background-color: #9fd0ff; }
 
 html .page.skinned.kean-msg .msg-tab {
   color: rgba(235, 244, 255, 0.76);

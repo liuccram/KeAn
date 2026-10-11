@@ -114,8 +114,7 @@ useLiveUpdates((event) => {
         <FallbackImage class="hero-bg" :src="heroSrc" mode="aspectFill" />
         <view class="hero-wash" />
         <view class="status-bar" :style="{ height: statusBarHeight + 'px' }" />
-        <view class="nav-title">我的</view>
-        <view class="cover-btn" :style="{ top: statusBarHeight + 8 + 'px' }" @click.stop="openCoverSheet">{{ uploading ? uploadLabel || "上传中" : "更换背景" }}</view>
+        <view class="mine-topline"><view><text class="mine-topline__eyebrow">CAMPUS MUTUAL HELP</text><text class="mine-topline__title">我的课安</text></view><view class="cover-btn" @click.stop="openCoverSheet">{{ uploading ? uploadLabel || "上传中" : "更换背景" }}</view></view>
         <view class="profile-row">
           <FallbackImage v-if="avatarSrc" class="avatar" :src="avatarSrc" mode="aspectFill" />
           <view v-else class="avatar avatar-text">{{ avatarText }}</view>
@@ -139,17 +138,17 @@ useLiveUpdates((event) => {
         </view>
       </view>
       <view class="stats">
-        <view class="stat">
-          <view class="num">{{ publishedCount === null ? "—" : publishedCount }}</view>
-          <view class="label">我发布</view>
-        </view>
-        <view class="stat">
-          <view class="num">{{ appliedCount === null ? "—" : appliedCount }}</view>
-          <view class="label">我申请</view>
-        </view>
-        <view class="stat">
-          <view class="num">{{ user?.completedCount || 0 }}</view>
-          <view class="label">代课完成</view>
+        <view class="stat"><view class="num">{{ publishedCount === null ? "—" : publishedCount }}</view><view class="label">发布需求</view></view>
+        <view class="stat"><view class="num">{{ appliedCount === null ? "—" : appliedCount }}</view><view class="label">申请代课</view></view>
+        <view class="stat"><view class="num">{{ user?.completedCount || 0 }}</view><view class="label">完成代课</view></view>
+      </view>
+      <view class="section my-tasks-section">
+        <view class="section-heading"><view><text class="section-title">我的代课</text><text class="section-caption">管理你发起和参与的互助</text></view><text class="section-arrow">全部 ›</text></view>
+        <view class="action-grid">
+          <view class="action-card" @click="go('/pages/mine/ongoing')"><view class="action-icon action-icon--live">行</view><text class="action-name">进行中</text><text class="action-desc">查看当前安排</text></view>
+          <view class="action-card" @click="go('/pages/mine/published')"><view class="action-icon action-icon--publish">发</view><text class="action-name">我发布的</text><text class="action-desc">{{ publishedCount === null ? '需求记录' : `${publishedCount} 条需求` }}</text></view>
+          <view class="action-card" @click="go('/pages/mine/applied')"><view class="action-icon action-icon--apply">申</view><text class="action-name">我申请的</text><text class="action-desc">{{ appliedCount === null ? '申请记录' : `${appliedCount} 条申请` }}</text></view>
+          <view class="action-card" @click="go('/pages/mine/favorites')"><view class="action-icon action-icon--favorite">藏</view><text class="action-name">我的收藏</text><text class="action-desc">感兴趣的需求</text></view>
         </view>
       </view>
       <view class="ongoing-wrap">
@@ -158,25 +157,8 @@ useLiveUpdates((event) => {
         <view v-if="ongoingError" class="ongoing-error" @click="loadOngoing">进行中的代课加载失败，点击重试</view>
       </view>
       <view class="section">
-        <view class="section-title">我的代课</view>
-        <wd-cell-group border>
-          <wd-cell title="进行中的代课" is-link @click="go('/pages/mine/ongoing')">
-            <template #icon><text class="cell-icon">⏱</text></template>
-          </wd-cell>
-          <wd-cell title="我发布的" is-link @click="go('/pages/mine/published')">
-            <template #icon><text class="cell-icon">📄</text></template>
-          </wd-cell>
-          <wd-cell title="我申请的" is-link @click="go('/pages/mine/applied')">
-            <template #icon><text class="cell-icon">📝</text></template>
-          </wd-cell>
-          <wd-cell title="我的收藏" is-link @click="go('/pages/mine/favorites')">
-            <template #icon><text class="cell-icon">⭐</text></template>
-          </wd-cell>
-        </wd-cell-group>
-      </view>
-      <view class="section">
-        <view class="section-title">其他</view>
-        <wd-cell-group border>
+        <view class="section-heading"><view><text class="section-title">账号与支持</text><text class="section-caption">个人资料、安全设置与帮助</text></view></view>
+        <wd-cell-group border class="account-menu">
           <wd-cell title="个人资料" is-link @click="go('/pages/mine/profile')">
             <template #icon>
               <view class="cell-icon">
@@ -260,15 +242,14 @@ useLiveUpdates((event) => {
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.28) 0%, rgba(15, 23, 42, 0.08) 100%);
 }
 .hero > .status-bar,
-.hero > .nav-title,
+.hero > .mine-topline,
 .hero > .profile-row {
   position: relative;
   z-index: 2;
 }
 .cover-btn {
-  position: absolute;
-  right: 16px;
-  top: 30px;
+  position: relative;
+  flex-shrink: 0;
   z-index: 3;
   padding: 4px 10px;
   border-radius: 12px;
@@ -276,6 +257,7 @@ useLiveUpdates((event) => {
   color: var(--kean-primary-active);
   font-size: 12px;
 }
+.mine-topline { position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 18px 0; }.mine-topline > view:first-child { display: flex; flex-direction: column; }.mine-topline__eyebrow { color: rgba(255,255,255,.86); font-size: 8px; font-weight: 700; letter-spacing: 1.3px; text-shadow: 0 1px 5px rgba(24,43,83,.22); }.mine-topline__title { margin-top: 3px; color: #fff; font-size: 18px; font-weight: 700; text-shadow: 0 1px 8px rgba(24,43,83,.22); }.hero:not(.custom) .mine-topline__eyebrow,.hero:not(.custom) .mine-topline__title { color: #294264; text-shadow: none; }.hero:not(.custom) .cover-btn { color: #456fa9; background: rgba(255,255,255,.74); }
 .hero.custom .cover-btn {
   background: rgba(15, 23, 42, 0.28);
   color: var(--kean-card);
@@ -375,10 +357,11 @@ useLiveUpdates((event) => {
 .stats {
   margin: -28px 16px 0;
   background: var(--kean-card);
-  border-radius: 16px;
+  border: 1px solid rgba(230,236,245,.9);
+  border-radius: 18px;
   display: flex;
   padding: 16px 0;
-  box-shadow: 0 8px 20px rgba(77, 128, 240, 0.08);
+  box-shadow: 0 9px 24px rgba(43, 70, 111, 0.075);
   position: relative;
   z-index: 1;
 }
@@ -397,6 +380,7 @@ useLiveUpdates((event) => {
   flex: 1;
   text-align: center;
 }
+.stat + .stat { border-left: 1px solid rgba(224,231,241,.85); }.page.skinned .stat + .stat { border-color: rgba(255,255,255,.15); }
 .num {
   font-size: 22px;
   font-weight: 700;
@@ -408,9 +392,15 @@ useLiveUpdates((event) => {
   color: var(--kean-muted);
 }
 .section {
-  margin-top: 16px;
+  margin-top: 20px;
   padding: 0 16px;
 }
+.section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 11px; }.section-heading .section-title { display: block; margin: 0; color: var(--kean-text); font-size: 15px; font-weight: 700; }.section-caption { display: block; margin-top: 4px; color: var(--kean-muted); font-size: 11px; }.section-arrow { color: var(--kean-muted); font-size: 11px; }
+.my-tasks-section { margin-top: 22px; }
+.action-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.action-card { min-height: 94px; display: grid; grid-template-columns: 38px 1fr; grid-template-rows: 28px 22px; column-gap: 10px; align-content: center; padding: 13px; border: 1px solid rgba(226,233,243,.9); border-radius: 15px; background: var(--kean-card); box-shadow: 0 5px 15px rgba(43,70,111,.035); }
+.action-icon { grid-row: 1 / span 2; align-self: center; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 12px; font-size: 12px; font-weight: 700; }.action-icon--live { color: #4a8b83; background: #e8f5f1; }.action-icon--publish { color: #527db9; background: #eaf2ff; }.action-icon--apply { color: #8572b6; background: #f1edff; }.action-icon--favorite { color: #b68c44; background: #fff5df; }
+.action-name { align-self: end; color: var(--kean-text); font-size: 13px; font-weight: 650; }.action-desc { align-self: start; margin-top: 3px; color: var(--kean-muted); font-size: 10px; }.page.skinned .action-card { border-color: rgba(255,255,255,.12); background: rgba(18,23,34,.78); box-shadow: none; }.page.skinned .action-icon { background-color: rgba(255,255,255,.12); color: #dce9ff; }
 .ongoing-wrap {
   margin-top: 16px;
 }
@@ -424,6 +414,7 @@ useLiveUpdates((event) => {
   color: var(--kean-muted);
   margin: 0 4px 8px;
 }
+.account-menu { overflow: hidden; border: 1px solid rgba(226,233,243,.9); border-radius: 15px; background: var(--kean-card); }.page.skinned .account-menu { border-color: rgba(255,255,255,.14); background: rgba(18,23,34,.72); }.account-menu :deep(.wd-cell) { min-height: 50px; }
 .cell-icon {
   margin-right: 8px;
   font-size: 16px;

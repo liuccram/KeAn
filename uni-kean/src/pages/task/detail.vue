@@ -24,7 +24,7 @@ import { useUserStore } from "@/store/user";
 import { actionBlockReason, cancelLockReason, formatReward, fulfillPhotoHint, genderLabel, genderRequirementLabel, parseDateTime, restrictionLabels } from "@/utils/format";
 import { goReport } from "@/utils/report";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
-import { classCountdown, publisherTrustLine, applicantTrustLine } from "@/utils/taskAction";
+import { classCountdown, applicantTrustLine } from "@/utils/taskAction";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { useNowTick } from "@/composables/useNowTick";
@@ -205,15 +205,16 @@ const showMatchGuide = computed(() => {
   return isPublisher.value || isMatchedApplicant.value;
 });
 
-const showTrust = computed(() => Boolean(task.value && !task.value.mine && task.value.publisher));
-
-const trustLine = computed(() => publisherTrustLine(task.value?.publisher));
-const showApplicantTrust = computed(() => Boolean(task.value?.mine && task.value.applicant));
-const applicantTrustLineText = computed(() => applicantTrustLine(task.value?.applicant));
 const countdownText = computed(() => (task.value ? classCountdown(task.value, nowTick.value) : ""));
 
 function applicantCardTrust(item: ApplicationItem) {
   return applicantTrustLine(item);
+}
+
+function openProfile(userId?: number | null) {
+  if (userId) {
+    uni.navigateTo({ url: `/pages/mine/user?id=${userId}` });
+  }
 }
 
 const actionBar = computed(() => {
@@ -740,24 +741,39 @@ useLiveUpdates((event) => {
     />
     <view v-if="task" class="content">
       <view class="hero">
-        <view class="title-row">
-          <view class="title">{{ task.courseName }}</view>
-          <text v-if="!task.mine" class="fav" @click="toggleFavorite">{{ task.favorited ? "★ 已收藏" : "☆ 收藏" }}</text>
+        <view class="hero-topline">
+          <text class="hero-kicker">CAMPUS CLASS COVER</text>
+          <wd-icon v-if="!task.mine" class="favorite-icon" :name="task.favorited ? 'star-filled' : 'star'" @click="toggleFavorite" />
         </view>
-        <view class="status">{{ TASK_STATUS_TEXT[task.status] || task.status }}</view>
-        <view v-if="countdownText" class="count">{{ countdownText }}</view>
+        <view class="hero-title">{{ task.courseName }}</view>
+        <view class="hero-tags">
+          <wd-tag round :type="['COMPLETED'].includes(task.status) ? 'success' : ['CANCELLED', 'EXPIRED'].includes(task.status) ? 'default' : ['MATCHED', 'CONFIRMED', 'IN_PROGRESS'].includes(task.status) ? 'warning' : 'primary'">{{ TASK_STATUS_TEXT[task.status] || task.status }}</wd-tag>
+          <wd-tag round plain type="default">{{ task.applyCount }} 位同学申请</wd-tag>
+          <wd-tag v-if="countdownText" round plain type="warning">{{ countdownText }}</wd-tag>
+        </view>
+        <view class="hero-bottom"><text>求助编号 #{{ task.id }}</text><text>发布于 {{ parseDateTime(task.createdAt) }}</text></view>
+      </view>
+      <view class="schedule-card">
+        <view class="section-eyebrow">CLASS PLAN <text>上课安排</text></view>
+        <view class="schedule-date"><text class="date-icon">日</text><view><text class="date-main">{{ task.taskDate }}</text><text class="date-sub">{{ task.startTime }} 至 {{ task.endTime }}</text></view></view>
+        <view class="schedule-divider" />
+        <view class="place-row"><view class="place-icon">地</view><view class="place-copy"><view class="place-main"><CampusHighlight v-if="task.campusName" :name="task.campusName" /><text v-else>校区待补充</text></view><text class="place-sub">{{ task.building || '教学楼待补充' }} · {{ task.classroom || '教室待补充' }}</text></view></view>
+        <view class="requirement-tags">
+          <wd-tag round plain type="primary">{{ task.computerLab === 1 ? '需要上机' : '无需上机' }}</wd-tag>
+          <wd-tag round plain :type="task.requirePhoto === 1 ? 'warning' : 'default'">{{ task.requirePhoto === 1 ? '需要现场照片' : '无需拍照' }}</wd-tag>
+          <wd-tag round plain type="default">{{ genderRequirementLabel(task.genderRequirement) }}</wd-tag>
+        </view>
+        <view class="reward-strip"><view><text class="reward-label">感谢酬谢</text><text class="reward-note">由双方自行沟通结算</text></view><text class="reward-value">{{ formatReward(task.reward) }}</text></view>
       </view>
       <view v-if="showMatchGuide" id="focus-guide" class="guide">
         <view class="guide-title">已匹配</view>
         <view class="guide-text">建议先与对方确认教室和见面地点，避免到场后地点不一致。</view>
       </view>
-      <view v-if="showTrust" class="trust">
-        <view class="trust-title">发布者可信度</view>
-        <view class="trust-line">{{ trustLine }}</view>
-      </view>
-      <view v-if="showApplicantTrust" class="trust">
-        <view class="trust-title">申请者可信度</view>
-        <view class="trust-line">{{ applicantTrustLineText }}</view>
+      <view v-if="task.reason || task.requirement || task.remark" class="description-card">
+        <view class="section-eyebrow">ABOUT THIS REQUEST <text>求助说明</text></view>
+        <view v-if="task.reason" class="description-row"><text class="description-label">求助原因</text><text class="description-text">{{ task.reason }}</text></view>
+        <view v-if="task.requirement" class="description-row"><text class="description-label">课堂要求</text><text class="description-text">{{ task.requirement }}</text></view>
+        <view v-if="task.remark" class="description-row"><text class="description-label">补充备注</text><text class="description-text">{{ task.remark }}</text></view>
       </view>
       <view v-if="task.mine && applications.length" id="focus-applicants" class="apps">
         <view class="apps-title">申请人</view>
@@ -766,7 +782,7 @@ useLiveUpdates((event) => {
             <text class="name">{{ item.nickname || "同学" }}</text>
             <text class="app-status">{{ APPLICATION_STATUS_TEXT[item.status] || item.status }}</text>
           </view>
-          <view v-if="applicantCardTrust(item) && !(showApplicantTrust && item.status === 'ACCEPTED')" class="trust-line">{{ applicantCardTrust(item) }}</view>
+          <view v-if="applicantCardTrust(item) && item.status !== 'ACCEPTED'" class="trust-line">{{ applicantCardTrust(item) }}</view>
           <view class="msg">{{ item.message || "无留言" }}</view>
           <view v-if="item.status === 'PENDING' || item.status === 'ACCEPTED'" class="app-actions">
             <wd-button v-if="item.status === 'PENDING' && task.status === 'APPLYING'" size="small" type="primary" :disabled="submitting" @click="handleAccept(item.id)">接受</wd-button>
@@ -775,55 +791,37 @@ useLiveUpdates((event) => {
           </view>
         </view>
       </view>
-      <wd-cell-group border title="上课信息">
-        <wd-cell title="日期" :value="task.taskDate" />
-        <wd-cell title="时间" :value="`${task.startTime} - ${task.endTime}`" />
-        <wd-cell title="校区">
-          <CampusHighlight v-if="task.campusName" :name="task.campusName" />
-          <text v-else>-</text>
-        </wd-cell>
-        <wd-cell title="地点" :value="`${task.building} ${task.classroom}`" />
-        <wd-cell title="是否上机" :value="task.computerLab === 1 ? '是' : '否'" />
-        <wd-cell title="是否拍照" :value="task.requirePhoto === 1 ? '是' : '否'" />
-        <wd-cell title="性别要求" :value="genderRequirementLabel(task.genderRequirement)" />
-        <wd-cell title="酬谢" :value="formatReward(task.reward)" />
-        <wd-cell title="结算说明" value="可私信自行结算" />
-        <wd-cell title="申请人数" :value="`${task.applyCount} 人`" />
-        <wd-cell title="发布时间" :value="parseDateTime(task.createdAt)" />
-      </wd-cell-group>
-      <wd-cell-group border title="发布者">
-        <wd-cell title="昵称" :value="task.publisher?.nickname || '-'" />
-        <wd-cell title="性别" :value="genderLabel(task.publisher?.gender)" />
-        <wd-cell title="学校" :value="task.publisher?.schoolName || '-'" />
-        <wd-cell title="校区" :value="task.publisher?.campusName || '-'" />
-        <wd-cell title="发布完成" :value="`${task.publisher?.completedCount ?? 0} 次`" />
-        <wd-cell
-          title="发布评分"
-          :value="task.publisher?.ratingCount ? `${Number(task.publisher.ratingAvg).toFixed(1)} 分 · ${task.publisher.ratingCount} 次` : '暂无评分'"
-        />
-        <wd-cell title="取消次数" :value="String(task.publisher?.cancelledCount ?? 0)" />
-        <wd-cell title="被举报" :value="String(task.publisher?.reportedCount ?? 0)" />
-        <wd-cell v-if="publisherLimits.length" title="限制" :value="publisherLimits.join(' / ')" />
-      </wd-cell-group>
-      <wd-cell-group v-if="task.applicant" border title="代课者">
-        <wd-cell title="昵称" :value="task.applicant.nickname || '-'" />
-        <wd-cell title="性别" :value="genderLabel(task.applicant.gender)" />
-        <wd-cell title="学校" :value="task.applicant.schoolName || '-'" />
-        <wd-cell title="校区" :value="task.applicant.campusName || '-'" />
-        <wd-cell title="代课完成" :value="`${task.applicant.completedCount ?? 0} 次`" />
-        <wd-cell
-          title="代课评分"
-          :value="task.applicant.ratingCount ? `${Number(task.applicant.ratingAvg).toFixed(1)} 分 · ${task.applicant.ratingCount} 次` : '暂无评分'"
-        />
-        <wd-cell title="取消次数" :value="String(task.applicant.cancelledCount ?? 0)" />
-        <wd-cell title="被举报" :value="String(task.applicant.reportedCount ?? 0)" />
-        <wd-cell v-if="applicantLimits.length" title="限制" :value="applicantLimits.join(' / ')" />
-      </wd-cell-group>
-      <wd-cell-group border title="说明">
-        <wd-cell title="原因" :value="task.reason || '未填写'" />
-        <wd-cell title="要求" :value="task.requirement || '未填写'" />
-        <wd-cell title="备注" :value="task.remark || '未填写'" />
-      </wd-cell-group>
+      <view class="person-card">
+        <view class="section-eyebrow">TRUSTED CLASSMATE <text>发布者</text></view>
+        <view class="person-main person-main--clickable" @click="openProfile(task.publisherId)">
+          <FallbackImage v-if="task.publisher?.avatarUrl" class="person-avatar" :src="resolveMediaUrl(task.publisher.avatarUrl)" mode="aspectFill" />
+          <view v-else class="person-avatar person-avatar--fallback">{{ (task.publisher?.nickname || '同').slice(0, 1) }}</view>
+          <view class="person-copy"><text class="person-name">{{ task.publisher?.nickname || '课安同学' }}</text><text class="person-meta">{{ task.publisher?.schoolName || '学校未填写' }} · {{ task.publisher?.campusName || '校区未填写' }} · {{ genderLabel(task.publisher?.gender) }}</text></view>
+          <wd-icon name="arrow-right" class="person-arrow" />
+        </view>
+        <view class="person-stats">
+          <view><text class="person-stat-value">{{ task.publisher?.completedCount ?? 0 }}</text><text class="person-stat-label">发布完成</text></view>
+          <view><text class="person-stat-value">{{ task.publisher?.ratingCount ? Number(task.publisher.ratingAvg).toFixed(1) : '—' }}</text><text class="person-stat-label">评分 · {{ task.publisher?.ratingCount || 0 }} 条</text></view>
+          <view><text class="person-stat-value">{{ task.publisher?.cancelledCount ?? 0 }}</text><text class="person-stat-label">取消次数</text></view>
+          <view><text class="person-stat-value">{{ task.publisher?.reportedCount ?? 0 }}</text><text class="person-stat-label">被举报</text></view>
+        </view>
+        <view v-if="publisherLimits.length" class="person-limits"><wd-tag v-for="label in publisherLimits" :key="label" type="warning" plain round>{{ label }}</wd-tag></view>
+      </view>
+      <view v-if="task.applicant" class="person-card applicant-card">
+        <view class="section-eyebrow">MATCHED CLASSMATE <text>代课者</text></view>
+        <view class="person-main person-main--clickable" @click="openProfile(task.applicant.id)">
+          <FallbackImage v-if="task.applicant.avatarUrl" class="person-avatar" :src="resolveMediaUrl(task.applicant.avatarUrl)" mode="aspectFill" />
+          <view v-else class="person-avatar person-avatar--fallback">{{ (task.applicant.nickname || '同').slice(0, 1) }}</view>
+          <view class="person-copy"><text class="person-name">{{ task.applicant.nickname || '课安同学' }}</text><text class="person-meta">{{ task.applicant.schoolName || '学校未填写' }} · {{ task.applicant.campusName || '校区未填写' }} · {{ genderLabel(task.applicant.gender) }}</text></view>
+        </view>
+        <view class="person-stats">
+          <view><text class="person-stat-value">{{ task.applicant.completedCount ?? 0 }}</text><text class="person-stat-label">代课完成</text></view>
+          <view><text class="person-stat-value">{{ task.applicant.ratingCount ? Number(task.applicant.ratingAvg).toFixed(1) : '—' }}</text><text class="person-stat-label">评分 · {{ task.applicant.ratingCount || 0 }} 条</text></view>
+          <view><text class="person-stat-value">{{ task.applicant.cancelledCount ?? 0 }}</text><text class="person-stat-label">取消次数</text></view>
+          <view><text class="person-stat-value">{{ task.applicant.reportedCount ?? 0 }}</text><text class="person-stat-label">被举报</text></view>
+        </view>
+        <view v-if="applicantLimits.length" class="person-limits"><wd-tag v-for="label in applicantLimits" :key="label" type="warning" plain round>{{ label }}</wd-tag></view>
+      </view>
       <wd-cell-group v-if="task.myApplicationStatus" border title="我的申请">
         <wd-cell title="状态" :value="APPLICATION_STATUS_TEXT[task.myApplicationStatus] || task.myApplicationStatus" />
       </wd-cell-group>
@@ -872,154 +870,43 @@ useLiveUpdates((event) => {
 </template>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  background: var(--kean-bg);
-  padding-bottom: 108px;
-}
-.count {
-  margin-top: 6px;
-  color: #f77234;
-  font-size: 13px;
-  font-weight: 600;
-}
-.guide,
-.trust,
-.apps,
-.apply-box,
-.photo-box {
-  margin: 12px 16px 0;
-  background: var(--kean-card);
-  border-radius: 12px;
-  padding: 12px 16px;
-}
-.guide {
-  border-left: 3px solid var(--kean-primary);
-}
-.guide-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--kean-text);
-}
-.guide-text {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--kean-sub);
-  line-height: 1.5;
-}
-.trust-title {
-  font-size: 13px;
-  color: var(--kean-muted);
-  margin-bottom: 6px;
-}
-.trust-line {
-  font-size: 13px;
-  color: var(--kean-text);
-  line-height: 1.5;
-}
-.hero {
-  padding: 20px 16px 8px;
-}
-.title-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-.title {
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--kean-text);
-  flex: 1;
-}
-.fav {
-  color: var(--kean-star);
-  font-size: 13px;
-  flex-shrink: 0;
-}
-.status {
-  margin-top: 6px;
-  color: var(--kean-primary);
-  font-size: 13px;
-}
-.fulfill {
-  width: 100%;
-  border-radius: 8px;
-  margin-top: 4px;
-}
-.apps-title {
-  font-size: 14px;
-  color: var(--kean-muted);
-  margin-bottom: 8px;
-}
-.limit-tip {
-  color: var(--kean-danger);
-  font-size: 13px;
-  line-height: 1.6;
-}
-.app-card {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--kean-line);
-}
-.app-card:last-child {
-  border-bottom: none;
-}
-.app-top {
-  display: flex;
-  justify-content: space-between;
-}
-.name {
-  font-weight: 600;
-}
-.app-card .trust-line {
-  margin-top: 6px;
-  color: var(--kean-sub);
-  font-size: 12px;
-  font-weight: 400;
-}
-.app-status {
-  color: var(--kean-primary);
-  font-size: 12px;
-}
-.msg {
-  margin-top: 6px;
-  color: var(--kean-sub);
-  font-size: 13px;
-}
-.app-actions {
-  margin-top: 8px;
-  display: flex;
-  gap: 8px;
-}
-.action-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  background: var(--kean-card);
-  border-top: 1px solid var(--kean-line);
-  padding: 10px 16px 10px;
-}
-.bar-hint {
-  color: var(--kean-danger);
-  font-size: 12px;
-  line-height: 1.5;
-  margin-bottom: 8px;
-}
-.bar-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.bar-main {
-  flex: 1;
-  min-width: 0;
-}
-/* 分组标题居中。wd-cell-group 的标题是 display:flex + justify-content:space-between，
-   所以要改 justify-content，光写 text-align 是不生效的；这些分组都只传了 title、
-   没有右侧 value，因此居中后正好。 */
-:deep(.wd-cell-group__title) {
-  justify-content: center;
-}
+.page { min-height:100vh; padding-bottom:112px; background:linear-gradient(180deg,#edf4ff 0,#f5f7fb 270px,var(--kean-bg) 560px); }
+.content { padding-top:1px; }
+.hero { position:relative; margin:12px 16px 0; padding:22px 20px 16px; overflow:hidden; border:1px solid rgba(255,255,255,.18); border-radius:26px; color:#fff; background:radial-gradient(circle at 92% 6%,rgba(139,187,255,.48),transparent 34%),linear-gradient(145deg,#183960 0%,#245a96 55%,#467fba 100%); box-shadow:0 18px 34px rgba(36,78,128,.2); }
+.hero::after { position:absolute; right:-42px; bottom:-104px; width:210px; height:210px; border:1px solid rgba(255,255,255,.13); border-radius:50%; content:""; }
+.hero-topline,.hero-tags,.hero-bottom { position:relative; z-index:1; display:flex; align-items:center; }
+.hero-topline { justify-content:space-between; }
+.hero-kicker { color:rgba(224,238,255,.72); font-size:9px; font-weight:700; letter-spacing:1.8px; }
+.favorite-icon { display:flex; align-items:center; justify-content:center; width:38px; height:38px; border:1px solid rgba(255,255,255,.22); border-radius:14px; color:#ffe2a0; background:rgba(255,255,255,.12); font-size:18px; }
+.hero-title { position:relative; z-index:1; margin-top:13px; color:#fff; font-size:27px; font-weight:750; line-height:1.25; letter-spacing:.2px; }
+.hero-tags { flex-wrap:wrap; gap:7px; margin-top:14px; }
+.hero-tags :deep(.wd-tag),.requirement-tags :deep(.wd-tag),.person-limits :deep(.wd-tag) { margin:0; }
+.hero-tags :deep(.wd-tag.is-plain) { border-color:rgba(255,255,255,.3); color:rgba(255,255,255,.9); background:rgba(255,255,255,.1); }
+.hero-tags :deep(.wd-tag:not(.is-plain)) { border:0; }
+.hero-bottom { justify-content:space-between; gap:8px; margin-top:17px; padding-top:11px; border-top:1px solid rgba(255,255,255,.16); color:rgba(229,240,255,.7); font-size:10px; }
+.schedule-card,.description-card,.person-card,.guide,.trust,.apps,.apply-box,.photo-box { margin:13px 16px 0; padding:17px; border:1px solid rgba(222,231,243,.95); border-radius:21px; background:var(--kean-card); box-shadow:0 9px 24px rgba(34,59,97,.055); }
+.section-eyebrow { display:flex; align-items:center; gap:9px; color:#86a0c1; font-size:9px; font-weight:700; letter-spacing:1.1px; }
+.section-eyebrow text { color:var(--kean-sub); font-size:13px; letter-spacing:0; }
+.schedule-date { display:flex; align-items:center; gap:12px; margin-top:17px; }
+.date-icon,.place-icon { display:flex; flex-shrink:0; align-items:center; justify-content:center; width:43px; height:43px; border-radius:15px; color:#5682bb; background:#edf4ff; font-size:14px; font-weight:700; }
+.date-main,.date-sub,.place-main,.place-sub { display:block; }
+.date-main { color:#263b58; font-size:18px; font-weight:750; }
+.date-sub { margin-top:4px; color:#61748d; font-size:13px; font-weight:600; }
+.schedule-divider { height:1px; margin:16px 0; background:#edf0f5; }
+.place-row { display:flex; align-items:center; gap:11px; }
+.place-icon { color:#4d9387; background:#e9f6f1; }
+.place-main { color:#2e435f; font-size:14px; font-weight:700; }
+.place-sub { margin-top:4px; color:#7e8da1; font-size:11px; }
+.requirement-tags { display:flex; flex-wrap:wrap; gap:7px; margin-top:16px; }
+.reward-strip { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:16px; padding:13px 14px; border:1px solid #f5e5c6; border-radius:15px; background:linear-gradient(115deg,#fffaf0,#fff5df); }
+.reward-label,.reward-note { display:block; }.reward-label { color:#9c743a; font-size:12px; font-weight:700; }.reward-note { margin-top:4px; color:#b29a72; font-size:10px; }.reward-value { color:#b66e2e; font-size:21px; font-weight:800; }
+.description-row { display:flex; flex-direction:column; gap:6px; margin-top:15px; }.description-label { color:#8a9ab0; font-size:10px; font-weight:650; }.description-text { color:#435670; font-size:13px; line-height:1.75; white-space:pre-wrap; }
+.guide { border-left:4px solid #5e95dc; }.guide-title { color:#2f4d70; font-size:14px; font-weight:750; }.guide-text { margin-top:5px; color:#6f8097; font-size:12px; line-height:1.65; }
+.trust-line { color:#50647e; font-size:12px; line-height:1.65; }
+.apps-title { margin-bottom:9px; color:#536982; font-size:14px; font-weight:700; }.limit-tip { color:var(--kean-danger); font-size:13px; line-height:1.6; }
+.app-card { padding:12px 0; border-bottom:1px solid var(--kean-line); }.app-card:last-child { border-bottom:0; }.app-top { display:flex; justify-content:space-between; gap:10px; }.name { color:#2e435f; font-size:14px; font-weight:700; }.app-card .trust-line { margin-top:6px; font-size:11px; }.app-status { color:var(--kean-primary); font-size:11px; }.msg { margin-top:7px; color:var(--kean-sub); font-size:12px; line-height:1.6; }.app-actions { display:flex; gap:8px; margin-top:10px; }
+.person-card { padding:17px; }.person-main { display:flex; align-items:center; gap:11px; margin-top:15px; }.person-main--clickable { cursor:pointer; }.person-avatar { width:48px; height:48px; flex-shrink:0; overflow:hidden; border-radius:17px; background:#e9f1fc; }.person-avatar--fallback { display:flex; align-items:center; justify-content:center; color:#5a82b7; font-size:18px; font-weight:700; }.person-copy { display:flex; min-width:0; flex:1; flex-direction:column; gap:4px; }.person-name { color:#293e5b; font-size:15px; font-weight:750; }.person-meta { overflow:hidden; color:#8492a5; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }.person-arrow { color:#a5b2c2; font-size:13px; }
+.person-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-top:16px; padding:13px 4px 2px; border-top:1px solid #edf0f5; }.person-stats > view { display:flex; flex-direction:column; align-items:center; gap:5px; }.person-stat-value { color:#344a67; font-size:14px; font-weight:750; }.person-stat-label { color:#92a0b2; font-size:9px; }.person-limits { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }.applicant-card { border-color:#d9ece7; }.applicant-card .person-avatar,.applicant-card .person-avatar--fallback { background:#e9f6f1; }
+.content :deep(.wd-cell-group) { margin:13px 16px 0; overflow:hidden; border:1px solid rgba(222,231,243,.95); border-radius:20px; background:var(--kean-card); box-shadow:0 9px 24px rgba(34,59,97,.055); }.content :deep(.wd-cell-group__title) { justify-content:flex-start; padding:15px 17px 8px; color:#536982; font-size:13px; font-weight:700; }.content :deep(.wd-cell) { padding-right:17px; padding-left:17px; }
+.fulfill { width:100%; margin-top:4px; border-radius:12px; }.apply-box :deep(.wd-textarea) { margin-bottom:12px; border-radius:13px; background:#f7f9fc; }.apply-box :deep(.wd-button) { margin-top:8px; }.action-bar { position:fixed; right:0; bottom:0; left:0; z-index:20; padding:11px 16px 10px; border-top:1px solid rgba(221,230,241,.95); background:rgba(255,255,255,.97); box-shadow:0 -8px 24px rgba(30,52,82,.07); }.bar-hint { margin-bottom:8px; color:var(--kean-danger); font-size:11px; line-height:1.5; }.bar-row { display:flex; align-items:center; gap:10px; }.bar-main { min-width:0; flex:1; }.bar-main :deep(.wd-button) { min-height:47px; border-radius:15px; font-weight:700; box-shadow:0 6px 14px rgba(74,123,190,.2); }.bar-row > :deep(.wd-button) { min-height:44px; border-radius:14px; }
 </style>

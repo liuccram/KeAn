@@ -71,6 +71,8 @@ const error = ref("");
 const finished = ref(false);
 const page = ref(1);
 const dots = ref({ system: 0, task: 0, chat: 0 });
+const currentUnread = computed(() => tab.value === "system" ? dots.value.system : tab.value === "task" ? dots.value.task : dots.value.chat);
+const messageDescription = computed(() => tab.value === "system" ? "账号提醒与平台公告" : tab.value === "task" ? "跟进每一次申请与代课进展" : "和一起互助的同学保持联系");
 const noticeScope = computed(() => (tab.value === "system" ? "SYSTEM" : "TASK") as "SYSTEM" | "TASK");
 // 系统通知（没有可跳转的任务/会话）点开后，在原地用弹层展示完整内容
 const activeNotice = ref<NotificationItem | null>(null);
@@ -1345,6 +1347,10 @@ onReachBottom(() => {
     </view>
     <template v-else>
       <view class="msg-shell">
+        <view class="msg-page-head">
+          <view class="msg-page-head__copy"><text class="msg-page-head__eyebrow">CAMPUS CONNECTION</text><text class="msg-page-head__title">消息</text><text class="msg-page-head__subtitle">{{ messageDescription }}</text></view>
+          <view class="msg-page-head__status" :class="{ 'msg-page-head__status--unread': currentUnread > 0 }"><view class="msg-page-head__status-dot" />{{ currentUnread > 0 ? `${currentUnread > 99 ? '99+' : currentUnread} 条未读` : '已读完' }}</view>
+        </view>
         <!-- A 节：三档平级分段控件（结构 / 交互与原 tabs 完全一致；视觉已还原成
              改版前的「浅灰分段条 + 选中白胶囊」，样式在 styles/design-messages.css） -->
         <view class="msg-tabs">
@@ -1617,6 +1623,21 @@ onReachBottom(() => {
 .section {
   margin-top: 8px;
 }
+
+.msg-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 2px 4px;
+}
+
+.msg-page-head__copy { min-width: 0; display: flex; flex-direction: column; }
+.msg-page-head__eyebrow { font-size: 9px; line-height: 1.4; letter-spacing: 1.3px; }
+.msg-page-head__title { margin-top: 4px; font-size: 23px; line-height: 1.25; font-weight: 750; }
+.msg-page-head__subtitle { margin-top: 4px; font-size: 11px; line-height: 1.4; }
+.msg-page-head__status { display: flex; flex-shrink: 0; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 12px; font-size: 10px; }
+.msg-page-head__status-dot { width: 6px; height: 6px; border-radius: 50%; }
 
 .section-head {
   display: flex;

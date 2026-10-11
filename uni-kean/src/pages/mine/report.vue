@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { createReport, listMyReports, listReportTypes, type ReportItem, type ReportTypeItem } from "@/api/report";
 import FallbackImage from "@/components/FallbackImage.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
 import { useUploadProgress } from "@/composables/useUploadProgress";
@@ -144,12 +145,13 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <view class="page">
-    <view class="card">
-      <view class="title">举报对象</view>
-      <view class="target">{{ targetText }}</view>
-      <wd-picker v-model="model.type" label="举报原因" :columns="typeColumns" />
-      <wd-textarea v-model="model.description" placeholder="补充说明，选填" :maxlength="500" />
+  <view class="page report-page">
+    <PageIntro eyebrow="COMMUNITY CARE" title="提交举报" description="请提供真实、具体的信息，便于及时核查" marker="守护" />
+    <view class="card report-compose">
+      <view class="target-block"><text class="target-label">举报对象</text><text class="target">{{ targetText }}</text></view>
+      <view class="field-caption">选择最符合的原因</view><wd-picker v-model="model.type" label="举报原因" :columns="typeColumns" />
+      <view class="field-caption">补充情况（选填）</view><wd-textarea v-model="model.description" placeholder="描述发生的情况、时间或相关细节" :maxlength="500" />
+      <view class="evidence-heading"><view><text class="evidence-title">相关图片</text><text class="evidence-sub">最多上传 3 张，帮助管理员了解情况</text></view><text class="evidence-count">{{ images.length }}/3</text></view>
       <view class="images">
         <FallbackImage v-for="(src, index) in images" :key="src" class="shot" :src="src" mode="aspectFill" @click="removeImage(index)" />
         <view v-if="uploading" class="add uploading">{{ uploadLabel }}</view>
@@ -172,21 +174,26 @@ async function handleSubmit() {
 .card {
   background: var(--kean-card);
   margin: 12px 16px;
-  border-radius: 12px;
-  padding: 14px 16px;
+  border: 1px solid rgba(224,232,243,.9);
+  border-radius: 17px;
+  padding: 16px;
+  box-shadow: 0 5px 16px rgba(34,59,97,.04);
 }
+.target-block { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; padding:12px; border-radius:12px; background:rgba(241,246,253,.86); }.target-label { color:var(--kean-muted); font-size:10px; }
+.field-caption { margin:13px 0 7px; color:var(--kean-sub); font-size:12px; font-weight:600; }.evidence-heading { display:flex; align-items:center; justify-content:space-between; margin-top:14px; }.evidence-title { display:block; color:var(--kean-sub); font-size:12px; font-weight:600; }.evidence-sub { display:block; margin-top:4px; color:var(--kean-muted); font-size:10px; }.evidence-count { color:var(--kean-muted); font-size:10px; }
 .title {
   font-weight: 600;
   color: var(--kean-text);
   margin-bottom: 8px;
 }
 .target {
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  background: #f7f8fa;
-  border-radius: 8px;
+  margin:0;
+  padding:0;
+  background:transparent;
+  border-radius:0;
   color: var(--kean-text);
-  font-size: 14px;
+  font-size: 13px;
+  font-weight:600;
 }
 .limit {
   margin: 8px 0 12px;
@@ -201,9 +208,9 @@ async function handleSubmit() {
 }
 .shot,
 .add {
-  width: 72px;
-  height: 72px;
-  border-radius: 8px;
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
   background: var(--kean-line);
 }
 .add {

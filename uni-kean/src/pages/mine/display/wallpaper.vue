@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import FallbackImage from "@/components/FallbackImage.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { useDisplayPrefs } from "@/composables/useDisplayPrefs";
 import { applyDisplayAppearance, type WallpaperId } from "@/utils/prefs";
 import { WALLPAPER_OPTIONS } from "@/utils/wallpapers";
@@ -17,6 +18,7 @@ function select(id: WallpaperId) {
 
 <template>
   <view class="page">
+    <PageIntro eyebrow="APP APPEARANCE" title="界面背景" description="挑选适合自己的浏览氛围，随时可以切回默认" marker="主题" />
     <view class="hero">
       <image
         v-if="prefs.wallpaper !== 'default'"
@@ -26,6 +28,7 @@ function select(id: WallpaperId) {
       />
       <view v-else class="hero-default">当前为默认浅灰背景</view>
     </view>
+    <view class="selection-title"><text>选择一款背景</text><text class="selection-count">{{ WALLPAPER_OPTIONS.length }} 款</text></view>
     <view class="grid">
       <view
         v-for="item in WALLPAPER_OPTIONS"
@@ -50,14 +53,16 @@ function select(id: WallpaperId) {
 .page {
   min-height: 100vh;
   background: var(--kean-bg);
-  padding: 16px 16px 32px;
+  padding: 0 0 32px;
 }
 .hero {
   height: 168px;
   border-radius: 14px;
   overflow: hidden;
   background: #e8edf3;
-  margin-bottom: 16px;
+  margin: 0 16px 18px;
+  border:1px solid rgba(224,232,243,.9);
+  box-shadow:0 8px 24px rgba(34,59,97,.045);
 }
 .hero-img {
   width: 100%;
@@ -74,13 +79,17 @@ function select(id: WallpaperId) {
 .grid {
   display: flex;
   gap: 10px;
+  padding:0 16px;
 }
+.selection-title { display:flex; justify-content:space-between; align-items:center; margin:0 18px 9px; color:var(--kean-sub); font-size:13px; font-weight:700; }
+.selection-count { color:var(--kean-muted); font-size:10px; font-weight:400; }
 .card {
   flex: 1;
   background: var(--kean-card);
   border-radius: 12px;
   overflow: hidden;
   border: 2px solid transparent;
+  box-shadow:0 5px 14px rgba(34,59,97,.045);
 }
 .card.on {
   border-color: var(--kean-primary-active);
@@ -106,7 +115,7 @@ function select(id: WallpaperId) {
   font-weight: 700;
 }
 .tip {
-  margin-top: 14px;
+  margin: 14px 18px 0;
   color: var(--kean-muted);
   font-size: 12px;
   line-height: 1.6;

@@ -2,6 +2,7 @@
 import { createAppeal, listMyReports, listReportsAgainstMe, type ReportItem } from "@/api/report";
 import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { parseDateTime } from "@/utils/format";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
@@ -164,7 +165,8 @@ useLiveUpdates((event) => {
 </script>
 
 <template>
-  <view class="page">
+  <view class="page feedback-page">
+    <PageIntro eyebrow="SAFETY & TRUST" title="举报与处理" description="查看举报进展、处理结果和申诉状态" marker="守护" />
     <view class="tabs">
       <view class="tab" :class="{ on: tab === 'records' }" @click="tab = 'records'">举报记录</view>
       <view class="tab" :class="{ on: tab === 'results' }" @click="tab = 'results'">处理结果</view>
@@ -278,25 +280,27 @@ useLiveUpdates((event) => {
 .tabs {
   display: flex;
   gap: 8px;
-  margin: 10px 12px 0;
-  padding: 4px;
-  background: #eceff3;
-  border-radius: 10px;
+  margin: 10px 16px 0;
+  padding: 5px;
+  border: 1px solid rgba(224,232,243,.9);
+  background: rgba(255,255,255,.72);
+  border-radius: 13px;
 }
 .tab {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 36px;
+  min-height: 38px;
   color: var(--kean-muted);
   font-size: 13px;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 .tab.on {
   color: var(--kean-primary-active);
   font-weight: 600;
   background: var(--kean-card);
+  box-shadow: 0 3px 10px rgba(44,67,101,.08);
 }
 .list {
   padding-bottom: 8px;
@@ -304,8 +308,10 @@ useLiveUpdates((event) => {
 .card {
   background: var(--kean-card);
   margin: 12px 16px;
-  border-radius: 12px;
-  padding: 14px 16px;
+  border: 1px solid rgba(224,232,243,.9);
+  border-radius: 16px;
+  padding: 15px 16px;
+  box-shadow: 0 5px 16px rgba(34,59,97,.035);
 }
 .top {
   display: flex;

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { kickLoginDevice, listLoginDevices, type LoginDevice } from "@/api/device";
 import ListState from "@/components/ListState.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { t } from "@/utils/i18n";
 import { loadDisplayPrefs } from "@/utils/prefs";
 import { onShow } from "@dcloudio/uni-app";
@@ -79,6 +80,7 @@ async function kick(item: LoginDevice) {
 
 <template>
   <view class="page">
+    <PageIntro eyebrow="ACTIVE SESSIONS" :title="copy.devices" description="查看登录设备，及时移除陌生会话" marker="设备" />
     <ListState
       :loading="loading"
       :error="error"
@@ -86,7 +88,9 @@ async function kick(item: LoginDevice) {
       :empty-text="copy.empty"
       @retry="loadDevices"
     >
-      <wd-cell-group border>
+      <view class="devices-group">
+        <view class="devices-heading">当前登录列表</view>
+        <wd-cell-group border>
         <wd-cell
           v-for="item in devices"
           :key="item.id"
@@ -98,7 +102,8 @@ async function kick(item: LoginDevice) {
             <text v-else class="kick" @click="kick(item)">{{ copy.kick }}</text>
           </view>
         </wd-cell>
-      </wd-cell-group>
+        </wd-cell-group>
+      </view>
     </ListState>
     <wd-toast />
   </view>
@@ -111,6 +116,7 @@ async function kick(item: LoginDevice) {
   padding-top: 12px;
   padding-bottom: 32px;
 }
+.devices-group { margin: 0 16px; padding: 14px; border: 1px solid rgba(224,232,243,.9); border-radius: 16px; background: var(--kean-card); box-shadow: 0 5px 16px rgba(34,59,97,.035); }.devices-heading { padding: 2px 2px 10px; color: var(--kean-muted); font-size: 11px; font-weight: 650; }.devices-group :deep(.wd-cell-group) { overflow: hidden; border-radius: 11px; }
 .device-actions {
   display: flex;
   align-items: center;

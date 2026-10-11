@@ -94,6 +94,7 @@ onLoad((query) => {
       @retry="load"
     >
       <view v-if="profile" class="card">
+        <view class="profile-kicker">CAMPUS PROFILE <text>课安互助社区</text></view>
         <view class="hero">
           <FallbackImage v-if="profile.avatarUrl" class="avatar" :src="resolveMediaUrl(profile.avatarUrl)" mode="aspectFill" />
           <view v-else class="avatar text">{{ avatarText }}</view>
@@ -103,15 +104,12 @@ onLoad((query) => {
               <text v-if="!profile.limited && profile.gender" class="tag">{{ genderLabel(profile.gender) }}</text>
             </view>
             <view class="school">{{ schoolLine }}</view>
-            <view v-if="!profile.limited" class="rate">
-              发布 {{ formatRoleRating(profile.publishRatingAvg, profile.publishRatingCount) }}
-              · 完成 {{ profile.publishCompletedCount || 0 }} 次
-            </view>
-            <view v-if="!profile.limited" class="rate">
-              代课 {{ formatRoleRating(profile.applyRatingAvg, profile.applyRatingCount) }}
-              · 完成 {{ profile.completedCount || 0 }} 次
-            </view>
           </view>
+        </view>
+        <view v-if="!profile.limited" class="stats">
+          <view class="stat"><text class="stat-value">{{ formatRoleRating(profile.publishRatingAvg, profile.publishRatingCount) }}</text><text class="stat-label">发布评分 · {{ profile.publishCompletedCount || 0 }} 次完成</text></view>
+          <view class="stat-divider" />
+          <view class="stat"><text class="stat-value">{{ formatRoleRating(profile.applyRatingAvg, profile.applyRatingCount) }}</text><text class="stat-label">代课评分 · {{ profile.completedCount || 0 }} 次完成</text></view>
         </view>
         <view v-if="profile.limited" class="lock">该账号已设为隐私账号，仅展示有限信息</view>
         <wd-button v-if="!profile.mine && !profile.limited" type="primary" block :loading="chatting" @click="startChat">
@@ -151,18 +149,22 @@ onLoad((query) => {
 }
 .card {
   background: var(--kean-card);
-  border-radius: 12px;
-  padding: 16px;
+  border:1px solid rgba(224,232,243,.9);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow:0 8px 24px rgba(34,59,97,.05);
 }
+.profile-kicker { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; color:#7795bb; font-size:9px; font-weight:700; letter-spacing:1px; }
+.profile-kicker text { color:var(--kean-muted); font-size:10px; font-weight:400; letter-spacing:0; }
 .hero {
   display: flex;
   gap: 12px;
   align-items: center;
 }
 .avatar {
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
+  width: 70px;
+  height: 70px;
+  border-radius: 20px;
   background: var(--kean-primary-soft);
   flex-shrink: 0;
 }
@@ -197,6 +199,11 @@ onLoad((query) => {
   color: var(--kean-muted);
   font-size: 13px;
 }
+.stats { display:flex; align-items:center; margin:16px 0; padding:14px 4px; border-top:1px solid var(--kean-line); border-bottom:1px solid var(--kean-line); }
+.stat { display:flex; flex:1; flex-direction:column; gap:5px; min-width:0; }
+.stat-value { color:var(--kean-text); font-size:15px; font-weight:700; }
+.stat-label { color:var(--kean-muted); font-size:10px; }
+.stat-divider { width:1px; height:32px; margin:0 12px; background:var(--kean-line); }
 .lock {
   margin: 12px 0;
   padding: 10px 12px;
@@ -212,8 +219,10 @@ onLoad((query) => {
 }
 .reviews {
   background: var(--kean-card);
-  border-radius: 12px;
+  border:1px solid rgba(224,232,243,.9);
+  border-radius: 16px;
   overflow: hidden;
+  box-shadow:0 5px 16px rgba(34,59,97,.04);
 }
 .review {
   padding: 12px 16px;

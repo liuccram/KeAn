@@ -2,6 +2,7 @@
 import { createReport, listMyReports, listReportTypes, type ReportItem, type ReportTypeItem } from "@/api/report";
 import FallbackImage from "@/components/FallbackImage.vue";
 import ListState from "@/components/ListState.vue";
+import PageIntro from "@/components/PageIntro.vue";
 import { parseDateTime } from "@/utils/format";
 import { resolveMediaUrl, uploadFile } from "@/utils/request";
 import { useLiveUpdates } from "@/composables/useLiveUpdates";
@@ -147,12 +148,12 @@ useLiveUpdates((event) => {
 </script>
 
 <template>
-  <view class="page">
-    <view class="card">
-      <view class="title">向管理员反馈</view>
-      <view class="hint">功能建议、故障问题、账号或服务等事宜都可以写在这里。</view>
+  <view class="page advice-page">
+    <PageIntro eyebrow="WE LISTEN" title="反馈与建议" description="你的想法会帮助课安变得更好" marker="反馈" />
+    <view class="card compose-card">
+      <view class="compose-heading"><view class="compose-mark">01</view><view><view class="title">向管理员反馈</view><view class="hint">功能建议、故障问题或账号服务问题</view></view></view>
       <wd-picker v-model="model.type" label="反馈类型" :columns="typeColumns" />
-      <wd-textarea v-model="model.description" placeholder="请描述你想反馈的内容" :maxlength="500" />
+      <view class="field-caption">说说你遇到的情况</view><wd-textarea v-model="model.description" placeholder="尽量描述发生了什么、你希望怎么改进" :maxlength="500" />
       <view class="images">
         <FallbackImage v-for="(src, index) in images" :key="src" class="shot" :src="src" mode="aspectFill" @click="removeImage(index)" />
         <view v-if="uploading" class="add uploading">{{ uploadLabel }}</view>
@@ -163,7 +164,7 @@ useLiveUpdates((event) => {
       </wd-button>
     </view>
 
-    <view class="section">我的反馈</view>
+    <view class="section-heading"><view class="section">我的反馈</view><text class="section-note">提交后可在这里查看进展</text></view>
     <ListState
       :loading="loading"
       :error="error"
@@ -196,9 +197,12 @@ useLiveUpdates((event) => {
 .card {
   background: var(--kean-card);
   margin: 12px 16px;
-  border-radius: 12px;
-  padding: 14px 16px;
+  border: 1px solid rgba(224,232,243,.9);
+  border-radius: 17px;
+  padding: 16px;
+  box-shadow: 0 5px 16px rgba(34,59,97,.04);
 }
+.compose-heading { display:flex; align-items:center; gap:10px; margin-bottom:12px; }.compose-mark { width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:10px; color:#5a81b8; background:#edf4ff; font-size:10px; font-weight:700; }.field-caption { margin:14px 0 7px; color:var(--kean-sub); font-size:12px; font-weight:600; }.section-heading { display:flex; align-items:baseline; justify-content:space-between; margin:12px 16px 0; }.section-note { color:var(--kean-muted); font-size:10px; }
 .title {
   font-weight: 600;
   color: var(--kean-text);
@@ -222,9 +226,9 @@ useLiveUpdates((event) => {
 }
 .shot,
 .add {
-  width: 72px;
-  height: 72px;
-  border-radius: 8px;
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
   background: var(--kean-line);
 }
 .add {
