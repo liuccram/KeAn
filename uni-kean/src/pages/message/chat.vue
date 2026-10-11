@@ -1622,7 +1622,7 @@ onMounted(() => {
            语音/键盘切换那格因为本页不做语音而省略（见交付说明）。
            ⚠️ 这里没有任何 position/transform/backdrop-filter：.composer 是 .page 的直接子元素，
            一旦在它或 .page、.page 的任何祖先上引入「会创建 containing block」的属性，
-           本页 5 个 fixed 元素（含这张输入栏本身）就会被劫持（仓库铁律 3）。 -->
+           本页 6 个 fixed 元素（含这张输入栏本身与右下角的「新消息」提示）就会被劫持（仓库铁律 3）。 -->
       <!-- 多行输入：auto-height 随内容增高，高度上下限由 .input 的 min-/max-height 卡住（≈1~5 行），
            超出上限后由 overflow-y 内部滚动。仍是同一个 v-model 与同一个 @confirm（回车发送），
            类名仍是 .input —— insertEmoji 就是用 `.composer .input` 找这个原生 DOM 节点取光标的。 -->
@@ -1737,8 +1737,8 @@ onMounted(() => {
  * box 用 rpx，本页用 px，按 750rpx = 375px 即 **rpx ÷ 2 = px** 换算，逐条写在注释里。
  *
  * ⚠️ 本文件**绝不**出现 backdrop-filter / transform / filter / will-change /
- *    contain / perspective：本页有 5 个 position: fixed 的元素（.peer-status /
- *    .composer / .actions / .mute-tip / .panel）+ wd-toast 自带的 fixed 遮罩，
+ *    contain / perspective：本页有 6 个 position: fixed 的元素（.peer-status /
+ *    .composer / .actions / .mute-tip / .panel / .new-msg-tip）+ wd-toast 自带的 fixed 遮罩，
  *    它们的祖先都是 .page 这一层，一旦给 .page 或任何祖先加上这些属性，就会把
  *    fixed 后代劫持成「相对该容器定位」，弹层遮罩会点不到、关不掉（本链已翻车两次）。
  *    下面用到的 position: relative / absolute 只服务于气泡小尖角，
