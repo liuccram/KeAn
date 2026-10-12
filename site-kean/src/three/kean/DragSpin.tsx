@@ -60,8 +60,9 @@ export function DragSpin({
       const dy = event.clientY - pointer.current.ly;
       pointer.current.lx = event.clientX;
       pointer.current.ly = event.clientY;
-      target.current.y += dx * 0.005;
-      target.current.x = THREE.MathUtils.clamp(target.current.x + dy * 0.0036, -0.82, 0.82);
+      // Drag sensitivity per pixel of pointer travel, raised ~1.4x from 0.005 / 0.0036.
+      target.current.y += dx * 0.007;
+      target.current.x = THREE.MathUtils.clamp(target.current.x + dy * 0.005, -0.82, 0.82);
     };
     const up = () => {
       pointer.current.active = false;

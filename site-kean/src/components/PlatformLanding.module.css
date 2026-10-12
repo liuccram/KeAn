@@ -62,11 +62,14 @@ a:hover .arrow { transform: translateX(3px); }
 .hero h1, .sectionIntro h2, .workflowTop h2, .principlesHead h2, .faqIntro h2, .downloadSection h2 { margin: 24px 0 0; color: #13233f; font-size: clamp(43px,5.5vw,72px); font-weight: 690; letter-spacing: -.065em; line-height: 1.1; }
 .hero h1 em, .sectionIntro h2 em, .workflowTop h2 em, .principlesHead h2 em, .faqIntro h2 em { color: var(--blue); font-style: normal; }
 .heroLead { max-width: 435px; margin: 24px 0 0; color: #68778d; font-size: 15px; line-height: 1.95; }
-.heroActions { display: flex; align-items: center; gap: 24px; margin-top: 30px; }
+.heroActions { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; margin-top: 30px; }
 .primaryButton, .lightButton { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; padding: 0 20px; border-radius: 7px; background: var(--blue); color: white; text-decoration: none; font-size: 12px; font-weight: 700; box-shadow: 0 8px 18px rgba(40,105,232,.17); transition: background .2s ease, transform .2s ease, box-shadow .2s ease; }
 .primaryButton:hover { transform: translateY(-2px); background: var(--blue-dark); box-shadow: 0 12px 24px rgba(40,105,232,.22); }
 .textButton { color: #45556e; text-decoration: none; font-size: 12px; font-weight: 650; }
 .textButton:hover { color: var(--blue); }
+/* Secondary hero action: same visual language as .primaryButton in the outlined style of .headerCta. */
+.joinButton { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; padding: 0 20px; border: 1px solid #d7e1ef; border-radius: 7px; background: transparent; color: var(--ink); text-decoration: none; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; transition: border-color .2s ease, color .2s ease, background .2s ease; }
+.joinButton:hover { border-color: var(--blue); color: var(--blue); }
 .heroFootnote { display: flex; align-items: center; gap: 10px; margin-top: 48px; color: #8290a3; font-size: 10px; letter-spacing: .04em; }
 .statusDot { width: 7px; height: 7px; border-radius: 50%; background: #22a77b; box-shadow: 0 0 0 4px #e8f7f1; }
 .heroVisual { position: relative; z-index: 1; min-height: 410px; display: flex; align-items: center; justify-content: center; }
@@ -328,6 +331,8 @@ a:hover .arrow { transform: translateX(3px); }
 .primaryButton:hover { background: #4d8bfa; }
 .textButton { color: #c1ccdb; }
 .textButton:hover { color: #9cc2ff; }
+.joinButton { border-color: #33445d; color: #e3ecf8; }
+.joinButton:hover { border-color: #76a9ff; color: #9cc2ff; }
 .heroFootnote { color: #8494aa; }
 .statusDot { background: #45c293; box-shadow: 0 0 0 4px rgba(69,194,147,.12); }
 .visualHalo { border-color: rgba(110,160,235,.17); background: radial-gradient(circle,rgba(51,105,190,.2),rgba(51,105,190,.04) 50%,transparent 70%); }
@@ -428,7 +433,10 @@ a:hover .arrow { transform: translateX(3px); }
 .motionReduced [data-reveal].isVisible { animation: module-enter-reduced .42s ease-out both; }
 @keyframes module-enter-reduced { from { opacity: 0; } to { opacity: 1; } }
 
-/* The hero globe is an interactive canvas with a quiet orbital frame. */
+/* The hero globe is an interactive canvas with a quiet orbital frame. The hero clips
+   its own overflow so the globe stays inside the first screen instead of drifting
+   into the sections below. */
+.hero { overflow: hidden; }
 .heroVisual { min-width: 0; min-height: 500px; }
 .globeAura { position: absolute; width: min(43vw, 540px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle,rgba(36,103,210,.24),rgba(31,77,150,.1) 43%,transparent 72%); filter: blur(2px); pointer-events: none; }
 .globeFrame { position: relative; z-index: 1; width: min(100%, 570px); aspect-ratio: 1; }

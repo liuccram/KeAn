@@ -176,10 +176,12 @@ export function PlatformLanding() {
           <div className={styles.heroGrid} aria-hidden="true" />
           <div className={styles.heroCopy} data-reveal>
             <div className={styles.eyebrow}><span>校园代课互助平台</span><i />一个清晰的协作流程</div>
-            <h1>临时有事，<br /><em>课程有人接。</em></h1>
+            <h1>欢迎来到课安</h1>
             <p className={styles.heroLead}>发布需求、申请接手、沟通确认。<br />让课程交接简单而清楚。</p>
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="#product">探索课安 <Arrow /></a>
+              {/* Secondary hero action: opens the public site in a new tab so the landing page stays put. */}
+              <a className={styles.joinButton} href="https://kean.college" target="_blank" rel="noopener noreferrer">加入课安</a>
               <a className={styles.textButton} href="#workflow">了解如何协作 <Arrow /></a>
             </div>
             <div className={styles.heroFootnote}><span className={styles.statusDot} />发布需求 · 申请接手 · 双方确认</div>
@@ -207,7 +209,7 @@ export function PlatformLanding() {
         <section className={styles.productSection} id="product" data-reveal>
           <div className={styles.sectionIntro}>
             <div className={styles.eyebrow}><span>PRODUCT / 01</span><i />从发起到完成</div>
-            <h2>不止是发一条消息。<br /><em>是一套完整的交接方式。</em></h2>
+            <h2>不止是发消息，<br /><em>而是一套交接方式。</em></h2>
             <p>从发布到完成，关键信息与任务进度都在同一处。</p>
           </div>
           <div className={styles.capabilityGrid}>
@@ -226,7 +228,7 @@ export function PlatformLanding() {
           <div className={styles.workflowTop}>
             <div>
               <div className={styles.eyebrow}><span>HOW IT WORKS / 02</span><i />一条任务的生命周期</div>
-              <h2>每一步，都知道<br /><em>接下来该做什么。</em></h2>
+              <h2>每一步，<br /><em>都知道下一步。</em></h2>
             </div>
             <p>状态随流程更新，双方始终知道下一步。</p>
           </div>
@@ -246,7 +248,7 @@ export function PlatformLanding() {
         <section className={styles.principlesSection} id="trust" data-reveal>
           <div className={styles.principlesHead}>
             <div className={styles.eyebrow}><span>TRUST & CLARITY / 03</span><i />规则透明，边界清楚</div>
-            <h2>互助要方便，<br /><em>规则也要说清楚。</em></h2>
+            <h2>互助要方便，<br /><em>规则也要清楚。</em></h2>
           </div>
           <div className={styles.principlesLayout}>
             <div className={styles.principleLead}>
@@ -287,7 +289,7 @@ export function PlatformLanding() {
         <section className={styles.downloadSection} id="download" data-reveal>
           <div className={styles.downloadOrb} aria-hidden="true"><span /><span /><span /></div>
           <div className={styles.eyebrow}><span>KEAN / NEXT STEP</span><i />从一次清楚的沟通开始</div>
-          <h2>让临时安排，<br /><em>也有清楚的路径。</em></h2>
+          <h2>让临时安排，<br /><em>也有清楚路径。</em></h2>
           <p>从一次清楚的沟通开始。</p>
           <a className={styles.lightButton} href="#product">重新浏览产品能力 <Arrow /></a>
           <span className={styles.releaseNote}>Android 客户端下载信息将在安装包正式提供后更新</span>
