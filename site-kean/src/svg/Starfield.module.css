@@ -1,0 +1,52 @@
+.wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.fixed {
+  position: fixed;
+}
+
+.svg {
+  width: 140%;
+  height: 140%;
+  display: block;
+  position: absolute;
+  left: -20%;
+  top: -20%;
+}
+
+.drift {
+  transform-origin: 50% 50%;
+  animation: drift 22s linear infinite;
+}
+
+.twinkle {
+  animation: twinkle 1.5s ease-in-out infinite;
+}
+
+@keyframes drift {
+  to {
+    transform: rotate(28deg);
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drift,
+  .twinkle {
+    animation: none;
+  }
+}

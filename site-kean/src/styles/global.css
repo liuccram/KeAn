@@ -1,0 +1,26 @@
+:root {
+  font-family: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  color: #eaf1fb;
+  background: #07111f;
+  font-weight: 400;
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { min-width: 320px; scroll-behavior: smooth; scroll-padding-top: 82px; }
+body { min-width: 320px; min-height: 100vh; margin: 0; background: #07111f; }
+button, a { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+a { -webkit-tap-highlight-color: transparent; }
+::selection { background: rgba(40, 105, 232, .16); color: #13233f; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; }
+}

@@ -1,0 +1,63 @@
+.svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.ring {
+  fill: none;
+  stroke: rgba(126, 182, 255, 0.22);
+  stroke-width: 1.2;
+}
+
+.axis {
+  stroke: rgba(126, 182, 255, 0.1);
+  stroke-width: 1;
+}
+
+.sweep {
+  fill: none;
+  stroke: rgba(201, 228, 255, 0.45);
+  stroke-width: 1.4;
+  filter: drop-shadow(0 0 6px rgba(126, 182, 255, 0.5));
+}
+
+.dot {
+  fill: #7eb6ff;
+  opacity: 0.7;
+}
+
+.dotHot {
+  fill: #eaf4ff;
+  filter: drop-shadow(0 0 6px rgba(201, 228, 255, 0.8));
+}
+
+.halo {
+  fill: rgba(126, 182, 255, 0.16);
+}
+
+.coreRing {
+  fill: none;
+  stroke: #9fd0ff;
+  stroke-width: 1.5;
+}
+
+.core {
+  fill: #eaf4ff;
+  filter: drop-shadow(0 0 8px rgba(201, 228, 255, 0.9));
+  animation: pulse 2.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .core {
+    animation: none;
+  }
+}

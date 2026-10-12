@@ -1,0 +1,41 @@
+.svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.step {
+  opacity: 0.22;
+}
+
+.halo {
+  fill: rgba(61, 111, 232, 0.16);
+}
+
+.diamond {
+  fill: rgba(12, 20, 36, 0.9);
+  stroke: #9fd0ff;
+  stroke-width: 1.4;
+  filter: drop-shadow(0 0 8px rgba(126, 182, 255, 0.45));
+}
+
+.core {
+  fill: #eaf4ff;
+}
+
+.mark {
+  fill: rgba(201, 228, 255, 0.55);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-anchor: middle;
+}
+
+.title {
+  fill: #f4f7fb;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-anchor: middle;
+  font-weight: 600;
+}

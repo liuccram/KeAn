@@ -1,0 +1,30 @@
+.foot {
+  padding: 64px 8vw 48px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 640px;
+}
+
+.foot p {
+  margin: 0 0 10px;
+}
+
+.copy {
+  margin-top: 28px !important;
+  letter-spacing: 0.28em;
+  color: var(--text);
+  font-size: 24px;
+}
+
+@media (max-width: 768px) {
+  .foot {
+    padding: 40px 20px calc(32px + env(safe-area-inset-bottom, 0px));
+    font-size: 14px;
+  }
+
+  .copy {
+    font-size: 20px;
+    letter-spacing: 0.2em;
+  }
+}
