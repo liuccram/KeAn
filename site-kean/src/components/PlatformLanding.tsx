@@ -49,7 +49,7 @@ const steps = [
 const faqs = [
   {
     question: "课安会代收或托管酬谢吗？",
-    answer: "不会。酬谢由双方在线下协商和结算。"
+    answer: "不会。酬谢由双方在私信内自行结算。"
   },
   {
     question: "发布需求后，谁来决定由谁代课？",
@@ -144,7 +144,6 @@ export function PlatformLanding() {
   return (
     <div className={styles.site} id="top" ref={siteRef}>
       <div className={styles.announcement}>
-        <span className={styles.announcementDot} />
         <span>课安 · 让临时代课的每一步，都清楚可见</span>
         <a href="#workflow">了解协作流程 <Arrow /></a>
       </div>
@@ -262,7 +261,7 @@ export function PlatformLanding() {
               <article data-reveal><span>01</span><div><h3>隐私设置</h3><p>隐私账号 · 黑名单 · 设备管理</p></div><Arrow diagonal /></article>
               <article data-reveal><span>02</span><div><h3>反馈与申诉</h3><p>遇到问题，可在应用内提交。</p></div><Arrow diagonal /></article>
               <article data-reveal><span>03</span><div><h3>双向评价</h3><p>完成后互评，保留履约记录。</p></div><Arrow diagonal /></article>
-              <article data-reveal><span>04</span><div><h3>线下结算</h3><p>平台不代收、不托管酬谢。</p></div><Arrow diagonal /></article>
+              <article data-reveal><span>04</span><div><h3>私信内自行结算</h3><p>平台不代收、不托管酬谢。</p></div><Arrow diagonal /></article>
             </div>
           </div>
         </section>
@@ -304,7 +303,7 @@ export function PlatformLanding() {
             <a href="#product">产品能力</a><a href="#workflow">协作流程</a><a href="#trust">安全与规则</a><a href="#faq">常见问题</a>
           </div>
         </div>
-        <div className={styles.footerBottom}><span>© {new Date().getFullYear()} 课安 KEAN</span><span>酬谢由双方线下协商结算 · 平台提供信息撮合与履约记录</span><a href="#top">回到顶部 ↑</a></div>
+        <div className={styles.footerBottom}><span>© {new Date().getFullYear()} 课安 KEAN</span><span>酬谢由双方在私信内自行结算 · 平台提供信息撮合与履约记录</span><a href="#top">回到顶部 ↑</a></div>
       </footer>
     </div>
   );

@@ -24,7 +24,6 @@
   font-size: 11px;
   letter-spacing: .015em;
 }
-.announcementDot { width: 6px; height: 6px; border-radius: 50%; background: #7cb7ff; box-shadow: 0 0 0 4px rgba(124,183,255,.12); }
 .announcement a { margin-left: 12px; color: #fff; text-decoration: none; }
 .arrow { display: inline-block; margin-left: 6px; transition: transform .2s ease; }
 a:hover .arrow { transform: translateX(3px); }
@@ -73,50 +72,6 @@ a:hover .arrow { transform: translateX(3px); }
 .heroFootnote { display: flex; align-items: center; gap: 10px; margin-top: 48px; color: #8290a3; font-size: 10px; letter-spacing: .04em; }
 .statusDot { width: 7px; height: 7px; border-radius: 50%; background: #22a77b; box-shadow: 0 0 0 4px #e8f7f1; }
 .heroVisual { position: relative; z-index: 1; min-height: 410px; display: flex; align-items: center; justify-content: center; }
-.visualHalo { position: absolute; width: min(42vw,500px); aspect-ratio: 1; border: 1px solid rgba(64,121,219,.12); border-radius: 50%; background: radial-gradient(circle,rgba(70,127,223,.1),rgba(70,127,223,.025) 50%,transparent 70%); }
-.visualHalo::before, .visualHalo::after { position: absolute; inset: 8%; border: 1px solid rgba(64,121,219,.09); border-radius: 50%; content: ""; }
-.visualHalo::after { inset: 18%; }
-.mockWindow { position: relative; z-index: 1; width: min(100%,510px); overflow: hidden; border: 1px solid #dce6f2; border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 32px 80px rgba(31,62,108,.17),0 8px 24px rgba(38,80,145,.08); transform: perspective(1200px) rotateY(-5deg) rotateX(1deg); }
-.mockTopbar { display: flex; height: 47px; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: 1px solid #edf1f6; background: #fff; }
-.mockBrand { display: flex; align-items: center; gap: 7px; color: #263853; font-size: 11px; font-weight: 750; }
-.mockBrand .brandMark { width: 24px; height: 24px; border-radius: 7px; }
-.mockBrand .brandMark svg { width: 17px; height: 17px; }
-.mockLabel { color: #9aa6b5; font-size: 8px; }
-.mockContent { padding: 23px 24px 21px; }
-.mockGreeting { display: flex; align-items: end; justify-content: space-between; }
-.mockGreeting div { display: grid; gap: 4px; }
-.mockGreeting span { color: #8492a5; font-size: 9px; }
-.mockGreeting strong { color: #1b2d49; font-size: 17px; letter-spacing: -.035em; }
-.mockDate { padding: 5px 9px; border: 1px solid #e6ecf4; border-radius: 5px; color: #69788d !important; }
-.mockSearch { display: flex; height: 35px; align-items: center; gap: 8px; margin-top: 17px; padding: 0 10px; border: 1px solid #e7edf5; border-radius: 6px; color: #98a5b6; font-size: 9px; }
-.mockSearch > span { color: #5273a5; font-size: 17px; }
-.mockSearch kbd { margin-left: auto; padding: 2px 5px; border: 1px solid #edf0f5; border-radius: 3px; font: inherit; }
-.mockFilters { display: flex; gap: 7px; margin-top: 13px; }
-.mockFilters span { padding: 5px 9px; border: 1px solid #edf1f6; border-radius: 5px; color: #7b899d; font-size: 8px; }
-.mockFilters .filterActive { border-color: #d7e5fc; background: #edf4ff; color: #2869e8; font-weight: 700; }
-.mockTask { margin-top: 14px; padding: 14px; border: 1px solid #e6ecf4; border-radius: 7px; background: linear-gradient(110deg,#fff,#fbfdff); }
-.mockTaskTop { display: flex; align-items: center; justify-content: space-between; color: #a0aaba; font-size: 8px; }
-.taskTag { display: inline-flex; align-items: center; gap: 5px; color: #23845f; }
-.taskTag i { width: 5px; height: 5px; border-radius: 50%; background: #28a879; }
-.mockTask > strong { display: block; margin-top: 10px; color: #21334e; font-size: 14px; }
-.taskMeta { display: flex; gap: 16px; margin-top: 9px; color: #75849a; font-size: 9px; }
-.mockTaskFoot { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 11px; border-top: 1px solid #eef2f6; color: #7c899b; font-size: 8px; }
-.mockTaskFoot b { margin-left: 6px; color: #1d2d45; font-size: 14px; }
-.mockTaskFoot > span:last-child { color: #2869e8; font-weight: 700; }
-.mockProgress { margin-top: 18px; padding: 12px 14px 0; border-top: 1px solid #edf1f6; }
-.mockProgress > span { color: #53647e; font-size: 9px; font-weight: 700; }
-.progressTrack { display: flex; align-items: center; margin-top: 11px; }
-.progressTrack i { position: relative; display: block; width: 9px; height: 9px; border: 2px solid #fff; border-radius: 50%; background: #3377ed; box-shadow: 0 0 0 1px #a9c5f7; }
-.progressTrack i + i { flex: 1; height: 1px; border: 0; border-radius: 0; background: #dce5f2; box-shadow: none; }
-.progressTrack i:nth-child(2)::before { position: absolute; left: 0; width: 50%; height: 1px; background: #78a7f3; content: ""; }
-.progressTrack i:nth-child(3) { background: #fff; box-shadow: 0 0 0 1px #d6dfeb; }
-.progressLabels { display: flex; justify-content: space-between; margin-top: 7px; color: #9aa6b4; font-size: 8px; }
-.progressLabels b:first-child { color: #3974d7; }
-.floatNote { position: absolute; right: -12px; bottom: 39px; z-index: 2; display: flex; align-items: center; gap: 9px; padding: 10px 13px; border: 1px solid #e3eaf3; border-radius: 8px; background: #fff; box-shadow: 0 12px 30px rgba(31,62,108,.1); }
-.floatIcon { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 7px; background: #eaf7f2; color: #159265; font-weight: 800; }
-.floatNote span:last-child { display: grid; gap: 2px; }
-.floatNote b { color: #263750; font-size: 9px; }
-.floatNote small { color: #8d9aab; font-size: 8px; }
 .visualCaption { position: absolute; right: 0; bottom: -14px; left: 7px; display: flex; justify-content: space-between; color: #93a1b2; font-size: 8px; letter-spacing: .15em; }
 .heroScroll { position: absolute; bottom: 28px; left: max(7vw, calc((100vw - 1200px) / 2)); display: flex; align-items: center; gap: 9px; color: #95a2b4; font-size: 9px; letter-spacing: .1em; }
 .heroScroll span { display: block; width: 28px; height: 1px; background: #9caec5; }
@@ -226,8 +181,9 @@ a:hover .arrow { transform: translateX(3px); }
 }
 
 @media (max-width: 760px) {
-  .announcement { min-height: 34px; justify-content: flex-start; overflow: hidden; white-space: nowrap; font-size: 9px; }
-  .announcement a { margin-left: auto; }
+  .announcement { min-height: 34px; justify-content: center; overflow: hidden; font-size: 9px; }
+  .announcement > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .announcement a { display: none; }
   .header { height: 60px; padding: 0 18px; }
   .brand { font-size: 17px; }
   .brandMark { width: 29px; height: 29px; border-radius: 9px; }
@@ -249,17 +205,6 @@ a:hover .arrow { transform: translateX(3px); }
   .textButton { font-size: 11px; }
   .heroFootnote { margin-top: 26px; font-size: 9px; }
   .heroVisual { min-height: 335px; margin: 12px -3px 0; }
-  .visualHalo { width: 88vw; }
-  .mockWindow { width: 100%; transform: none; }
-  .mockTopbar { height: 40px; padding: 0 12px; }
-  .mockContent { padding: 17px 14px 15px; }
-  .mockGreeting strong { font-size: 14px; }
-  .mockSearch { margin-top: 13px; }
-  .mockFilters { gap: 5px; }
-  .mockFilters span { padding: 5px 7px; }
-  .mockTask { padding: 12px; }
-  .taskMeta { flex-wrap: wrap; gap: 5px 12px; }
-  .floatNote { right: -3px; bottom: 13px; padding: 8px 10px; }
   .visualCaption { bottom: -9px; }
   .heroScroll { display: none; }
   .signalStrip { min-height: 0; justify-content: flex-start; overflow-x: auto; gap: 20px; padding: 15px 22px; }
@@ -335,38 +280,6 @@ a:hover .arrow { transform: translateX(3px); }
 .joinButton:hover { border-color: #76a9ff; color: #9cc2ff; }
 .heroFootnote { color: #8494aa; }
 .statusDot { background: #45c293; box-shadow: 0 0 0 4px rgba(69,194,147,.12); }
-.visualHalo { border-color: rgba(110,160,235,.17); background: radial-gradient(circle,rgba(51,105,190,.2),rgba(51,105,190,.04) 50%,transparent 70%); }
-.visualHalo::before, .visualHalo::after { border-color: rgba(110,160,235,.12); }
-.mockWindow { border-color: #2b3c54; background: #0d1a2b; box-shadow: 0 32px 80px rgba(0,0,0,.35),0 8px 24px rgba(21,54,103,.2); }
-.mockTopbar { border-color: #22334a; background: #0d1a2b; }
-.mockBrand { color: #e7eef8; }
-.mockLabel { color: #7788a0; }
-.mockContent { background: #0d1a2b; }
-.mockGreeting span { color: #8798ae; }
-.mockGreeting strong { color: #edf3fc; }
-.mockDate { border-color: #2b3c54; color: #aab7c9 !important; }
-.mockSearch { border-color: #2a3b53; background: #0a1626; color: #8392a8; }
-.mockSearch > span { color: #8db6ff; }
-.mockSearch kbd { border-color: #2a3b53; }
-.mockFilters span { border-color: #2b3a50; color: #9eabc0; }
-.mockFilters .filterActive { border-color: rgba(111,163,244,.3); background: rgba(57,115,213,.16); color: #9cc2ff; }
-.mockTask { border-color: #2a3b53; background: linear-gradient(110deg,#101e31,#0e1b2c); }
-.mockTaskTop { color: #8695aa; }
-.taskTag { color: #76d1ad; }
-.mockTask > strong { color: #ebf2fc; }
-.taskMeta { color: #98a7bb; }
-.mockTaskFoot { border-color: #26374e; color: #94a2b6; }
-.mockTaskFoot b { color: #eff4fb; }
-.mockTaskFoot > span:last-child { color: #91b9ff; }
-.mockProgress { border-color: #26374e; }
-.mockProgress > span { color: #bdc9d8; }
-.progressTrack i { border-color: #0d1a2b; }
-.progressLabels { color: #8593a9; }
-.progressLabels b:first-child { color: #91b9ff; }
-.progressTrack i:nth-child(3) { background: #0d1a2b; }
-.floatNote { border-color: #2a3a51; background: #132238; box-shadow: 0 12px 30px rgba(0,0,0,.28); }
-.floatNote b { color: #e5edf8; }
-.floatNote small { color: #91a0b4; }
 .visualCaption, .heroScroll { color: #8494aa; }
 .heroScroll span { background: #536780; }
 .signalStrip { border-color: #203149; background: #0a1728; color: #b4c0d0; }
@@ -459,5 +372,4 @@ a:hover .arrow { transform: translateX(3px); }
   .nav a { border-color: #26374d; }
   .nav .mobileCta { border: 0; }
   .hero { background: #07111f; }
-  .mockWindow { box-shadow: 0 24px 54px rgba(0,0,0,.38); }
 }
