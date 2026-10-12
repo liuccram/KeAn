@@ -181,7 +181,7 @@ export function PlatformLanding() {
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="#product">探索课安 <Arrow /></a>
               {/* Secondary hero action: opens the public site in a new tab so the landing page stays put. */}
-              <a className={styles.joinButton} href="https://kean.college" target="_blank" rel="noopener noreferrer">加入课安</a>
+              <a className={styles.joinButton} href="https://kean.college/#/pages/auth/login" target="_blank" rel="noopener noreferrer">加入课安</a>
               <a className={styles.textButton} href="#workflow">了解如何协作 <Arrow /></a>
             </div>
             <div className={styles.heroFootnote}><span className={styles.statusDot} />发布需求 · 申请接手 · 双方确认</div>
