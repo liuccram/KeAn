@@ -18,6 +18,7 @@ import com.kean.im.ImMessageMirrorService;
 import com.kean.im.ImMultiTerminalEchoService;
 import com.kean.im.ImOfflineQueryService;
 import com.kean.im.ImSenderService;
+import com.kean.im.ImSingleWriteRoleService;
 import com.kean.im.ImTerminalResolver;
 import com.kean.im.ImUnreadQueryService;
 import com.kean.mapper.ChatMessageMapper;
@@ -140,6 +141,25 @@ public class ChatServiceImpl implements ChatService {
      */
     private final ImMultiTerminalEchoService imMultiTerminalEchoService;
 
+    /**
+     * 阶段 C-5：<b>「消息保存」单写总闸</b>（{@code kean.im.message-single-write-enabled}，
+     * <b>默认 false</b> = 维持现状的双写）。
+     *
+     * <p>它<b>只被 {@link #send} 读取一次</b>：为 {@code true} 时跳过
+     * {@code chatMessageMapper.insert(message)}（kean 的 {@code chat_message}），
+     * 消息只写进 box 的 {@code im_platform.im_private_message}（镜像链路照旧执行）。</p>
+     *
+     * <p>⚠️ 它<b>不</b>影响 {@code chat_session} 的任何写入（新建会话 / 未读计数 / 已读位点 /
+     * {@code last_seq_no}）、也<b>不</b>影响 {@code markRead} 的
+     * {@code chat_message.status=3} —— 完整理由见
+     * {@link ImSingleWriteRoleService} 类注释「为什么 true 只停消息正文的写」。</p>
+     *
+     * <p>默认 {@code false} 时它<b>不产生任何行为差异</b>：
+     * {@link ImSingleWriteRoleService#messageSingleWriteEnabled()} 返回 {@code false}，
+     * 走的就是下面原来那一行；本类与新增它之前逐字节一致。</p>
+     */
+    private final ImSingleWriteRoleService imSingleWriteRoleService;
+
     public ChatServiceImpl(
             ChatSessionMapper chatSessionMapper,
             ChatMessageMapper chatMessageMapper,
@@ -152,7 +172,8 @@ public class ChatServiceImpl implements ChatService {
             ImMessageMirrorService imMessageMirrorService,
             ImUnreadQueryService imUnreadQueryService,
             ImOfflineQueryService imOfflineQueryService,
-            ImMultiTerminalEchoService imMultiTerminalEchoService
+            ImMultiTerminalEchoService imMultiTerminalEchoService,
+            ImSingleWriteRoleService imSingleWriteRoleService
     ) {
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
@@ -166,6 +187,7 @@ public class ChatServiceImpl implements ChatService {
         this.imUnreadQueryService = imUnreadQueryService;
         this.imOfflineQueryService = imOfflineQueryService;
         this.imMultiTerminalEchoService = imMultiTerminalEchoService;
+        this.imSingleWriteRoleService = imSingleWriteRoleService;
     }
 
     @Override
@@ -331,21 +353,45 @@ public class ChatServiceImpl implements ChatService {
         message.setContent(text);
         // box 语义：新消息 = 1（已发送）。0（未读）在课安由会话位点表达，不写库。
         message.setStatus(ChatMessageStatus.SENT.code());
-        try {
-            chatMessageMapper.insert(message);
-        } catch (DuplicateKeyException dup) {
-            // 唯一键兜底：并发重试时两个请求都通过了上面的预检，后插入的那个撞
-            // uk_chat_message_sender_local。这里不抛 500，查回已存在的那条返回即可。
-            ChatMessage winner = findByLocalId(userId, idemKey);
-            if (winner != null) {
-                return toMessageVo(winner, userId);
+        // 阶段 C-5：单写总闸（kean.im.message-single-write-enabled，默认 false = 维持现状的双写）。
+        //   · false（默认）：下面走的就是【原来那一行】chatMessageMapper.insert(message)，
+        //     createdAt 由 AuditMetaObjectHandler 在 insert 时填充 —— 与新增本开关之前逐字节一致；
+        //   · true：跳过 kean 的 chat_message 落库，消息只进 box 的
+        //     im_platform.im_private_message（下面的镜像调用）。此时 AuditMetaObjectHandler
+        //     【不会】执行（它挂在 insert 上），而下游有三处必须拿到"落库时间"：
+        //       ① ChatMessageVO.createdAt（HTTP 回执给客户端，客户端拿它算已读时间点）；
+        //       ② ImSenderService.sendPrivate(...) 的 data.createdAt；
+        //       ③ ImMessageMirrorService.buildArgs 的 im_private_message.send_time。
+        //     所以这里显式补一次 now()，让三条读出口拿到同一个值 —— 语义等价于
+        //     AuditMetaObjectHandler.strictInsertFill("createdAt", LocalDateTime.now())。
+        //     ⚠️ 这里【不】外抛、不加事务、不改异常口径；跳过 insert 也就没有
+        //     DuplicateKeyException 兜底分支（kean 侧幂等随 chat_message 一起失效，
+        //     幂等改由 box 的 uk(send_id, local_id) 承担，见 ImSingleWriteRoleService.riskNote()）。
+        if (imSingleWriteRoleService.messageSingleWriteEnabled()) {
+            message.setCreatedAt(LocalDateTime.now());
+            // 刻意用 DEBUG：这是「每条消息一行」的热路径，用 INFO 会在生产刷屏；
+            // 「单写到底开没开」由 ImSingleWriteRoleService 的启动 INFO/WARN 那一行负责说明。
+            log.debug("[IM 消息落库] 单写开启（{}）：本条消息【不落 kean 的 chat_message】，"
+                            + "只写 box 的 im_platform.im_private_message。sessionId={}, localId={}, seqNo={}",
+                    ImSingleWriteRoleService.PROPERTY_MESSAGE_SINGLE_WRITE_ENABLED,
+                    sessionId, idemKey, seqNo);
+        } else {
+            try {
+                chatMessageMapper.insert(message);
+            } catch (DuplicateKeyException dup) {
+                // 唯一键兜底：并发重试时两个请求都通过了上面的预检，后插入的那个撞
+                // uk_chat_message_sender_local。这里不抛 500，查回已存在的那条返回即可。
+                ChatMessage winner = findByLocalId(userId, idemKey);
+                if (winner != null) {
+                    return toMessageVo(winner, userId);
+                }
+                if (findBySeqNo(sessionId, seqNo) != null) {
+                    // 极少数情况：撞的是 (session_id, seq_no)——Redis 序列表被外部清空后重播种。
+                    // 让用户重试一次而不是返回 50000。
+                    throw new BizException(ErrorCode.BAD_REQUEST, "消息发送冲突，请重试");
+                }
+                throw dup;
             }
-            if (findBySeqNo(sessionId, seqNo) != null) {
-                // 极少数情况：撞的是 (session_id, seq_no)——Redis 序列表被外部清空后重播种。
-                // 让用户重试一次而不是返回 50000。
-                throw new BizException(ErrorCode.BAD_REQUEST, "消息发送冲突，请重试");
-            }
-            throw dup;
         }
 
         boolean senderIsA = Objects.equals(session.getUserAId(), userId);
@@ -359,6 +405,12 @@ public class ChatServiceImpl implements ChatService {
         } else {
             session.setAUnread((session.getAUnread() == null ? 0 : session.getAUnread()) + 1);
         }
+        // ⚠️ 阶段 C-5 的边界：这一行【刻意不受 message-single-write-enabled 影响】。
+        //    它写的是 kean 的 chat_session（会话身份 / 未读计数 / last_seq_no / 已读位点），
+        //    不是消息正文；box 侧没有等价表（box 的私聊"会话"是 im_friend + conv_key），
+        //    停掉它会让 requireOwnedSession 之后的每一次 send/markRead/messages 都 CHAT_NOT_FOUND、
+        //    且新会话再也建不出来。完整理由见 ImSingleWriteRoleService 类注释
+        //    「为什么 true 只停消息正文的写」。
         chatSessionMapper.updateById(session);
         // 发送方自己显然读到了自己的消息，把"我自己"的已读位点也推到该条，
         // 这样对方从会话详情拿到的读位点不会出现"我发的消息里自己的位点是空的"。

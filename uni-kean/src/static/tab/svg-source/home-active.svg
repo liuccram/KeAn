@@ -1,0 +1,6 @@
+<!-- 课安 tabBar 首页 · 手绘 SVG · 24 网格 · 描边 2 · 选中 #4D80F0 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 24 24"
+     fill="none" stroke="#4D80F0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 3 L3.5 10.2 L3.5 20.5 L20.5 20.5 L20.5 10.2 Z" />
+  <path d="M9.6 20.5 L9.6 14.8 L14.4 14.8 L14.4 20.5" />
+</svg>

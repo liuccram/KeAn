@@ -158,6 +158,13 @@ const DICT = {
     msgTypeChange: "变动",
     msgTypeReport: "举报",
     msgTypeSystem: "系统",
+    // 顶部大标题下的副标题：随三档 tab 变（本轮视觉改版新增）
+    msgSubtitleSystem: "与你有关的每一件事",
+    msgSubtitleTask: "申请与履约相关的动态",
+    msgSubtitleChat: "与同学、代课者的聊天",
+    // 顶部提示条（浅蓝圆角卡）：条数来自现有未读计数（{count} 必须有插值 → 一律走 tf()）
+    msgHintSystem: "有 {count} 条新的系统通知",
+    msgHintTask: "有 {count} 条新的申请与履约消息",
     msgPreviewImage: "[图片]",
     msgPreviewRecall: "[已撤回]",
     msgPreviewNone: "暂无消息",
@@ -422,6 +429,13 @@ const DICT = {
     msgTypeChange: "Update",
     msgTypeReport: "Report",
     msgTypeSystem: "System",
+    // subtitle under the big header title: follows the active tab (added in this visual revision)
+    msgSubtitleSystem: "Everything that involves you",
+    msgSubtitleTask: "Updates on applications and fulfilment",
+    msgSubtitleChat: "Chats with classmates and substitutes",
+    // header hint card: the count comes from the existing unread counters ({count} is interpolated → always tf())
+    msgHintSystem: "You have {count} new system notifications",
+    msgHintTask: "You have {count} new application or fulfilment updates",
     msgPreviewImage: "[Photo]",
     msgPreviewRecall: "[Recalled]",
     msgPreviewNone: "No messages yet",

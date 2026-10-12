@@ -34,7 +34,8 @@
     {
       "path": "pages/message/chat",
       "style": {
-        "navigationBarTitleText": "私聊"
+        "navigationBarTitleText": "私聊",
+        "navigationStyle": "custom"
       }
     },
     {
@@ -253,26 +254,26 @@
       {
         "pagePath": "pages/home/index",
         "text": "首页",
-        "iconPath": "static/tab/home.png",
-        "selectedIconPath": "static/tab/home-active.png"
+        "iconPath": "static/tab/v2/home.png",
+        "selectedIconPath": "static/tab/v2/home-active.png"
       },
       {
         "pagePath": "pages/publish/index",
         "text": "发布",
-        "iconPath": "static/tab/publish.png",
-        "selectedIconPath": "static/tab/publish-active.png"
+        "iconPath": "static/tab/v2/publish.png",
+        "selectedIconPath": "static/tab/v2/publish-active.png"
       },
       {
         "pagePath": "pages/message/index",
         "text": "消息",
-        "iconPath": "static/tab/message.png",
-        "selectedIconPath": "static/tab/message-active.png"
+        "iconPath": "static/tab/v2/message.png",
+        "selectedIconPath": "static/tab/v2/message-active.png"
       },
       {
         "pagePath": "pages/mine/index",
         "text": "我的",
-        "iconPath": "static/tab/mine.png",
-        "selectedIconPath": "static/tab/mine-active.png"
+        "iconPath": "static/tab/v2/mine.png",
+        "selectedIconPath": "static/tab/v2/mine-active.png"
       }
     ]
   }

@@ -249,8 +249,28 @@ public class ImOfflineQueryService {
      * （见 {@link #countKeanAfterSeq}）。返回给客户端的数据<b>永远来自 box</b>，
      * 一旦核对不通过就整个方法返回 {@code null}，由调用方走它自己那条 kean 路径。
      * 这样「谁在提供数据」始终是清楚的，不存在两份数据混在一个响应里的情况。
+     *
+     * <p>⚠️ 阶段 C-5：单写（{@code kean.im.message-single-write-enabled=true}）之后
+     * {@code chat_message} 不再新增行，这条核对会自动跳闸 → 必须跳过它，见
+     * {@link #singleWriteRoleService}。</p>
      */
     private final ChatMessageMapper chatMessageMapper;
+
+    /**
+     * 阶段 C-5：单写总闸（{@code kean.im.message-single-write-enabled}，<b>默认 false</b>）。
+     *
+     * <p>本类<b>只读它的一个布尔量</b>，且只用在
+     * {@link #catchUpAfterSeq} 的「完整性护栏」那一步：单写开启后 kean 的
+     * {@code chat_message} 不再新增，{@link #countKeanAfterSeq} 会恒为 0，
+     * 于是「box 行数 &lt; kean 行数」这个护栏会把<b>每一批新消息</b>都误判成
+     * 「box 缺数据」并回退到<b>已经冻结</b>的 kean 表 ⇒ 用户永远看不到新消息。
+     * 那是一个静默的、用户可见的失效，所以单写模式下这一步必须让位给 box。</p>
+     *
+     * <p>⚠️ 依赖方向：本类注入它，而它<b>不注入任何东西</b>（只有 {@code @Value} 与日志），
+     * 因此不会形成 bean 循环；反过来 {@code ImRealtimeRoleService} 虽然读本类的
+     * {@link #active()}，但<b>不</b>注入本类持有的这个开关，也不被本类注入。</p>
+     */
+    private final ImSingleWriteRoleService singleWriteRoleService;
 
     /** 开关的原始取值（用于启动日志原样回显，便于发现「键名拼错」）。 */
     private final String configuredSource;
@@ -280,9 +300,11 @@ public class ImOfflineQueryService {
     public ImOfflineQueryService(
             ChatMessageMapper chatMessageMapper,
             ObjectProvider<DataSource> dataSourceProvider,
+            ImSingleWriteRoleService singleWriteRoleService,
             @Value("${kean.im.read-source:kean}") String readSource
     ) {
         this.chatMessageMapper = chatMessageMapper;
+        this.singleWriteRoleService = singleWriteRoleService;
         this.configuredSource = readSource;
         this.boxSource = SOURCE_BOX.equalsIgnoreCase(readSource == null ? "" : readSource.trim());
         this.boxJdbc = resolveJdbcTemplate(dataSourceProvider);
@@ -295,11 +317,14 @@ public class ImOfflineQueryService {
                         + "游标映射=afterSeq→MIN(id) WHERE conv_key=? AND seq_no>?，再按 id 升序取；"
                         + "时间窗口={} 天；单次上限={} 条；"
                         + "失败策略=返回 null 由 ChatServiceImpl 回退到 kean 的 afterSeq 实现（只 WARN 一次）；"
-                        + "回退方式=把 {} 设回 {} 并重启 kean（kean 侧数据一直是热的，无需回填）",
+                        + "回退方式=把 {} 设回 {} 并重启 kean（kean 侧数据一直是热的，无需回填）；"
+                        + "单写模式={}（true 时两条「回退到 kean 交叉确认」自动让位：0 行返回空列表、"
+                        + "跳过「box 比 kean 少行」的完整性护栏）",
                 PROPERTY_READ_SOURCE, configuredSource, boxSource,
                 boxSource ? "增量拉取改读 box 的 im_private_message" : "增量拉取仍读 kean 的 chat_message",
                 effective, boxJdbc == null ? "不可用（无 DataSource）" : "可用",
-                TABLE, OFFLINE_WINDOW_DAYS, MAX_ROWS, PROPERTY_READ_SOURCE, SOURCE_KEAN);
+                TABLE, OFFLINE_WINDOW_DAYS, MAX_ROWS, PROPERTY_READ_SOURCE, SOURCE_KEAN,
+                singleWriteRoleService.messageSingleWriteEnabled());
         if (boxSource && boxJdbc == null) {
             log.warn("[IM 读取来源] {} 已配置为 {}，但没有可用的 DataSource，"
                             + "所有增量拉取都会回退到 kean 的既有实现（接口不受影响）",
@@ -381,10 +406,22 @@ public class ImOfflineQueryService {
      * 最多多一次本地 SQL；代价是「真的没有新消息」时不能省掉那次查询 —— 换来的是
      * <b>不会因为 box 侧缺数据而让用户看不到消息</b>，这个交换是值的。</p>
      *
+     * <p>⚠️⚠️ <b>阶段 C-5 的两处例外（只在 {@code kean.im.message-single-write-enabled=true}
+     * 时生效，默认 {@code false} 时下面两条【一行都不走】）</b>：单写之后 kean 的
+     * {@code chat_message} 不再新增，本类的两条「回退到 kean 做交叉确认」都会从
+     * <b>保护</b>变成 <b>伤害</b>（回退到一张冻结的表），所以：</p>
+     * <ol>
+     *   <li><b>0 行时不再回退</b>：直接返回空列表（= kean 既有 {@code catchUp} 在「真的没有新消息」
+     *       时的形状，客户端据此判定 {@code ok}，不会退回整页刷新）；</li>
+     *   <li><b>跳过完整性护栏</b>：不再执行 {@link #countKeanAfterSeq}
+     *       （那个 COUNT 在单写下恒为 0，「box 比 kean 少」不再可疑），以 box 为准直接返回。</li>
+     * </ol>
+     *
      * @param session  该消息所属会话（必须有 {@code userAId/userBId}，用于算 {@code conv_key}）
      * @param viewerId 读消息的人（= 收件人视角；用于 {@code mine} 与参与者校验）
      * @param afterSeq 客户端游标（会话内已见过的最大 {@code seq_no}）
      * @return 与 kean 通道<b>同形</b>的分页结果；<b>{@code null} = 没算出来，调用方必须回退</b>
+     *         （单写模式下「没有新消息」返回空列表而不是 {@code null}，见上面第 1 条例外）
      */
     public PageResult<ChatMessageVO> catchUpAfterSeq(ChatSession session, Long viewerId, long afterSeq) {
         if (!active() || session == null || session.getId() == null) {
@@ -401,17 +438,39 @@ public class ImOfflineQueryService {
             readHits.increment();
             if (rows.isEmpty()) {
                 // 见方法注释：0 行时仍然回退，让 kean 的读数做一次交叉确认。
+                // ⚠️ 阶段 C-5：单写开启时这次「交叉确认」已经没有意义 —— kean 的 chat_message
+                //    不再新增，回退过去只会拿到空/冻结的数据，而客户端会因此把「没有新消息」
+                //    当成失败并退回整页刷新（每 8 秒一次，白白打库）。所以单写下改为
+                //    【返回空列表】—— 这正是 kean 既有 catchUp 在「真的没有新消息」时的形状
+                //    （客户端据此判定 ok，不回退刷新），语义从「不确定」变成「确定：没有」。
                 readEmpty.increment();
+                if (singleWriteRoleService.messageSingleWriteEnabled()) {
+                    logSingleWriteGuardSkipOnce(session.getId(), convKey, afterSeq, 0);
+                    return new PageResult<>(List.of(), 0L, 1L, 0L);
+                }
                 return null;
             }
             // ⭐ 完整性护栏（见方法注释「缺数据防护」）：box 在这个窗口里比 kean 少行时，
             //    宁可整批回退到 kean —— 因为一旦我们把「不完整但 seq_no 更大」的那批返回给客户端，
             //    客户端会把游标推到那批里的最大 seq_no，box 缺的那几条就【永久】过去了。
-            long keanCount = countKeanAfterSeq(session.getId(), afterSeq);
-            if (rows.size() < Math.min(keanCount, MAX_ROWS)) {
-                readShort.increment();
-                warnShortOnce(session.getId(), convKey, afterSeq, rows.size(), keanCount);
-                return null;
+            // ⚠️⚠️ 阶段 C-5：单写开启时这条护栏【必须让位】，否则会静默丢掉所有新消息：
+            //    kean.im.message-single-write-enabled=true 之后 chat_message 不再新增任何行，
+            //    countKeanAfterSeq 恒为 0，而 {rows.size() < Math.min(0, MAX_ROWS)} 恒不成立 ——
+            //    「空表恰好让护栏通过」只是侥幸。一旦 kean 里还留有历史行、或将来有人把
+            //    「空表」当成「数据缺失」来读，这批 box 数据就会被判成「不完整」而整批回退到
+            //    【已经冻结】的 kean 表 ⇒ 客户端每 8 秒拉一次都拿到空/旧数据，新消息永远显示不出来。
+            //    单写的语义就是「box 是唯一写入方」，此时「box 比 kean 少」不再是一个可疑信号，
+            //    所以这里改成【以 box 为准直接返回】，不再执行那次 kean 侧 COUNT
+            //    （顺带省掉一条 SQL），并只记一次 DEBUG（不 WARN，避免刷屏）。
+            if (singleWriteRoleService.messageSingleWriteEnabled()) {
+                logSingleWriteGuardSkipOnce(session.getId(), convKey, afterSeq, rows.size());
+            } else {
+                long keanCount = countKeanAfterSeq(session.getId(), afterSeq);
+                if (rows.size() < Math.min(keanCount, MAX_ROWS)) {
+                    readShort.increment();
+                    warnShortOnce(session.getId(), convKey, afterSeq, rows.size(), keanCount);
+                    return null;
+                }
             }
             readRows.add(rows.size());
             List<ChatMessageVO> list = toMessageVos(rows, session.getId(), viewerId);
@@ -473,6 +532,25 @@ public class ImOfflineQueryService {
         } else {
             log.debug("[IM 读取来源] box 侧数据不完整（已回退到 kean）：sessionId={}, afterSeq={}, box={} 行, kean={} 行",
                     sessionId, afterSeq, boxRows, keanCount);
+        }
+    }
+
+    /**
+     * 单写模式下「跳过完整性护栏」的那一行日志（同一进程只打一次 DEBUG）。
+     *
+     * <p>为什么<b>不是 WARN</b>：单写下跳过护栏是<b>预期行为</b>（box 是唯一写入方，
+     * 「box 比 kean 少」不再可疑），WARN 只会变成噪音；但保留一行 DEBUG
+     * 是为了让「护栏到底跑没跑」在排查时看得见 —— 这与
+     * {@link #failureWarned} 的抑制思路同源（复用同一个标记：
+     * 它们二者本来就互斥，同一个进程里只会走到其中一条）。</p>
+     */
+    private void logSingleWriteGuardSkipOnce(Long sessionId, String convKey, long afterSeq, int boxRows) {
+        if (failureWarned.compareAndSet(false, true)) {
+            log.debug("[IM 读取来源] 单写模式（{}）已开启：跳过「box 比 kean 少行」的完整性护栏，"
+                            + "本次以 box 为准直接返回 {} 条（不再 COUNT kean 的 chat_message —— 它已不再新增）。"
+                            + "sessionId={}, convKey={}, afterSeq={}",
+                    ImSingleWriteRoleService.PROPERTY_MESSAGE_SINGLE_WRITE_ENABLED,
+                    boxRows, sessionId, convKey, afterSeq);
         }
     }
 

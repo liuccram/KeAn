@@ -98,6 +98,12 @@ import java.util.concurrent.atomic.LongAdder;
  * 把「无声失效」变成「日志里看得见的一行」。这正是本项目反复强调的
  * 「以为切了其实没切」的防线。</p>
  *
+ * <h2>⭐ 阶段 C-5 追加的一条检查（{@code message-single-write-enabled} 与读取来源打架）</h2>
+ * <p>自本轮起 {@link #riskNote()} 还多检查一条组合：<b>消息单写开着、而读取来源不是 box</b>。
+ * 那是唯一一条「切了单写之后聊天页会看不到新消息」的组合 ——
+ * 写侧只进 box（{@code chat_message} 从此不再更新），读侧却还在读 kean 那张表。
+ * 它同样是<b>不报错、静默失效</b>，所以必须在这里喊出来。</p>
+ *
  * <h2>默认 {@code true} 时为什么零影响（逐条论证）</h2>
  * <ol>
  *   <li>本类<b>不持有连接、不读 Redis、不发 SQL、不建 DataSource</b>：构造期只读几个已经算好的布尔量；</li>
@@ -146,6 +152,19 @@ public class ImRealtimeRoleService {
     private final ImOfflineQueryService imOfflineQueryService;
 
     /**
+     * 阶段 C-5 的单写总闸（{@code kean.im.message-single-write-enabled}，<b>默认 false</b>）。
+     *
+     * <p>本类<b>只读它的两个方法</b>（{@link ImSingleWriteRoleService#messageSingleWriteEnabled()} /
+     * {@link ImSingleWriteRoleService#summary()}），用途只有一个：让下面那行
+     * 「现在到底谁在干活」的汇总里也带上「消息当前往哪里写」，
+     * 与 {@code 未读来源 / 读取来源} 并列 —— 用户排查时只需要看<b>一行</b>。</p>
+     *
+     * <p>⚠️ 依赖方向是单向的：它<b>不注入任何 bean</b>（只有 {@code @Value} 与一行日志），
+     * 所以不构成循环（{@code ImOfflineQueryService} 也注入它，见那边的说明）。</p>
+     */
+    private final ImSingleWriteRoleService imSingleWriteRoleService;
+
+    /**
      * 开关：自研 WS 是否仍承担<b>实时推送</b>职责。<b>默认 {@code true}</b>
      * （= 与新增本类之前<b>一字不差</b>）。
      */
@@ -172,12 +191,14 @@ public class ImRealtimeRoleService {
             ImSenderService imSenderService,
             ImUnreadQueryService imUnreadQueryService,
             ImOfflineQueryService imOfflineQueryService,
+            ImSingleWriteRoleService imSingleWriteRoleService,
             @Value("${kean.im.legacy-ws-enabled:true}") boolean legacyWsEnabled,
             @Value("${kean.im.read-receipt-enabled:true}") boolean readReceiptEnabled
     ) {
         this.imSenderService = imSenderService;
         this.imUnreadQueryService = imUnreadQueryService;
         this.imOfflineQueryService = imOfflineQueryService;
+        this.imSingleWriteRoleService = imSingleWriteRoleService;
         this.legacyWsEnabled = legacyWsEnabled;
         this.readReceiptEnabled = readReceiptEnabled;
         // ③ 一行 INFO：把「每条实时职责由谁承担」一次性说清。
@@ -247,8 +268,11 @@ public class ImRealtimeRoleService {
     /**
      * ③ 那行汇总的唯一文案来源（启动日志用它，将来若要在管理端展示也读它，避免两处口径漂移）。
      *
-     * <p>报告四件事（用户清单里点名要的四条）：消息实时推送归谁 / 已读实时归谁（或靠轮询 ≤8s）/
-     * 未读来源 / 读取来源，外加自研 WS 总闸与 {@code READ} 闸的当前值、已挡掉的推送数。</p>
+     * <p>报告五件事（用户清单里点名要的四条，外加阶段 C-5 的「消息落库在哪」）：
+     * 消息实时推送归谁 / 已读实时归谁（或靠轮询 ≤8s）/ 未读来源 / 读取来源 /
+     * <b>消息落库是双写还是单写</b>（{@link ImSingleWriteRoleService#summary()}，
+     * 含 kean 的 {@code chat_message} / {@code chat_session} 分别还写不写），
+     * 外加自研 WS 总闸与 {@code READ} 闸的当前值、已挡掉的推送数。</p>
      */
     public String summary() {
         return "消息实时推送=" + messagePushRole()
@@ -263,6 +287,7 @@ public class ImRealtimeRoleService {
                 + "（" + PROPERTY_READ_RECEIPT_ENABLED + "=" + readReceiptEnabled + "）"
                 + "；被挡掉的自研WS推送=" + suppressedPushes.sum()
                 + "；被挡掉的READ推送=" + suppressedReadReceipts.sum()
+                + "；消息落库=" + imSingleWriteRoleService.summary()
                 + "；回退方式=把 " + PROPERTY_LEGACY_WS_ENABLED + " / " + PROPERTY_READ_RECEIPT_ENABLED
                 + " 设为 true（或删掉对应那行）并重启 kean（纯推送开关，无需回填）";
     }
@@ -274,16 +299,32 @@ public class ImRealtimeRoleService {
      * 它们<b>不会报错、不会有 500、不会有异常日志</b>，只会在用户那里表现为
      * 「消息不实时」或「已读双钩永远不出现」，所以必须在这里主动喊一声。</p>
      *
+     * <p>自本轮（阶段 C-5）起多一条：<b>单写开着 + 读取来源不是 box</b> ⇒
+     * 「对方发来的新消息永远显示不出来」（写侧只进 box、读侧还在读 kean 的冻结表）。
+     * 它同样是<b>不报错、静默失效</b>，所以一并在这里喊出来。</p>
+     *
      * <p>⚠️ 本轮起第二条只在 {@code read-receipt-enabled=true}（<b>旧客户端才看双勾</b>）时才有意义：
      * {@code read-receipt-enabled=false} 时 READ 本来就不再推，「双钩永远不出现」已不是缺陷
      * —— 那种组合下不再喊第二条 WARN（否则会成为一条噪音 WARN）。</p>
      */
     public String riskNote() {
-        if (legacyWsEnabled && readReceiptEnabled) {
-            // 默认态：自研 WS 还在推 MESSAGE、READ 也还在推，下面两条风险都不存在。
+        if (legacyWsEnabled && readReceiptEnabled && !imSingleWriteRoleService.messageSingleWriteEnabled()) {
+            // 默认态：自研 WS 还在推 MESSAGE、READ 也还在推、消息还是双写，下面几条风险都不存在。
             return null;
         }
-        List<String> risks = new ArrayList<>(2);
+        List<String> risks = new ArrayList<>(3);
+        // ⭐ 阶段 C-5：单写 + 读取来源≠box 是【用户可见】的组合，必须喊出来。
+        //    它是唯一一条「切了单写之后聊天页会看不到新消息」的组合：
+        //    写侧已经只进 box，而读侧（增量拉取/分页）还在读 kean 的 chat_message。
+        if (imSingleWriteRoleService.messageSingleWriteEnabled() && !imOfflineQueryService.active()) {
+            risks.add("单写【读不到】：{kean.im.message-single-write-enabled=true} 已停止向 kean 的 "
+                    + "chat_message 写入，而读取来源（" + ImOfflineQueryService.PROPERTY_READ_SOURCE + "="
+                    + imOfflineQueryService.configuredSource() + "）不是 box ⇒ "
+                    + "新消息只进 box、用户却仍在读【已经冻结】的 kean 表 "
+                    + "⇒ 对方发来的新消息【永远显示不出来】（不报错，只是静默不更新）。"
+                    + "修法：把 " + ImOfflineQueryService.PROPERTY_READ_SOURCE + " 设为 "
+                    + ImOfflineQueryService.SOURCE_BOX + " 并重启 kean");
+        }
         if (!legacyWsEnabled && !imSenderService.enabled()) {
             risks.add("消息实时推送【没有替代通道】：自研 WS 已关，而 box 通道未就绪"
                     + "（IM_JWT_SECRET 未配置/不足 32 字节，或 kean.im.mirror-enabled=false）"
@@ -305,7 +346,9 @@ public class ImRealtimeRoleService {
         }
         return String.join("；", risks)
                 + "。⚠️ 以上均【不报错】，只表现为用户侧静默失效；"
-                + "如需立刻恢复原状，把 " + PROPERTY_LEGACY_WS_ENABLED + " 设回 true 并重启 kean。";
+                + "如需立刻恢复原状，把 " + PROPERTY_LEGACY_WS_ENABLED + " 设回 true（推送类）"
+                + "、把 " + ImSingleWriteRoleService.PROPERTY_MESSAGE_SINGLE_WRITE_ENABLED
+                + " 设回 false（单写类）并重启 kean。";
     }
 
     // ------------------------------------------------------------------

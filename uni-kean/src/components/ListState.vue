@@ -46,10 +46,12 @@ const state = computed(() => {
 </script>
 
 <template>
-  <view v-if="state === 'loading'" class="state">
-    <wd-loading />
-    <view class="text">{{ loadingText }}</view>
-  </view>
+  <slot v-if="state === 'loading'" name="loading">
+    <view class="state">
+      <wd-loading />
+      <view class="text">{{ loadingText }}</view>
+    </view>
+  </slot>
 
   <view v-else-if="state === 'error'" class="state">
     <view class="title">加载失败</view>
@@ -57,7 +59,9 @@ const state = computed(() => {
     <wd-button size="small" plain @click="emit('retry')">重新加载</wd-button>
   </view>
 
-  <wd-status-tip v-else-if="state === 'empty'" image="content" :tip="emptyText" />
+  <slot v-else-if="state === 'empty'" name="empty">
+    <wd-status-tip image="content" :tip="emptyText" />
+  </slot>
 
   <slot v-else />
 </template>

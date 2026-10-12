@@ -1,0 +1,6 @@
+<!-- 课安 tabBar 我的 · 手绘 SVG · 24 网格 · 描边 2 · 未选中 #7A7E83 · 语义：圆头 + 肩部弧线，无五官 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 24 24"
+     fill="none" stroke="#7A7E83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="8" r="3.6" />
+  <path d="M5.5 20.5 A6.5 6.5 0 0 1 18.5 20.5" />
+</svg>

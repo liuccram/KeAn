@@ -112,6 +112,11 @@ const sendBlocked = computed(() => chatBlock.value || (peerBanned.value ? "对�
 const myAvatar = computed(() => resolveMediaUrl(userStore.state.user?.avatarUrl));
 const peerAvatar = computed(() => resolveMediaUrl(session.value?.peerAvatarUrl));
 const myUserId = computed(() => Number(userStore.state.user?.id || 0));
+const statusBarHeight = uni.getSystemInfoSync().statusBarHeight || 20;
+
+function backToMessages() {
+  uni.navigateBack({ delta: 1 });
+}
 
 /**
  * ⚠️ 临时诊断埋点（本轮只加日志、不改逻辑）。
@@ -1505,6 +1510,17 @@ onMounted(() => {
 
 <template>
   <view class="page" :class="{ 'has-peer-status': Boolean(peerNotice) }">
+    <view class="chat-header" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="chat-header__back" @click="backToMessages"><wd-icon name="arrow-left" /></view>
+      <view class="chat-header__peer" @click="openUser(session?.peerUserId)">
+        <FallbackImage v-if="peerAvatar" class="chat-header__avatar" :src="peerAvatar" mode="aspectFill" />
+        <view v-else class="chat-header__avatar chat-header__avatar--fallback">{{ (session?.peerNickname || "同").slice(0, 1) }}</view>
+        <view class="chat-header__identity">
+          <text class="chat-header__name">{{ session?.peerNickname || "私信" }}</text>
+        </view>
+      </view>
+      <view class="chat-header__profile" @click="openUser(session?.peerUserId)"><wd-icon name="user" /></view>
+    </view>
     <view v-if="peerNotice" class="peer-status" :class="{ banned: peerBanned }">{{ peerNotice }}</view>
     <view class="list" @click="closeEmojiPanel">
       <view v-for="item in displayMessages" :key="item.id">
@@ -1745,8 +1761,112 @@ onMounted(() => {
   padding-bottom: 68px;
   padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
 }
+/* 顶部对方名字栏（头像 + 昵称 + 右侧个人主页入口）：**滚动时吸顶**。
+   ---------------------------------------------------------------------------
+   【结构】.chat-header 是 .page 的**第一个子元素**、普通文档流里的元素：
+     · .chat-header__back    返回箭头（36px 定宽热区）
+     · .chat-header__peer    可点整块（头像 36px + .chat-header__identity 里的昵称）
+     · .chat-header__profile 右侧 36px 图标（同样跳对方主页）
+   ⚠️ 本页**没有"在线状态"这个字段**：api/chat.ts:8-20 的 ChatSessionItem 只有
+     id / peerUserId / peerNickname / peerAvatarUrl / lastContent / lastMessageAt /
+     unreadCount / peerMuted / peerBanned / lastSeqNo（已 grep 逐字核对），
+     既没有 online 也没有 presence —— 所以这里**不新增**任何"在线/离线"渲染（不编数据）。
+     用户能看到的"状态"只有 .peer-status 那条 fixed 横幅（对方被封禁 / 禁言时出现），
+     它的行为与样式本轮一行未动。
+   【吸顶的两个前提】① position: sticky + top 在下面写着；② 滚动容器必须是 document
+     —— 见本文件下面 .page 那条 overflow-x 的注释，以及 styles/design-messages.css 的
+     「⭐ 吸顶覆盖（聊天页）」。⚠️ 少了②，sticky 与消息页当初一样"写了等于没写"。
+   【top 为什么是 env(safe-area-inset-top) 而不是 0】与消息页三档 tab **逐字同一套写法**
+     （design-messages.css:431 的 `top: env(safe-area-inset-top)`）：
+     自绘导航栏（本页 pages.json 是 navigationStyle: custom）让出的正好是状态栏高度，
+     普通浏览器里该值解析为 0，就是"贴视口顶部"。
+     ⚠️ 这里**刻意不给 env() 写 fallback**：`env(x, 0px)` 在不认 env() 的老内核里
+     会被**整条丢弃**（fallback 只在 env() 被认识、但变量未定义时才生效），
+     于是 top 解析成初始值 auto → **sticky 直接失效**；
+     不写 fallback 时老内核同样丢掉声明，但 top 仍是 auto —— 与消息页风险完全相同，
+     而现代内核（H5 目标）里 env() 一定解析成功，所以两页保持同一写法、不各自发明。
+   【背景必须不透明】吸顶后下面的消息行会从它底下滚过，半透明底会把两行字糊在一起。
+     这里用 --kean-card（浅色 #ffffff / 深色 #1c1c1e，theme-vars.css:17 / :34），
+     **两态都是实色**，且没有任何 backdrop-filter / filter / transform（本页铁律）。
+   【z-index 20 的取值理由】先 grep 了本页现有层级再取值：
+     · .peer-status 30（fixed 横幅，必须盖住名字栏）
+     · .new-msg-tip 55 / .panel 60（fixed 浮层）/ wd-toast 自带遮罩（组件默认 500±）
+     · 消息行 .row / .stamp / .status **没有任何 z-index**（auto，不建层叠上下文）
+     → 名字栏取 20：**高于所有消息行**（吸顶时不被行内容盖住），
+       **低于本页全部 fixed 浮层与弹层**（面板、提示、横幅、toast 一个都不受影响）。
+     与消息页三档 tab 的 z-index: 2 是同一相对次序（高于行、低于弹层），
+     数值不同只因本页浮层整体取在 30~60 这一档。 */
+.chat-header {
+  display: flex;
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 20;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding-right: 14px;
+  padding-bottom: 8px;
+  padding-left: 12px;
+  border-bottom: 1px solid var(--kean-line);
+  background: var(--kean-card);
+}
+.chat-header__back,
+.chat-header__profile {
+  display: flex;
+  flex: 0 0 36px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  color: var(--kean-t1);
+  font-size: 20px;
+}
+.chat-header__peer { display: flex; flex: 1; min-width: 0; align-items: center; gap: 10px; }
+.chat-header__avatar { display: block; flex: 0 0 36px; width: 36px; height: 36px; border-radius: 50%; }
+.chat-header__avatar--fallback { display: flex; align-items: center; justify-content: center; background: var(--kean-primary-soft); color: var(--kean-primary-active); font-size: 14px; font-weight: 600; }
+.chat-header__identity { display: flex; min-width: 0; flex-direction: column; }
+.chat-header__name { overflow: hidden; color: var(--kean-t1); font-size: 15px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+/* 对方被封禁 / 禁言时挂出的那条 fixed 横幅（.peer-status）**不在文档流里**
+   （position: fixed + top: 0）—— 它在视觉上盖住名字栏顶部 48px，
+   所以这里给 .page 让出 48px 的 padding-top、并把吸顶的 top 同步推到 48px，
+   名字栏就不会被横幅压住。
+   ⚠️ 本轮**只把 top 的语义写清楚**（与上面 .chat-header 的 sticky 配套），
+   数值 / 行为一个字未改；横幅本身仍是 fixed，不受本轮 overflow 覆盖规则影响。 */
 .page.has-peer-status {
   padding-top: 48px;
+}
+.page.has-peer-status .chat-header { top: 48px; }
+/* ⭐ 吸顶（.chat-header 的 position: sticky）的**生死线** —— 与消息页同款的两层：
+   ---------------------------------------------------------------------------
+   ① **外层 uni-page-body（真正的拦路虎）**：App.vue 的全局 `page { overflow-x: hidden }`
+      被 uni-app H5 的 postcss 插件改写成 `uni-page-body { …; overflow-x: hidden }`
+      （@dcloudio/uni-cli-shared/dist/postcss/plugins/uniapp.js 的 rewriteUniH5Tags：
+      `if (tag === 'page') return 'uni-page-body'`）。单轴 hidden 会被规范强制把另一轴
+      算成 auto → uni-page-body 成了**滚动容器**（最近的 scrollport），而它的高度是 auto
+      （框架只给它 display:block / width:100%）→ 它自己永远不滚动 →
+      sticky 以它为参照，**永远不触发**。覆盖规则在 styles/design-messages.css 的
+      「⭐ 吸顶覆盖（聊天页）」一节：
+        `uni-page[data-page="pages/message/chat"] uni-page-body { overflow-x: visible; overflow-x: clip; }`
+      用 uni-page 的 data-page 属性当闸门，只命中聊天页那一个 uni-page-body，
+      别的页面（含消息页、页面栈里停留的其他页）一个像素都不动。
+      ⚠️ **消息页那条 `pages/message/index` 的规则是两个文件里的原样保留、一个字没碰**。
+   ② **内层 .page（本文件下面那条 .page 规则）**：本页以前**没有** overflow 声明，
+      所以这一层原本是"默认 visible、什么都不用管"；本轮为了把口径钉死，
+      显式写上 `overflow-x: visible` + `overflow-x: clip`（与消息页 .page 同款），
+      免得将来有人顺手给 .page 补一条 overflow 兜底又把吸顶弄哑。两处必须**成套看**，
+      缺任何一处吸顶都不会生效。
+   ── 为什么是这两个值 ────────────────────────────────────────────────────────
+   · `overflow-x: visible`（第一行＝**老内核兜底**）：不认 clip 的内核在解析期丢掉第二行、
+     留下的就是它。visible 是唯一绝对不建滚动容器的取值；横向裁剪的最终落点在**视口** ——
+     uni-h5 的 `body{overflow-x:hidden}`（framework/base.css:14-17）会被规范传导到视口，
+     所以页面横向照样拉不动，裁剪语义一行不减。
+   · `overflow-x: clip`（第二行＝**现代内核**）：只裁剪、不建滚动容器（这正是它区别于
+     hidden 的设计用途）。本页也确实没有任何一处会横向溢出到 .page：气泡有
+     `max-width: calc(100% - 96px)` + `word-break: break-word`，图片是 `max-width: 60vw`。
+   ⚠️ 这一层与①那一层都**只影响横向**：纵向滚动仍归 document（本页的
+     uni.pageScrollTo / measureChatScrollBox 全是按 document 视口算的，读数不变）。 */
+.page {
+  overflow-x: visible;
+  overflow-x: clip;
 }
 .peer-status {
   position: fixed;

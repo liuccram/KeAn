@@ -48,16 +48,17 @@
  * A · 信息架构：聊天 vs 通知（对策 ⑤）
  * ===========================================================================
  * 现状（读 src/pages/message/index.vue 得到的事实）：
- *   · 顶部已有**三档平级分段控件**：`系统` / `申请与履约` / `私信`
+ *   · 顶部已有**三档平级 tab**：`系统` / `申请与履约` / `私信`
  *     （.msg-tabs > .msg-tab ×3，tab 取值 'system' | 'task' | 'chat'；
- *     改版前的类名是 .tabs-bar > .tabs > .tab，视觉已还原、语义名保留）；
- *   · 每一档后面一个 6px 小圆点（.msg-tab__dot，主色，**不是红色**），
+ *     本轮视觉 = 纯文字 + 选中项文字下方一条短下划线，三档左对齐、档间距 28px）；
+ *   · 每一档后面一个 5~6px 小圆点（.msg-tab__dot，主色，**不是红色**），
  *     出现条件来自三个独立未读接口
  *     unreadNotificationCount("SYSTEM") / ("TASK") / unreadChatCount()；
- *   · 「申请与履约」档内部还有第二层筛选 chip：全部/申请/履约/评价/变动；
- *   · 私信档 == 会话列表，通知两档 == 通知列表。
+ *   · 「申请与履约」档内部还有第二层筛选 chip：全部/申请/履约/评价/变动
+ *     （本轮视觉 = 胶囊；选中实心主色 + 白字，未选白底 + 深灰字 + 极浅边框）；
+ *   · 私信档 == 会话列表（通栏行 + 分隔线），通知两档 == 通知列表（**一行一张卡**）。
  *
- * 选定方案：**① 顶部分段控件（保持三档）+ 通知行专属的"左侧 3px 色条"**
+ * 选定方案：**① 顶部分段控件（保持三档）+ 通知行专属的"独立白卡"视觉**
  *   —— 即"结构不动，把两类东西的视觉语言彻底分开"。
  *
  * 为什么是这个方案（逐条对照另外两个候选）：
@@ -71,13 +72,17 @@
  *     只要把"哪一类东西长什么样"定死，⑤ 就解决了。
  *
  * 【两类东西的视觉语言】**（这是 ⑤ 的"一眼分清"定义，改这两行等于改规范）
- *   会话（人）：44px 圆头像 + 深色 15px 昵称 + 灰预览 + 右端时间 + 右端数字徽标。
- *                **永远没有左侧色条、永远没有图标块。**
- *   通知（事）：44px 方形圆角图标块（语义色 12% 淡底 + 22% 描边 + 同色线性图标）
- *                + **左侧 3px 语义色条** + 深色标题 + 灰正文。
+ *   会话（人）：44px 圆头像 + 深色 15px 半粗昵称 + 灰预览 + 右端时间 + 右端数字徽标；
+ *                **通栏行**（不是卡片），行间一条极浅分隔线。
+ *                **永远没有图标块、没有箭头、没有圆点。**
+ *   通知（事）：**一张独立白卡**（12px 圆角 + 极浅边框 + 卡片间距 10px）
+ *                里放 42px 方形圆角图标块（语义色 12% 淡底 + 同色线性图标）
+ *                + 深色 15px 半粗标题 + 灰描述（最多 2 行）+ 右列「时间 / 箭头 ›」；
+ *                未读时标题左侧一枚 7px 圆点。
  *                **永远没有头像、没有数字徽标。**
  *   再加上顶部三档控件本身就是"系统 / 申请与履约 / 私信"的物理分区，
- *   所以"聊天 vs 通知"在**形状**（圆 vs 方）、**颜色**（无色条 vs 有色条）、
+ *   所以"聊天 vs 通知"在**形状**（圆头像 vs 方图标块、通栏 vs 卡片）、
+ *   **标记**（无点无箭头 vs 有圆点有箭头）、
  *   **位置**（第三档 vs 前两档）三个维度上同时可分 —— 色盲用户靠形状也分得开。
  *
  * 影响面（本轮实测）：
@@ -138,13 +143,13 @@
  *      没有新颜色；图标全部内联 data-uri SVG（不新增二进制素材、不引图标字体）。
  *   ⚠️ 颜色只做"加深印象"，**区分靠图标形状**：色盲用户看到的仍是六种不同轮廓。
  *
- * "一眼分清"的标记方式 = **彩色图标底 + 左侧 3px 色条**的组合：
- *   · 图标底：`background: <语义色 12%>` + `1px solid <语义色 22%>`，
- *     与 .mine-chip 的"浅底深字"同一支笔；
- *   · 左侧色条：`border-left: 3px solid <语义色>`（未确定类型时透明，
- *     所以不会出现"一条灰杠"占位）。
- *   为什么两者都要：只给颜色 → 色盲分不清，且列表一屏十几个彩色条会变成噪声；
- *   只给图标 → 远看全是灰方块。图标管"是什么"，色条管"在哪一行"，两者分工。
+ * "一眼分清"的标记方式 = **一枚彩色图标块**（本轮改版起，"整行左侧 3px 色条"已去掉）：
+ *   · 图标块：42px 方形圆角 + `background: <语义色 12%>` + 同色线性图标
+ *     （无描边；与 .mine-chip 的"浅底深字"同一支笔）；
+ *   · 上一版的左侧色条（`border-left: 3px solid <语义色>`）已随"一行一张卡"的设计删除，
+ *     --kean-msg-tint 变量保留在类型表里（见「三·补」一节的说明）。
+ *   为什么靠形状：色盲用户看到的仍是六种不同轮廓；颜色只做"加深印象"。
+ *   图标管"是什么"，卡片（通栏 vs 独立卡）管"在哪一档"。
  *
  * ===========================================================================
  * C · 状态与未读（对策 ②）
@@ -160,26 +165,31 @@
  *     → 所以"待处理"在消息体系里只能落成"需要我处理的这条消息"，
  *       判定条件 = **未读 且 类型属于需要我动作的那几类**（apply/review/change）。
  *
- * 三态的确定取值：
- *   未读  ① 名称/标题 **加粗**（--kean-fw-title = 700；已读为 400，字重差就是最强的未读信号）
- *         ② 右侧**数字徽标**：高 18px / 最小宽 18px / 内边距 0 6px / 圆角 pill
+ * 三态的确定取值（⚠️ 通知卡与会话行是**两套**未读口径，别互相套用）：
+ *   通知卡未读 —— **只有一枚圆点**：标题左侧 7px 圆点（.msg-notice__unread-dot，#e45b63）。
+ *         ⚠️ 刻意**不再**给标题加粗：设计稿用"点"表达未读，同一个状态不编码两次；
+ *            卡片标题因此**恒为 600**（.msg-notice__title），已读/未读字重相同。
+ *   会话行未读 —— 三层同时给（会话行没有圆点）：
+ *         ① 昵称加粗（--kean-fw-title = 700；平常 600）
+ *         ② 右侧**数字徽标**：高 20px / 最小宽 20px / 内边距 0 6px / 圆角 pill
  *            底 = 主色渐变(--kean-msg-grad-badge) + **白字**（10px / 700 / tabular-nums）
- *            ⚠️ **不用刺眼红**（#f53f3f 那种）。红点只留给"这一档 tab 有未读"的 6px 小点，
- *            数字徽标一律主色 —— 一屏十几个红数字是噪声，而且红=危险会误读成错误。
+ *            ⚠️ **不用刺眼红**（#f53f3f 那种）。数字徽标一律主色 —— 一屏十几个红数字
+ *            是噪声，而且红=危险会误读成错误。
  *         ③ 截断：`> 99` 显示 `99+`（模板里就是这一条，别改成 100+）
  *         ④ 预览行：未读时文字色提到 --kean-msg-preview-strong（t1），已读用 --kean-msg-preview（t3）
- *   已读  ① 标题字重 400、颜色仍是 --kean-t1（**不要灰到 #ccc**：那是禁用态，不是已读态）
- *         ② 预览/正文用 --kean-msg-preview（t3 #5f6673，对白 5.65:1，仍满足 AA）
- *         ③ 图标块与色条**保持原样**：已读只降一级文字权重，不把整行做旧
+ *   已读  ① 会话昵称字重回 600、通知标题仍是 600；颜色都是 --kean-t1
+ *            （**不要灰到 #ccc**：那是禁用态，不是已读态）
+ *         ② 预览/描述用 --kean-msg-preview（t3 #5f6673，对白 5.65:1，仍满足 AA）
+ *         ③ 图标块、卡片边框、右列时间与箭头**保持原样**：已读只收掉圆点，不把整行做旧
  *   待处理  独立 chip：`.msg-chip--todo`
  *         底 rgba(176,106,0,.12) + 边框 rgba(176,106,0,.24) + 字 --kean-warn(#b06a00)
  *         高 18px / 11px / 700 / 圆角 --kean-radius-sm / 文案走 t("msgTodo")
- *         出现条件（本轮已实现）：`readFlag !== 1 && (类型 ∈ {apply, review, change})`
+ *         出现条件（未改）：`readFlag !== 1 && (类型 ∈ {apply, review, change})`
  *
  * ===========================================================================
  * D · 时间与分组（对策 ③）
  * ===========================================================================
- * 会话列表（右端时间，单行 11px，tabular-nums）—— 规则由 utils/format.ts 的
+ * 会话列表（右端时间，单行 12px，tabular-nums）—— 规则由 utils/format.ts 的
  * formatRelativeStamp() 实现，**文案全部走 i18n**（不允许硬编码中文）：
  *   今天        → `HH:mm`（例 14:05）
  *   昨天        → `t("msgYesterday")` = 昨天 / Yesterday      （不带时间，省宽度）
@@ -189,19 +199,23 @@
  *   ⚠️ 秒级抖动、时区、跨年由 format.ts 统一算，页面不自己拼字符串。
  *   ⚠️ 无 lastMessageAt（老后端）→ 不显示时间，不显示 "NaN"。
  *
- * 通知列表 —— **按日期分组标题**，组内才显示时间：
- *   分组标题（.msg-day）：今天 / 昨天 / 更早（t("msgDayToday") / t("msgDayYesterday") /
- *     t("msgDayEarlier")），11px / 600 / --kean-t3 / 上边距 12px / 左右 16px，
- *     背景透明（**不做成一条通栏色带**，避免和 A 节的"色条"抢注意力）。
- *   组内每一行右侧显示 `HH:mm`（同一天内时间才是有效信息；跨组已经由标题表达）。
+ * 通知列表 —— 每张卡片的**右上角**显示时间（12px / tabular-nums），
+ * 时间正下方是箭头 ›（两者同一列、右对齐）；列表上方还有一条**小节标题**
+ * （.msg-list__heading，15px / 700 / 左对齐）与**按日期分组的组标题**：
+ *   分组标题（.msg-day）：今天 / 昨天 / **更早那一档按天拆开后直接显示具体日期**
+ *     （今天 = t("msgDayToday")、昨天 = t("msgDayYesterday")，与原来一致；
+ *      更早 = tf("msgMonthDay") 例「10月8日」/ tf("msgYearMonthDay") 例「2025年12月3日」），
+ *     11px / 600 / --kean-t3 / 上边距 12px / 左右 16px，
+ *     背景透明（**不做成一条通栏色带**，免得和卡片抢注意力）。
  *   分组由 utils/format.ts 的 formatNoticeDay() 产出稳定的 bucket key（today/yesterday/
- *   earlier），**不是**直接产文案 —— 文案在页面里走 t()。
- *   ⚠️ 一个刻意的例外：「申请与履约」档 ×「全部」筛选时，列表用的是**业务分区标题**
- *   （申请 / 履约 / 评价 / 变动，原有结构，一字未改），此时不再叠一层日期分组 ——
- *   同一屏里两套分组标题（"申请" + "今天"）会让层级打架。所以：
- *     · 「全部」→ 业务分区为主，行内显示 HH:mm；
- *     · 具体某一档（点某个 chip）→ 日期分组为主，行内显示 HH:mm。
- *   两种视图都满足 ③ 的要求（时间一定在、且一定只有一处），并且都不需要新的分组数据。
+ *   earlier），**不是**直接产文案；「更早」再按自然日细分（page 的 noticeDayGroups），
+ *   因为只挂一个「更早」或一个日期都会把同一档里别的日期指错。
+ *   ⚠️ 日期是带占位符的文案（{mon}/{d}/{y}）→ 一律走 tf()，不走 t()。
+ *   ⚠️ 事实核对（本轮 grep 过 pages/message/index.vue）：列表**只有一套**分组，
+ *   即上面的日期分组 + 一条小节标题（系统档 = 「系统通知」，申请与履约档 = chip 名 + 「消息」，
+ *   「全部」时 = 「最近动态」）。**没有任何"业务分区标题"实现**（申请/履约/评价/变动 四个分区
+ *   在代码里不存在）—— 本节上一版写的"「全部」时用业务分区标题"与实现不符，已按事实改正。
+ *   要加业务分区必须**新写分组逻辑**（本轮的范围只允许改视觉，所以没做）。
  *
  * ===========================================================================
  * E · 聊天气泡（对策 ①，本轮只写规范，下一轮实现）
@@ -240,39 +254,51 @@
  * ===========================================================================
  * 包含块自检（铁律 2 的证据）
  * ===========================================================================
- * 本文件里出现 backdrop-filter 的地方：**0 处**（还原改版前视觉后，原来的
- *   ① .kean-msg .msg-seg 与 ② .kean-msg .msg-hintbar 两处 blur() 都已删除）。
+ * 本文件里出现 backdrop-filter 的地方：**0 处**（只出现在注释里；原来
+ *   ① .kean-msg .msg-seg 与 ② .kean-msg .msg-hintbar 两处 blur() 早已删除，
+ *      本轮新增的 .msg-hintbar__ico / .msg-hintbar__sub / .msg-hintbar__arrow /
+ *      .msg-notice__aside / .msg-notice__chevron / .msg-notice__lead-strong
+ *      也**一律没有**任何包含块属性）。
  * 全模板里 position:fixed 的后代只有 wd-popup（系统通知详情）与 wd-toast：
  *   · wd-popup / wd-toast 都是 <view class="page kean-msg"> 的**直接子节点**，
- *     不属于 .msg-tabs / .msg-chips / .msg-hintbar；
- *   · 而 .page / .msg-shell / .msg-tabs / .msg-tab / .msg-chips / .msg-chip /
- *     .msg-hintbar / .msg-list / .msg-chat / .msg-notice / .msg-notice__tile /
- *     .msg-day / .msg-skel 上**一律没有** backdrop-filter / transform /
- *     filter / will-change / contain / perspective
+ *     不属于 .msg-tabs / .msg-chips / .msg-hintbar / .msg-list；
+ *   · 而 .page / .msg-shell / .msg-tabs / .msg-tab / .msg-tab__label / .msg-chips /
+ *     .msg-chip / .msg-hintbar / .msg-hintbar__ico / .msg-hintbar__main / .msg-list /
+ *     .msg-chat / .msg-notice / .msg-notice__tile / .msg-notice__main /
+ *     .msg-notice__aside / .msg-day / .msg-skel 上**一律没有** backdrop-filter /
+ *     transform / filter / will-change / contain / perspective
  *     → 弹层与遮罩仍以视口为包含块，关得掉、点得到。
- *   · 本轮 .msg-tabs 新加的 `position: sticky` **不在**上面那份禁用清单里：
+ *     （卡片用的是 border + border-radius + 极浅的 box-shadow/描边这类**纯静态**几何；
+ *      box-shadow 不建包含块、也不参与命中测试。灯下黑的两个坑都避开了：
+ *      没用 transform 做任何位移，也没用 filter 做任何"淡出"。）
+ *   · .msg-tabs 的 `position: sticky` **不在**上面那份禁用清单里：
  *     sticky 只建层叠上下文，不会成为 fixed 后代的包含块（而且 .msg-tabs 本来
  *     也不是弹层的祖先 —— wd-popup / wd-toast 是 .page 的直接子节点）。
  *   （骨架屏用的是 background-position 扫光，不作合成、不建包含块；
- *     头像上的圆角与 6px 圆点都是纯静态几何。）
+ *     图标块圆角、7px 未读圆点、3px 下划线都是纯静态几何。）
  * ⚠️ 下一轮做气泡时：**不要**因为"想给气泡加毛玻璃"就把 backdrop-filter 加到
  *    .msg-list 或 .page 上 —— 那时 wd-toast 就会被劫持。
  * ===========================================================================
  */
 
 /* ===========================================================================
- * 一 · 页面外壳与三档分段控件（A 节落地）
+ * 一 · 页面外壳与三档 tab（A 节落地）
  * ---------------------------------------------------------------------------
  * ⚠️ .page.kean-msg 上没有一个 backdrop-filter / transform / filter：
  *    它是 wd-popup / wd-toast 的父节点。壁纸态下 wallpaper-skin.css 会给
  *    .page 的每个直接子元素建层叠上下文（position:relative + z-index:1），
  *    所以这里用 padding 而不是 transform 做排布。
  *
- * 三档分段控件（.msg-tabs > .msg-tab ×3）与筛选 chip 是**改版前的视觉**：
- * 浅灰底分段条 + 选中项白胶囊/白底 + 主色字（取值见 theme-vars.css 的
- * --kean-line / --kean-card / --kean-muted / --kean-primary-active）。
- * ⚠️ 类名保持 .msg-*：它们是**本页专属**的语义名。改版前那套通用名
- *    （.tabs / .tab）在全局表里会与 pages/mine/feedback.vue 等页面撞名，
+ * 本轮视觉（设计稿）：
+ *   · 头部 = 左对齐大标题「消息」30px/700 + 随档变化的副标题 + 右侧搜索/设置两枚 22px 图标
+ *     （几何与字色在 pages/message/index.vue 的 scoped 样式里，那一块**不吸顶**）；
+ *   · 三档 tab（.msg-tabs > .msg-tab ×3）= 纯文字 + 选中项文字下方短下划线，
+ *     左对齐、档间距 28px、整行下方一条极浅的整宽分隔线；
+ *   · 二层筛选 chip = 胶囊，选中实心主色 + 白字，未选白底 + 深灰字 + 极浅边框；
+ *   · 顶部提示条（.msg-hintbar）= 主色极浅底的圆角卡（图标块 + 标题/副标题 + 右箭头），
+ *     数据完全复用现有未读计数与最新一条未读通知的标题（见页面脚本）。
+ * ⚠️ 类名保持 .msg-*：它们是**本页专属**的语义名。通用名（.tabs / .tab）
+ *    在全局表里会与 pages/mine/feedback.vue 等页面撞名，
  *    而 wallpaper-skin.css 里针对 .tabs-bar 的壁纸规则仍然在（消息页在壁纸态
  *    另有自己的 .msg-tabs 分支），所以不把通用名搬到全局表。
  * =========================================================================== */
@@ -322,6 +348,28 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   overflow-x: clip;
 }
 
+/* ⭐⭐ 吸顶覆盖（聊天页 pages/message/chat）—— 与上一条**同形、同因、不同闸门**。
+   ---------------------------------------------------------------------------
+   聊天页顶部那条「头像 + 昵称」栏（.chat-header）也要吸顶，所以聊天页同样得把
+   uni-page-body 这条滚动容器摘掉，否则 sticky 与消息页当初一样"写了等于没写"。
+   【为什么必须另写一条、不能复用上面那条】上面那条用 data-page 精确锁定了
+   `pages/message/index`；uni-h5 渲染的是
+   <uni-page data-page={pageMeta.route}>（uni-h5.es.js 的 createVNode("uni-page", …)），
+   而 route 就是 pages.json 里的路径（pages.json:25 是 pages/message/index、
+   pages.json:35 是 pages/message/chat），所以两条各管各的页面，
+   既不会互相影响，也**不需要**（更**不应该**）去动上面那条消息页的规则 ——
+   它是消息页三档 tab 吸顶的命脉。
+   【为什么不用 !important】特异性 (0,1,2) > App.vue 那条的 (0,0,1)，与文档顺序无关。
+   【为什么是这两行】与上面一条逐字一致：visible 是老内核兜底、clip 是现代内核取值，
+   两者都不建滚动容器、且横向裁剪语义不减（详见上面 A 节的完整论证）。
+   ⚠️ 本页的其余 fixed 元素（.peer-status / .composer / .mute-tip / .panel /
+   .new-msg-tip）都靠 position: fixed 定位，而 overflow 不属于"会建包含块"的属性
+   → 它们的定位基准仍然是视口，这条规则对它们零影响。 */
+uni-page[data-page="pages/message/chat"] uni-page-body {
+  overflow-x: visible;
+  overflow-x: clip;
+}
+
 .kean-msg .msg-shell {
   display: flex;
   position: relative;
@@ -340,12 +388,16 @@ uni-page[data-page="pages/message/index"] uni-page-body {
 .kean-msg .msg-page-head__status--unread { color: var(--kean-primary-active); }
 .kean-msg .msg-page-head__status--unread .msg-page-head__status-dot { background-color: var(--kean-primary); }
 
-/* 三档分段控件（**改版前的视觉**）：一条浅灰底的分段条 + 选中项一枚白胶囊。
-   ⚠️ 取值全部是主题令牌（--kean-line / --kean-card / --kean-muted /
-   --kean-primary-active，定义在 theme-vars.css），所以深色模式由 theme-vars.css
-   的 `html.kean-dark` 分支自动接管，本文件第六节只需要补"壁纸"一节。
-   ⚠️ 这条栏上**没有** backdrop-filter：改版前就没有模糊，还原时一并去掉
-   （见文末「包含块自检」）。
+/* 三档 tab（**本轮视觉**）：纯文字 + 选中项文字下方一条短下划线。
+   ⚠️ 没有胶囊、没有灰条底 —— 这条栏的背景就是**页面底色**（--kean-msg-bg），
+   平时完全看不出来，吸顶时它就是把滚过去的行挡住的那层不透明底。
+   ⚠️ 取值全部是主题令牌（--kean-msg-bg / --kean-t3 / --kean-t1 /
+   --kean-primary，定义在 theme-vars.css / design-tokens.css），所以深色模式由
+   令牌分支自动接管，本文件第六节只需要补"壁纸"一节。
+   ⚠️ 这条栏上**没有** backdrop-filter（见文末「包含块自检」）。
+   ⚠️ 选中下划线（宽度 = 文字宽度、高 3px、圆角、主色）锚在页面 scoped 的
+   `.msg-tab__label::after` 上：它必须贴着**文字**而不是整档，所以与 .msg-tab__label
+   的定位放在同一处（pages/message/index.vue 的 scoped 样式）。
    ── 三档吸顶（本轮）───────────────────────────────────────────────────────
    · 自绘标题栏（.status-bar / .nav-title）随内容滚走后，这一层停在视口顶部，
      切档不必再滚回页首。二层筛选 chip（.msg-chips）**不**吸顶：两层都吸会吃掉
@@ -367,8 +419,8 @@ uni-page[data-page="pages/message/index"] uni-page-body {
      statusBarHeight 就是量出来的 env(safe-area-inset-top)（uni-h5.es.js:19519），
      所以让出的正好是上面那条 .status-bar 占位条的高度：刘海屏 / 独立窗口下
      tab 不会钻到状态栏底下；普通浏览器里该值为 0，就是"贴视口顶部"。
-   · 背景必须**不透明**（吸顶后下面会有行滚过）：浅色/深色两态本来就是实色
-     （--kean-line），壁纸态在下文另加一条把它做到 0.88。
+   · 背景必须**不透明**（吸顶后下面会有行滚过）：浅色/深色两态是页面底色
+     （--kean-msg-bg = #f5f6f8 / #111113，实色），壁纸态在下文另加一条把它做到 0.88。
    · z-index 仍是 2（值未改）：高于列表行（.msg-notice / .msg-chat 是
      position: relative + z-index: auto），低于本页的 wd-toast（组件默认 100）
      与 wd-popup（模板上传的 999），也低于 uni-h5 的下拉刷新指示器（997）。 */
@@ -379,35 +431,30 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   top: env(safe-area-inset-top);
   z-index: 2;
   box-sizing: border-box;
-  gap: var(--kean-sp-2);
+  gap: 28px;
   margin: var(--kean-sp-3) var(--kean-sp-4) 0;
-  padding: 4px;
-  border-radius: 10px;
-  background-color: var(--kean-line);
+  padding: 0;
+  border-radius: 0;
+  background-color: var(--kean-msg-bg);
   /* ── 通栏底衬（补吸顶后左右 16px 漏行的缝）─────────────────────────────
-     ⚠️ 为什么**不**用 `::after{ inset: 0 -16px; z-index: -1 }`：本条是
-        position: sticky + z-index: 2 → **自己就是一个层叠上下文**。在它内部，
-        负层叠级的伪元素按 CSS 2.1 附录 E 的绘制顺序（step 1 = 本元素自己的
-        背景与边框 → step 2 = 负层叠级后代）是画在**本元素背景之上**的，不是之下 ——
-        一条整宽的页面底衬会把 --kean-line 的分段条底色整片盖掉（深色态最明显：
-        #2b2b2e 被盖成 #111113，"浅灰分段条"直接消失，只剩一枚白胶囊）；
-        改成 z-index: 0 只会更糟（::after 在树序上晚于三个 .msg-tab，连胶囊一起盖）。
-     外阴影的几何正好等于我们要的那条带：offset-x ±(16px + 10px)、blur/spread 0 的
-        阴影 = 本条边框盒平移后的形状，且**只画在边框盒形状之外**。
-        · 平移量比外边距多一个「本条圆角半径」(上面的 10px)：阴影自己的那两个外圆角
-          于是被推到 .page 的 overflow 裁剪（pages/message/index.vue 的 scoped .page
-          那两行 overflow-x）之外，
-          缝里那一竖条是**方**的；否则它的外沿会跟着 10px 圆角缺一个角。
-          写大无害（只多推到裁剪区外），写小才会缺角。
-        · 中间（分段条自身）一个像素都不覆盖 —— 顺带把 10px 圆角外、边框盒内的
-          那点缺口也填上（主流内核按**圆角形状**裁剪外阴影；就算哪个内核按矩形裁剪，
-          也只是退回"只填两侧缝"，不会更差）。
+     ⚠️ 为什么不给本条写"整宽底"：本条是 position: sticky + z-index: 2
+        → **自己就是一个层叠上下文**。在它内部用 ::after 铺一层整宽背景
+        （负层叠级也不行）会画在**本条背景与三个 tab 之上** ——
+        所以底衬只能交给"只画在边框盒之外"的外阴影。
+     ⚠️ 外阴影的几何：offset-x ±(16px + 10px)、blur/spread 0 的阴影 = 本条边框盒
+        平移后的形状，且**只画在边框盒形状之外**。
+        · 平移量比外边距多一个 10px（本条圆角半径现在是 0，这 10px 只是"多推远一点"，
+          写大无害：多出来的部分落在 .page 的 overflow-x 裁剪区之外，本来就看不见）。
+        · 中间（本行自身）一个像素都不覆盖 —— 三个 tab 与选中下划线都不受影响。
         · 不建层叠上下文 / 不建包含块 / 阴影不参与命中测试 → 三段 tab 的点击与
           <wd-popup> / <wd-toast> 的包含块都不受影响（铁律 2），**不需要** pointer-events。
         · 颜色取 --kean-msg-bg（页面底色语义：浅 #f5f6f8 / 深 #111113，与:284 的
           .page.kean-msg 同一个值）→ 浅/深两态、不滚动时这条底衬完全看不出来。
           壁纸态该令牌是 transparent（design-tokens.css:280/290），所以第六节那条
-          壁纸规则里另给一次实色（同一个 rgba(12,18,34,0.88)）。 */
+          壁纸规则里另给一次实色（同一个 rgba(12,18,34,0.88)）。
+     ⚠️ tab 区下方那条**整宽 1px 分隔线**走的是另一条路（页面 scoped 的
+        `.msg-tabs::after`）：它是"故意画在最上层的一条 1px 不透明线"，不是铺底，
+        所以不受上面这条限制；同时带 pointer-events: none，不会把 tab 的点击吃掉。 */
   box-shadow:
     calc(-1 * var(--kean-sp-4) - 10px) 0 0 0 var(--kean-msg-bg),
     calc(var(--kean-sp-4) + 10px) 0 0 0 var(--kean-msg-bg);
@@ -416,28 +463,29 @@ uni-page[data-page="pages/message/index"] uni-page-body {
 .kean-msg .msg-tab {
   display: flex;
   position: relative;
-  flex: 1;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
   gap: var(--kean-sp-1);
-  height: 36px;
+  height: 44px;
   min-width: 0;
-  border-radius: 8px;
-  color: var(--kean-muted);
-  font-size: var(--kean-fs-t4);
+  border-radius: 0;
+  color: var(--kean-t3);
+  font-size: 15px;
   line-height: 1;
-  transition: color 0.16s ease, background-color 0.16s ease;
+  transition: color 0.16s ease;
 }
 
-/* 选中：白底 + 主色字（**不是**主色渐变胶囊，也不是玻璃） */
+/* 选中：**深色字 + 加粗**（没有胶囊、没有底色），下划线在页面 scoped 的
+   `.msg-tab--on .msg-tab__label::after`（贴着文字、不是整档宽）。 */
 .kean-msg .msg-tab--on {
-  background-color: var(--kean-card);
-  color: var(--kean-primary-active);
-  font-weight: var(--kean-fw-strong);
+  background-color: transparent;
+  color: var(--kean-t1);
+  font-weight: var(--kean-fw-title);
 }
 
-/* 未读小点：6px 主色圆点（**不是**红色） */
+/* 未读小点：5px（页面 scoped 定的尺寸）主色圆点（**不是**红色） */
 .kean-msg .msg-tab__dot {
   flex-shrink: 0;
   width: 6px;
@@ -447,7 +495,8 @@ uni-page[data-page="pages/message/index"] uni-page-body {
 }
 
 /* 第二层筛选 chip（申请与履约档）：横向可滚，**不换行** —— 换行会让列表首屏被挤掉。
-   视觉与上面的三档条同一支笔（浅灰底 + 主色字），不另起一套颜色。 */
+   本轮视觉：**选中 = 实心主色底 + 白字**，未选 = 白底/极浅底 + 深灰字 + 极浅边框
+   （与三档 tab 的"纯文字"区分开：一层是文字，二层才是胶囊）。 */
 .kean-msg .msg-chips {
   display: flex;
   box-sizing: border-box;
@@ -466,21 +515,24 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   box-sizing: border-box;
   gap: 6px;
   height: 30px;
-  padding: 0 var(--kean-sp-3);
+  padding: 0 14px;
+  border: 1px solid var(--kean-msg-line);
   border-radius: var(--kean-radius-pill);
-  background-color: var(--kean-line);
-  color: var(--kean-muted);
+  background-color: var(--kean-msg-row);
+  color: var(--kean-sub);
   font-size: var(--kean-fs-t4);
+  font-weight: 500;
   line-height: 1;
 }
 
 .kean-msg .msg-chip--on {
-  background-color: var(--kean-card);
-  color: var(--kean-primary-active);
+  border-color: var(--kean-primary);
+  background-color: var(--kean-primary);
+  color: #ffffff;
   font-weight: var(--kean-fw-strong);
 }
 
-/* chip 里的未读小点：跟三档条同一支笔 */
+/* chip 里的未读小点：跟三档条同一支笔；选中（主色实心）时反过来用白点 */
 .kean-msg .msg-chip__dot {
   flex-shrink: 0;
   width: 6px;
@@ -489,8 +541,14 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   background-color: var(--kean-primary);
 }
 
-/* 说明条 + 「全部已读」：一行 12px 辅助字，右侧是主色文字按钮。
-   ⚠️ 这里同样**没有** backdrop-filter（改版前的说明条不是玻璃条）。 */
+.kean-msg .msg-chip--on .msg-chip__dot {
+  background-color: #ffffff;
+}
+
+/* 顶部提示条（本轮视觉）：主色极浅底的圆角卡 = 34px 圆角图标块 + 标题/副标题 + 右箭头。
+   ⚠️ 这里同样**没有** backdrop-filter。
+   数据来源见 pages/message/index.vue 的 hintTarget / hintTitle / hintSubtitle：
+   **完全复用**现有未读计数 + 已加载列表里最新一条未读通知的标题。 */
 .kean-msg .msg-hintbar {
   display: flex;
   position: relative;
@@ -499,30 +557,50 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   box-sizing: border-box;
   gap: var(--kean-sp-3);
   margin: 0 var(--kean-sp-4);
-  padding: var(--kean-sp-2) var(--kean-sp-3);
+  padding: var(--kean-sp-3);
   border-radius: var(--kean-radius-sm);
-  background-color: var(--kean-line);
+  background-color: rgba(77, 128, 240, 0.08);
 }
 
+/* 图标块：主色 16% 淡底 + 主色图标（图标本体是 wd-icon，尺寸由页面 scoped 的
+   .msg-hintbar__ico 的 font-size: 18px 继承下去） */
+.kean-msg .msg-hintbar__ico {
+  color: var(--kean-primary);
+  background-color: rgba(77, 128, 240, 0.16);
+}
+
+/* 标题（条数）：14px 半粗深色，单行 */
 .kean-msg .msg-hintbar__text {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
-  color: var(--kean-t3);
-  font-size: var(--kean-fs-t5);
-  line-height: var(--kean-lh-t5);
+  color: var(--kean-t1);
+  font-size: 14px;
+  font-weight: var(--kean-fw-strong);
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.kean-msg .msg-hintbar__link {
-  flex-shrink: 0;
-  color: var(--kean-primary-ink);
-  font-size: var(--kean-fs-t4);
-  font-weight: var(--kean-fw-strong);
+/* 副标题（= 最新一条未读通知的标题）：12px 浅灰，**最多 1 行** */
+.kean-msg .msg-hintbar__sub {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--kean-t3);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* 列表容器：一整块行底（不是一卡一行），靠分隔线切分，滚动手感最稳 */
+.kean-msg .msg-hintbar__arrow {
+  flex-shrink: 0;
+  color: var(--kean-t3);
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* 列表容器：通知档里每一行是**独立白卡**（间隔 10px，见 .msg-notice），
+   会话档仍是一整块行底 + 分隔线。容器只管滚动与尾部安全区。 */
 .kean-msg .msg-list {
   display: flex;
   position: relative;
@@ -637,7 +715,7 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   overflow: hidden;
   color: var(--kean-t1);
   font-size: var(--kean-fs-t3);
-  font-weight: 400;
+  font-weight: var(--kean-fw-strong);
   line-height: var(--kean-lh-t4);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -646,7 +724,7 @@ uni-page[data-page="pages/message/index"] uni-page-body {
 .kean-msg .msg-chat__time {
   flex-shrink: 0;
   color: var(--kean-t3);
-  font-size: var(--kean-fs-t5);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: var(--kean-lh-t5);
 }
@@ -705,15 +783,17 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   color: var(--kean-msg-preview-strong);
 }
 
-/* 未读数字徽标：18px 主色渐变胶囊 + 白字；99+ 在模板里截断 */
+/* 未读数字徽标：20px 主色（渐变）胶囊 + 白字；99+ 在模板里截断。
+   ⚠️ 会话行的未读**同时**有"昵称加粗 + 预览提灰 + 徽标"三层，
+   与通知卡的"只用一枚圆点"是两套口径（会话行没有圆点、通知行没有徽标）。 */
 .kean-msg .msg-chat__badge {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  min-width: 18px;
-  height: 18px;
+  min-width: 20px;
+  height: 20px;
   padding: 0 6px;
   border-radius: var(--kean-radius-pill);
   background-color: var(--kean-grad-from);
@@ -722,7 +802,7 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   font-size: 10px;
   font-weight: var(--kean-fw-title);
   font-variant-numeric: tabular-nums;
-  line-height: 18px;
+  line-height: 20px;
   box-shadow: 0 4px 10px -6px rgba(58, 66, 216, 0.6);
 }
 
@@ -752,9 +832,15 @@ uni-page[data-page="pages/message/index"] uni-page-body {
 /* ===========================================================================
  * 三 · 通知行（A/B/C/D 节落地）
  * ---------------------------------------------------------------------------
- * 形状上与 .msg-chat 完全区分：左端是 44px **方形圆角** 图标块 + 整行左侧 3px 色条。
- * 色条用 `border-left` 而不是伪元素：伪元素会与"分隔线"的 ::before 抢同一个位置，
- * 而且 border 天然不占文档流、不引入新的层。
+ * 本轮视觉：**一行一张独立白卡**（12px 圆角 / 极浅边框 / 卡片间距 10px /
+ * 左右页边距 16px；几何在 pages/message/index.vue 的 scoped 样式里）。
+ * 底色关系：页面底色是 --kean-msg-bg（浅 #f5f6f8 / 深 #111113），
+ * 卡片是 --kean-msg-row（浅 #ffffff / 深 #1c1c1e）—— 卡片永远比底色亮，
+ * 深色模式下自动反转，三个皮肤全部走现有令牌，**没有新颜色**。
+ * ⚠️ 与 .msg-chat（会话行）的形状区分仍在：通知卡左端是 42px **方形圆角**图标块，
+ *    会话行左端是 44px **圆形**头像，且会话行**不**做成卡片（通栏列表 + 分隔线）。
+ * ⚠️ 上一版的"整行左侧 3px 语义色条"已随本轮改版去掉：类型识别交给图标块
+ *    （语义色 12% 底 + 同色线性图标），列表里不再出现一列彩色竖条。
  * =========================================================================== */
 .kean-msg .msg-notice {
   display: flex;
@@ -762,47 +848,29 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   align-items: flex-start;
   box-sizing: border-box;
   gap: var(--kean-sp-3);
-  padding: 12px var(--kean-sp-4) 12px 13px;
-  border-left: 3px solid var(--kean-msg-tint);
+  border: 1px solid var(--kean-msg-line);
+  border-radius: var(--kean-radius-sm);
   background-color: var(--kean-msg-row);
-}
-
-.kean-msg .msg-notice + .msg-notice::before,
-.kean-msg .msg-day + .msg-notice::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background-color: var(--kean-msg-line);
-  pointer-events: none;
 }
 
 .kean-msg .msg-notice:active {
   background-color: rgba(77, 128, 240, 0.08);
 }
 
-/* 图标块：44px 方形圆角 + 语义色 12% 底 + 22% 描边 + 24px 线性图标 */
+/* 图标块：42px 方形圆角 + 语义色 12% 底 + 21px 线性图标（尺寸见页面 scoped，这里只管色） */
 .kean-msg .msg-notice__tile {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--kean-msg-tile-border);
   border-radius: var(--kean-radius-sm);
   background-color: var(--kean-msg-tile-bg);
 }
 
 .kean-msg .msg-notice__ico {
-  width: 24px;
-  height: 24px;
   background-repeat: no-repeat;
   background-position: center;
-  background-size: 24px 24px;
 }
 
 .kean-msg .msg-notice__main {
@@ -810,37 +878,53 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   min-width: 0;
 }
 
+/* 标题行：未读圆点 + 标题（单行省略）。时间已经搬到右列（.msg-notice__aside） */
 .kean-msg .msg-notice__top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--kean-sp-2);
+  gap: 6px;
 }
 
 .kean-msg .msg-notice__title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   color: var(--kean-t1);
   font-size: var(--kean-fs-t3);
-  font-weight: 400;
+  font-weight: var(--kean-fw-strong);
   line-height: var(--kean-lh-t4);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 未读：标题加粗（与 C 节一致；已读保持 400） */
-.kean-msg .msg-notice--unread .msg-notice__title {
-  font-weight: var(--kean-fw-title);
-}
+/* ⚠️ 未读**不再**加粗标题：按设计稿，未读只有"标题左侧一枚 7px 圆点"这一个标记
+   （见页面 scoped 的 .msg-notice__unread-dot），同一个状态不编码两次。
+   所以这里没有 .msg-notice--unread .msg-notice__title 规则 ——
+   模板上的 `.msg-notice--unread` 类**保留**下来当钩子（现在没有样式消费者），
+   以后要按整行做未读态时直接用它，不必再回模板加类。 */
 
 .kean-msg .msg-notice__time {
   flex-shrink: 0;
   color: var(--kean-t3);
-  font-size: var(--kean-fs-t5);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: var(--kean-lh-t5);
 }
 
-/* 正文：最多两行（长举报处理结果不漏出列表），语义色结果行单独一档 */
+/* 右列：时间在上、箭头 › 在下（设计稿口径，两者同一列、右对齐） */
+.kean-msg .msg-notice__aside {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.kean-msg .msg-notice__chevron {
+  flex-shrink: 0;
+  color: var(--kean-t3);
+}
+
+/* 描述：13px 浅灰、**最多 2 行**、超出省略；里面的对象名（「…」）单独加深 */
 .kean-msg .msg-notice__body {
   display: -webkit-box;
   margin-top: 4px;
@@ -852,6 +936,12 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* 描述里的对象名（后端把课程名/对象名统一写在「」/“”里）：
+   只加深颜色，不改字号字重，仍然是一整句文本流（外层 2 行省略照旧生效）。 */
+.kean-msg .msg-notice__lead-strong {
+  color: var(--kean-t1);
 }
 
 /* 举报处理结果：**不截断**（那是用户要看的结论），逐行展示 */
@@ -895,20 +985,12 @@ uni-page[data-page="pages/message/index"] uni-page-body {
   white-space: nowrap;
 }
 
-/* 「查看详情 ›」：不可跳转的通知在列表里给的暗示（原来就有，这里只统一字阶）。
-   ⚠️ flex-shrink 也写在这里（不写进页面 scoped）：页面 scoped 的 `.msg-notice__more[data-v-x]`
-   特异性是 0,2,0，会**盖掉**本文件 0,2,0 的 color —— 同一处的两个属性分居两表，
-   以后改色的人只会改一处然后发现"没生效"。一个类一个归属地。 */
-.kean-msg .msg-notice__more {
-  flex-shrink: 0;
-  color: var(--kean-primary-ink);
-  font-size: var(--kean-fs-t5);
-  line-height: var(--kean-lh-t5);
-}
+/* ⚠️ 上一版的「查看详情 ›」文字已删（本轮改版：每张卡片右列都有一枚统一的箭头 ›，
+   见 .msg-notice__chevron）。原来这里的 `.msg-notice__more` 三条规则（含深色/壁纸各一条）
+   一并删除，页面模板与脚本里也不再引用它。 */
 
-/* 行尾元信息：左侧是类型标签（申请 / 履约 / 评价 / 变动 / 举报 / 系统），
-   右侧是「查看详情 ›」（只有不可跳转的通知才有）。
-   ⚠️ 类型标签用**文字**而不是第二种颜色：颜色已经用于图标块与色条，
+/* 行尾元信息：左侧是类型标签（申请 / 履约 / 评价 / 变动 / 举报 / 系统）。
+   ⚠️ 类型标签用**文字**而不是第二种颜色：颜色已经用于图标块，
    再来一层彩色文字，列表会变成调色板；11px 辅助灰 + 与筛选 chip 同名，
    正好把"这条属于哪一档"和顶部筛选对上。 */
 .kean-msg .msg-notice__meta {
@@ -935,11 +1017,14 @@ uni-page[data-page="pages/message/index"] uni-page-body {
 }
 
 /* ===========================================================================
- * 三·补 · 通知类型：语义色 + 左侧色条（B 节落地；唯一权威表见文件头 B 节）
+ * 三·补 · 通知类型：语义色（B 节落地；唯一权威表见文件头 B 节）
  * ---------------------------------------------------------------------------
- * 每个类型两个变量：--kean-msg-tint（3px 色条）与 --kean-msg-tile-*（图标块底/边）。
- * ⚠️ tint 必须写 `!important` 吗？不。它作用在**行自身**的 --kean-msg-tint 上，
- *    而行的 border-left 只在 0,2,0 的规则里读它，没有任何对手，所以不用 !important。
+ * 每个类型两个变量：--kean-msg-tint（本轮改版后**已无消费者**：整行左侧的 3px 色条
+ * 已随"一行一张卡"的设计去掉，类型只由图标块表达）与 --kean-msg-tile-*（图标块底）。
+ * ⚠️ tint 变量**保留**（不删）：它是"类型 → 语义色"的唯一一张表，值与图标同源，
+ *    下一轮若要再把颜色用回别处（角标、筛选高亮），直接读它，不要另起一套色。
+ * ⚠️ 图标块本身只读 --kean-msg-tile-bg；浅色/深色/壁纸三态下这些 12% 的淡底都在
+ *    各自的底色上成立，所以不需要按皮肤换值。
  * =========================================================================== */
 .kean-msg .msg-notice--apply {
   --kean-msg-tint: var(--kean-primary);
@@ -1101,18 +1186,35 @@ uni-page[data-page="pages/message/index"] uni-page-body {
  * =========================================================================== */
 
 /* --- 深色 --- */
-/* 三档条与筛选 chip 在深色下**一条都不用写**：它们的取值全部走 theme-vars.css 的
-   令牌（--kean-line #2b2b2e / --kean-card #1c1c1e / --kean-muted #8a8f99 /
-   --kean-primary-active #4d80f0），而 `html.kean-dark page, html.kean-dark .page`
-   那条规则已经把这四个令牌整体换过档了。
-   ⚠️ 刻意不在这里给选中项加描边：加 border 会让深色档的胶囊比浅色档高 2px，
-   切换主题时三档条会跳一下 —— 一致性比"再多一点对比"重要。 */
+/* 三档 tab 与筛选 chip 在深色下几乎不用单写：tab 的底色是 --kean-msg-bg（深色 #111113）、
+   chip 的底/边/字走 --kean-msg-row / --kean-msg-line / --kean-sub，全部由
+   design-tokens.css 第 10 节与 theme-vars.css 的 `html.kean-dark` 分支换过档了。
+   这里只补**字色不是令牌**的那几处（本文件的既有做法）。 */
+html.kean-dark .page.kean-msg .msg-hintbar {
+  background-color: rgba(77, 128, 240, 0.14);
+}
+
+html.kean-dark .page.kean-msg .msg-hintbar__ico {
+  background-color: rgba(77, 128, 240, 0.22);
+}
+
 html.kean-dark .page.kean-msg .msg-hintbar__text {
+  color: #f2f3f5;
+}
+
+html.kean-dark .page.kean-msg .msg-hintbar__sub,
+html.kean-dark .page.kean-msg .msg-hintbar__arrow {
   color: rgba(242, 243, 245, 0.6);
 }
 
-html.kean-dark .page.kean-msg .msg-hintbar__link {
-  color: var(--kean-primary);
+/* 选中的筛选 chip：浅色态用 --kean-primary(#4d80f0)，深色态**改用 --kean-primary-active**
+   （深色态该令牌 = #4d80f0，而 --kean-primary 在深色下被提亮成 #6e9bff）——
+   白字压在 #6e9bff 上只有约 2.5:1，读不清；#4d80f0 上是约 3.6:1，与浅色态、以及
+   本项目主按钮（白字 + 主色）**完全同一口径**。语义没变，只是不跟着提亮。 */
+html.kean-dark .page.kean-msg .msg-chip--on {
+  border-color: var(--kean-primary-active);
+  background-color: var(--kean-primary-active);
+  color: #ffffff;
 }
 
 html.kean-dark .page.kean-msg .msg-skel__avatar,
@@ -1123,12 +1225,19 @@ html.kean-dark .page.kean-msg .msg-skel__line {
 
 html.kean-dark .page.kean-msg .msg-day,
 html.kean-dark .page.kean-msg .msg-end,
-html.kean-dark .page.kean-msg .msg-notice__type {
+html.kean-dark .page.kean-msg .msg-notice__type,
+html.kean-dark .page.kean-msg .msg-notice__chevron {
   color: rgba(242, 243, 245, 0.6);
 }
 
-html.kean-dark .page.kean-msg .msg-notice__more {
-  color: var(--kean-primary);
+/* ⚠️ 卡片标题与描述里"加深的对象名"用的是 --kean-t1：那是**浅色态专有**的令牌
+   （theme-vars.css 的深色分支只换 --kean-text/--kean-sub/--kean-muted/--kean-line），
+   在深色卡（#1c1c1e）上会变成深蓝字压深底。壁纸态一直有这条覆盖（见下），
+   深色态原来漏了 —— 本轮补上，取值与壁纸态同向、与 .msg-sheet 的深色字一致。 */
+html.kean-dark .page.kean-msg .msg-chat__name,
+html.kean-dark .page.kean-msg .msg-notice__title,
+html.kean-dark .page.kean-msg .msg-notice__lead-strong {
+  color: #f2f3f5;
 }
 
 html.kean-dark .page.kean-msg .msg-chat__avatar--text {
@@ -1142,9 +1251,18 @@ html.kean-dark .page.kean-msg .msg-chat__avatar--text {
    ⚠️ 特异性用 html 前缀提到 0,4,1，不堆 !important（铁律 1）。 */
 html .page.skinned.kean-msg .msg-tabs,
 html .page.skinned.kean-msg .msg-chip,
-html .page.skinned.kean-msg .msg-hintbar,
 html .page.skinned.kean-msg .msg-page-head__status {
   background-color: rgba(12, 18, 34, 0.34);
+}
+
+/* 顶部提示条在壁纸态是"蓝色玻璃"（基规则那条主色 8% 淡底在星空上几乎看不见） */
+html .page.skinned.kean-msg .msg-hintbar {
+  background-color: rgba(77, 128, 240, 0.22);
+}
+
+html .page.skinned.kean-msg .msg-hintbar__ico {
+  background-color: rgba(255, 255, 255, 0.16);
+  color: #9fd0ff;
 }
 
 /* ⚠️ 三档条吸顶后，底下会有列表行滚过：0.34 的深色玻璃会把滚动中的行透出来。
@@ -1175,8 +1293,10 @@ html .page.skinned.kean-msg .msg-tab {
   color: rgba(235, 244, 255, 0.76);
 }
 
+/* 选中项在壁纸态**没有**底色（三档是"纯文字 + 下划线"，与浅/深两态一致）：
+   这里只把"选中"的字色提到最亮；上一版那条 rgba(255,255,255,0.16) 的胶囊底已删。 */
 html .page.skinned.kean-msg .msg-tab--on {
-  background-color: rgba(255, 255, 255, 0.16);
+  background-color: transparent;
   color: #ffffff;
 }
 
@@ -1188,17 +1308,20 @@ html .page.skinned.kean-msg .msg-chip {
   color: rgba(235, 244, 255, 0.76);
 }
 
+/* 选中 chip：实心主色 + 白字（与浅/深两态同一口径，不用白玻璃底） */
 html .page.skinned.kean-msg .msg-chip--on {
-  background-color: rgba(255, 255, 255, 0.16);
+  border-color: var(--kean-primary);
+  background-color: var(--kean-primary);
   color: #ffffff;
 }
 
 html .page.skinned.kean-msg .msg-hintbar__text {
-  color: rgba(235, 244, 255, 0.66);
+  color: #f4f7ff;
 }
 
-html .page.skinned.kean-msg .msg-hintbar__link {
-  color: #9fd0ff;
+html .page.skinned.kean-msg .msg-hintbar__sub,
+html .page.skinned.kean-msg .msg-hintbar__arrow {
+  color: rgba(235, 244, 255, 0.66);
 }
 
 html .page.skinned.kean-msg .msg-day,
@@ -1207,12 +1330,14 @@ html .page.skinned.kean-msg .msg-end {
 }
 
 html .page.skinned.kean-msg .msg-notice__time,
+html .page.skinned.kean-msg .msg-notice__chevron,
 html .page.skinned.kean-msg .msg-chat__time {
   color: rgba(235, 244, 255, 0.6);
 }
 
 html .page.skinned.kean-msg .msg-chat__name,
-html .page.skinned.kean-msg .msg-notice__title {
+html .page.skinned.kean-msg .msg-notice__title,
+html .page.skinned.kean-msg .msg-notice__lead-strong {
   color: #f4f7ff;
 }
 
@@ -1249,10 +1374,6 @@ html .page.skinned.kean-msg .msg-notice:active {
 
 html .page.skinned.kean-msg .msg-notice__result {
   color: #ff7b7b;
-}
-
-html .page.skinned.kean-msg .msg-notice__more {
-  color: #9fd0ff;
 }
 
 html .page.skinned.kean-msg .msg-notice__type {
@@ -1358,8 +1479,11 @@ html .page.skinned.kean-msg .msg-sheet__time {
 }
 
 @media screen and (max-width: 360px) {
+  /* 窄屏只把三档 tab 从 15px 收到 13px（原来是收到 11px）：
+     本轮 tab 是页面的一级导航，15px 起步；三档在 320px 宽下也放得下
+     （约 223px），所以没必要再压到 11px 那种"看不清"的程度。 */
   .kean-msg .msg-tab {
-    font-size: var(--kean-fs-t5);
+    font-size: var(--kean-fs-t4);
   }
 
   .kean-msg .msg-chat__name {

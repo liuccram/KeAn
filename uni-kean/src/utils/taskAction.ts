@@ -45,6 +45,10 @@ export function isLiveTaskStatus(status?: string | null) {
 }
 
 export function classCountdown(task: TaskItem, now = Date.now()) {
+  const status = task.status;
+  if (!(status === "WAITING" || status === "APPLYING" || status === "MATCHED" || status === "CONFIRMED" || status === "IN_PROGRESS")) {
+    return "";
+  }
   const start = taskStartAt(task);
   const end = taskEndAt(task);
   if (start == null) {
@@ -65,17 +69,16 @@ export function classCountdown(task: TaskItem, now = Date.now()) {
     }
     return "即将上课";
   }
-  // 已过上课时间：只有「正在上课」的状态才可能出现「上课中」。
-  // 到点没人接的 WAITING/APPLYING（后端会把它们置 EXPIRED）以及终态
-  // COMPLETED/CANCELLED/EXPIRED 都只按状态展示，不再按时间硬说「上课中」。
-  if (!isLiveTaskStatus(task.status)) {
+  // 到达开课时间本身不能推断任务已进入「上课中」；必须由服务端状态 IN_PROGRESS 确认。
+  // MATCHED / CONFIRMED 继续按其真实状态显示，终态也不因本地时钟而改变文案。
+  if (status !== "IN_PROGRESS") {
     return "";
   }
   if (end != null && now < end) {
     const minutes = Math.max(1, Math.ceil((end - now) / 60000));
     return `上课中 · 还有 ${minutes} 分钟下课`;
   }
-  return "已下课";
+  return "";
 }
 
 export function isOngoingTask(task: TaskItem, now = Date.now()) {

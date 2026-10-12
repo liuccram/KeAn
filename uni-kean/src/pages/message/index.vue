@@ -12,7 +12,7 @@ import ListState from "@/components/ListState.vue";
 import PageBackdrop from "@/components/PageBackdrop.vue";
 import { usePageWallpaper } from "@/composables/usePageWallpaper";
 import { useUserStore } from "@/store/user";
-import { formatNoticeDay, formatNoticeTime, formatRelativeStamp } from "@/utils/format";
+import { formatNoticeDay, formatNoticeTime, formatRelativeStamp, pad } from "@/utils/format";
 import { emojiToPlainText, splitEmoji, type EmojiSegment } from "@/utils/emoji";
 import { t, tf } from "@/utils/i18n";
 import { refreshMessageBadge } from "@/utils/messageBadge";
@@ -42,6 +42,7 @@ const tab = ref<TabKey>("task");
 const taskFilter = ref<"all" | TaskKind>("all");
 const pickedBusy = ref(false);
 const list = ref<NotificationItem[]>([]);
+const noticeTotal = ref(0);
 const chats = ref<ChatSessionItem[]>([]);
 /**
  * 会话列表的「有新消息」辅助提示：用 lastSeqNo 与本地已看位点比较。
@@ -67,12 +68,20 @@ const freshChats = computed(() => {
 });
 const loading = ref(false);
 const chatLoading = ref(false);
-const error = ref("");
+const noticeError = ref("");
+const chatError = ref("");
+let noticeRequestId = 0;
+let chatRequestId = 0;
 const finished = ref(false);
 const page = ref(1);
 const dots = ref({ system: 0, task: 0, chat: 0 });
 const currentUnread = computed(() => tab.value === "system" ? dots.value.system : tab.value === "task" ? dots.value.task : dots.value.chat);
-const messageDescription = computed(() => tab.value === "system" ? "账号提醒与平台公告" : tab.value === "task" ? "跟进每一次申请与代课进展" : "和一起互助的同学保持联系");
+// 大标题下的副标题：三档各一句，全部走 i18n（msgSubtitleSystem / msgSubtitleTask / msgSubtitleChat）
+const messageDescription = computed(() =>
+  tab.value === "system" ? t("msgSubtitleSystem") : tab.value === "task" ? t("msgSubtitleTask") : t("msgSubtitleChat")
+);
+const searchOpen = ref(false);
+const searchQuery = ref("");
 // 顶部标题栏改成页面内自绘（pages.json 的 navigationStyle: custom）后，刘海屏要自己
 // 让出状态栏高度；取值与 pages/mine/index.vue 完全同一套（同一行、同一个 20 兜底）。
 const statusBarHeight = uni.getSystemInfoSync().statusBarHeight || 20;
@@ -109,26 +118,26 @@ const taskKindStats = computed(() => {
     unread: list.value.filter((item) => taskKind(item) === kind.key && item.readFlag !== 1).length
   }));
 });
-
-const groupedTaskNotices = computed(() => {
-  return taskKindStats.value
-    .map((kind) => ({
-      ...kind,
-      items: list.value.filter((item) => taskKind(item) === kind.key)
-    }))
-    .filter((section) => section.items.length);
-});
+const taskHeading = computed(() => taskFilter.value === "all" ? "最近动态" : `${TASK_KINDS.find((kind) => kind.key === taskFilter.value)?.label || ""}消息`);
 
 const visibleNotices = computed(() => {
-  if (tab.value !== "task" || taskFilter.value === "all") {
-    return list.value;
-  }
-  return list.value.filter((item) => taskKind(item) === taskFilter.value);
+  const byKind = tab.value !== "task" || taskFilter.value === "all"
+    ? list.value
+    : list.value.filter((item) => taskKind(item) === taskFilter.value);
+  const query = searchQuery.value.trim().toLocaleLowerCase();
+  return query ? byKind.filter((item) => `${item.title || ""} ${item.content || ""}`.toLocaleLowerCase().includes(query)) : byKind;
 });
+
+const visibleChats = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase();
+  return query ? chats.value.filter((item) => `${item.peerNickname || ""} ${previewTextOf(item)}`.toLocaleLowerCase().includes(query)) : chats.value;
+});
+const narrowedNoticeList = computed(() => Boolean(searchQuery.value.trim()) || (tab.value === "task" && taskFilter.value !== "all"));
+const filteredNoticeNeedsMore = computed(() => narrowedNoticeList.value && !finished.value && !loading.value);
 
 // 通知 Tab（系统 / 申请与履约）当前是否有内容可显示，交给 ListState 决定是加载中、失败还是空态
 const noticeEmpty = computed(() =>
-  tab.value === "system" ? list.value.length === 0 : visibleNotices.value.length === 0
+  visibleNotices.value.length === 0 && (Boolean(noticeError.value) || !narrowedNoticeList.value || finished.value)
 );
 
 const noticeEmptyText = computed(() => {
@@ -139,7 +148,33 @@ const noticeEmptyText = computed(() => {
 });
 
 /* ===========================================================================
- * 通知的「视觉类型」（图标 + 语义色 + 左侧 3px 色条）
+ * 顶部提示条（浅蓝圆角卡）的数据来源：**完全复用现有数据，没有新数据源**
+ * ---------------------------------------------------------------------------
+ * · 条数  = currentUnread（= dots.system / dots.task，来自两个既有的未读接口，
+ *           口径与出现条件一个字都没动）；
+ * · 副标题 = 当前列表里**最新一条未读通知**的标题（列表本身就是后端的时间倒序，
+ *           所以第一条未读就是最新那条），文案走列表同一个 noticeTextOf()
+ *           （定型文案 + 花括号兜底），不另外解析一遍；
+ * · 点击   = 打开那条未读通知（复用 openItem 的既有行为：标记已读 + 跳任务详情/弹层）。
+ *           若未读数来自服务端全量、而本页还没翻到那一条（列表里找不到未读项），
+ *           则回落到原有行为「全部已读」（handleReadAll）——
+ *           **不新造页面、不凭空跳转、不新增接口**。
+ * =========================================================================== */
+const hintTarget = computed<NotificationItem | null>(() => {
+  if (tab.value === "chat" || (tab.value === "task" && taskFilter.value !== "all")) {
+    return null;
+  }
+  return list.value.find((item) => item.readFlag !== 1) || null;
+});
+const hintTitle = computed(() =>
+  tf(tab.value === "system" ? "msgHintSystem" : "msgHintTask", {
+    count: currentUnread.value > 99 ? "99+" : String(currentUnread.value)
+  })
+);
+const hintSubtitle = computed(() => (hintTarget.value ? noticeTextOf(hintTarget.value).title : ""));
+
+/* ===========================================================================
+ * 通知的「视觉类型」（决定图标块里画哪一枚图标、以及那一块的语义色）
  * ---------------------------------------------------------------------------
  * ⚠️ 判定只看 type / bizType 两个**后端字段**，顺序不可换（见 design-messages.css B 节）：
  *    先 REPORT（它是 SYSTEM 的子集，放后面会被吞），再 REVIEW，再 APPLICATION，
@@ -147,8 +182,11 @@ const noticeEmptyText = computed(() => {
  * ⚠️ 这里比原来的视觉分档多了一档 "report"：举报处理结果（type=SYSTEM + bizType=REPORT）
  *    原来没有任何类型标记（taskKind 会把它们兜底归进"履约"），而它们需要独立的
  *    危险色 + 旗帜图标（"你的举报已处理/未予处理"是强结论，不该和履约混在一起看）。
- *    业务分档 taskKind() **一个字都没动** —— 筛选 chip 的数量、归属与排序因此完全不变，
- *    只有 taskFilter==='all' 时的分区标题仍是原来那四档（那是业务分档，不是视觉分档）。
+ *    业务分档 taskKind() **一个字都没动** —— 筛选 chip 的数量、归属与排序因此完全不变。
+ * ⚠️ 事实核对：列表**只有一套**分组（按日期：今天/昨天/更早），加一条小节标题
+ *    （系统档「系统通知」/ 具体 chip「X消息」/「全部」为「最近动态」）。
+ *    代码里**没有**"申请/履约/评价/变动 四个业务分区"的实现 ——
+ *    本轮只改视觉，**没有**去新写分组逻辑（要加得单独立项）。
  * =========================================================================== */
 function noticeVisual(item: NotificationItem): NoticeVisual {
   const biz = String(item.bizType || "").toUpperCase();
@@ -202,29 +240,88 @@ function noticeTodo(item: NotificationItem) {
   return visual === "apply" || visual === "review" || visual === "change";
 }
 
-/** D 节：通知按日期分桶（今天 / 昨天 / 更早），组内才显示时间 */
+/**
+ * D 节：通知按日期分桶。
+ *
+ * <p>三档口径（今天 / 昨天 / 更早）不变，**只把「更早」那一档的标题从「更早」改成具体日期**：</p>
+ * <ul>
+ *   <li>今天 → 标题「今天」（t("msgDayToday")）；</li>
+ *   <li>昨天 → 标题「昨天」（t("msgDayYesterday")）；</li>
+ *   <li>⭐ 更早 → **按自然日再拆成若干小组，每组标题就是那一天**（同一年「10月8日」/
+ *       跨年「2025年12月3日」）。理由是「更早」往往会横跨很多天，整组只挂一个日期
+ *       （无论取最新还是最旧那条）都会把其余日期指错 —— 那正是用户说的"须标注日期"的反面。
+ *       注意这**不是**三档变多档：今天 / 昨天两档仍各只有一个标题，
+ *       只有「更早」这一档内部展开成「一天一组」。</li>
+ * </ul>
+ *
+ * <p>⚠️ 这里只重建**呈现用的分组**，取数 / 分页 / 排序 / 未读一行未动：
+ *    · 入参仍是原来的 {@link visibleNotices}（筛选与搜索的结果，顺序不动）；
+ *    · 只是把 list.value 里的 item 按「已有的 createdAt 字段」重新归堆，
+ *      不重新请求、不重排、不改 readFlag，也不产生任何新的加载分支；
+ *    · 分组键是**机器字符串**（bucket:today / bucket:yesterday / 2026-10-08），
+ *      与显示文案解耦 —— 切语言不会让分组重算成另一批键，v-for 的 :key 也始终唯一。</p>
+ */
 const noticeDayGroups = computed(() => {
-  const buckets: { key: "today" | "yesterday" | "earlier"; items: NotificationItem[] }[] = [];
-  const index = { today: -1, yesterday: -1, earlier: -1 };
-  visibleNotices.value.forEach((item) => {
-    const key = formatNoticeDay(item.createdAt);
-    if (index[key] < 0) {
+  const buckets: { key: string; items: NotificationItem[] }[] = [];
+  const index: Record<string, number> = {};
+  const push = (key: string, item: NotificationItem) => {
+    if (index[key] === undefined) {
       index[key] = buckets.length;
       buckets.push({ key, items: [] });
     }
     buckets[index[key]].items.push(item);
+  };
+  // 两个固定档用**稳定前缀**当分组键（bucket:today / bucket:yesterday），
+  // 「更早」那些天用日期键（2026-10-08）。这样键永远是机器字符串、不与任何显示文案相撞。
+  const TODAY_KEY = "bucket:today";
+  const YESTERDAY_KEY = "bucket:yesterday";
+  const dayKeyOf = (iso?: string | null) => {
+    const date = new Date(String(iso || ""));
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+    // 同一年内不带年（"2026-10-08"），跨年带年（"2025-12-03"）——
+    // 与 format.ts 的 monthDayText 同一套口径，只在本地分组键里用一次。
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  };
+  visibleNotices.value.forEach((item) => {
+    const bucket = formatNoticeDay(item.createdAt);
+    if (bucket === "today") {
+      push(TODAY_KEY, item);
+      return;
+    }
+    if (bucket === "yesterday") {
+      push(YESTERDAY_KEY, item);
+      return;
+    }
+    // 更早：一天一组。日期解析不出来（脏数据）时退回一个不再细分的兜底组，
+    // 标题走下面 noticeDayLabel 的 msgDayEarlier 分支，绝不显示 "NaN"。
+    push(dayKeyOf(item.createdAt) || "bucket:earlier", item);
   });
   return buckets;
 });
 
-function noticeDayLabel(key: "today" | "yesterday" | "earlier") {
-  if (key === "today") {
+/**
+ * 分组标题：今天 / 昨天走既定文案；其余（更早那一档）把分组键当日期解析后本地化。
+ * ⚠️ 带占位符的日期文案一律走 {@link tf}（msgMonthDay / msgYearMonthDay 都带 {mon}/{d}/{y}）。
+ */
+function noticeDayLabel(key: string) {
+  if (key === "bucket:today") {
     return t("msgDayToday");
   }
-  if (key === "yesterday") {
+  if (key === "bucket:yesterday") {
     return t("msgDayYesterday");
   }
-  return t("msgDayEarlier");
+  const matched = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!matched) {
+    return t("msgDayEarlier");
+  }
+  const year = Number(matched[1]);
+  const mon = String(Number(matched[2]));
+  const day = String(Number(matched[3]));
+  return year === new Date().getFullYear()
+    ? tf("msgMonthDay", { mon, d: day })
+    : tf("msgYearMonthDay", { y: String(year), mon, d: day });
 }
 
 /* ===========================================================================
@@ -308,6 +405,7 @@ function previewSegmentsOf(item: ChatSessionItem): EmojiSegment[] {
 // 当前 Tab 的加载状态：通知与私信是两次独立请求，不能共用一个 loading，
 // 否则切换 Tab 时正在飞行的那次请求会把另一个 Tab 的加载挡住，最后显示成空态
 const listLoading = computed(() => (tab.value === "chat" ? chatLoading.value : loading.value));
+const currentError = computed(() => (tab.value === "chat" ? chatError.value : noticeError.value));
 
 /* ===========================================================================
  * G 节：通知文案的「定型渲染」
@@ -614,9 +712,9 @@ function roleOf(item: NotificationItem): NoticeRole {
 
 /** 同一 title 的「按角色分支」表条目 */
 interface RoleCopy {
-  publisher?: NoticeTemplate;
-  applicant?: NoticeTemplate;
-  neutral?: NoticeTemplate;
+  publisher?: Pick<NoticeTemplate, "titleKey" | "bodyKey">;
+  applicant?: Pick<NoticeTemplate, "titleKey" | "bodyKey">;
+  neutral?: Pick<NoticeTemplate, "titleKey" | "bodyKey">;
 }
 
 /** 取第一个非空值（用来把"没抽到"从空串统一收敛成一个值，避免占位符被替换成空） */
@@ -683,7 +781,7 @@ function roleParams(item: NotificationItem, extra: Record<string, string> = {}):
   return assembleParams(params);
 }
 
-function pickRoleCopy(copy: RoleCopy, role: NoticeRole): NoticeTemplate | null {
+function pickRoleCopy(copy: RoleCopy, role: NoticeRole): Pick<NoticeTemplate, "titleKey" | "bodyKey"> | null {
   return copy[role] || copy.neutral || null;
 }
 
@@ -1104,6 +1202,46 @@ function noticeTextOf(item: NotificationItem): NoticeText {
   };
 }
 
+/* ===========================================================================
+ * 描述行的「对象名加深」：设计稿里描述是「《面向对象C》· 1位用户申请了…」这种
+ * 「对象名深色 + 后半句灰」的形态。我们**不新增任何数据**，只是把 noticeTextOf()
+ * 已经产出的那一句按引号（后端把对象名统一包在「」/“”里，见 objectName()）切成几段，
+ * 引号里的那一段单独加深 —— 拆不出引号的（绝大多数系统通知）就原样一整段灰字，
+ * 与改动前逐字一致。仍是单行文本流，外面那层 2 行省略不受影响。
+ * =========================================================================== */
+type LeadSegment = { text: string; strong: boolean };
+const OBJECT_QUOTE_RE = /(「[^」]*」|“[^”]*”)/;
+
+function splitLead(lead: string): LeadSegment[] {
+  const source = text(lead);
+  if (!source) {
+    return [];
+  }
+  return source
+    .split(OBJECT_QUOTE_RE)
+    .filter((part) => Boolean(part))
+    .map((part) => ({ text: part, strong: OBJECT_QUOTE_RE.test(part) }));
+}
+
+/** 每条通知只切一次（与 noticeTexts 同一份数据源，模板里只读 map） */
+const noticeLeadSegments = computed(() => {
+  const map = new Map<number, LeadSegment[]>();
+  noticeTexts.value.forEach((one, id) => {
+    map.set(id, splitLead(one.lead));
+  });
+  return map;
+});
+
+function leadSegmentsOf(item: NotificationItem): LeadSegment[] {
+  const hit = noticeLeadSegments.value.get(item.id);
+  if (hit) {
+    return hit;
+  }
+  // 列表之外的数据（与 noticeTextOf 的兜底同一个口径）：退成一整段普通文本
+  const one = noticeTextOf(item).lead;
+  return one ? [{ text: one, strong: false }] : [];
+}
+
 // 弹层里也要用同一份文案：打开时就冻结，避免列表刷新后弹层内容跟着变
 const activeTitle = ref("");
 const activeLines = ref<{ lead: string; highlights: string[] }>({ lead: "", highlights: [] });
@@ -1131,13 +1269,27 @@ function canOpenTask(item: NotificationItem): item is NotificationItem & { bizId
   return item.bizType === "TASK" || item.bizType === "REVIEW";
 }
 
-// 列表里的可点暗示：会跳走的通知本来就能点进任务，举报结果在列表里已经完整展示，都不需要「查看详情」
-function showsDetailHint(item: NotificationItem) {
-  return !canOpenTask(item) && !isHandleNotice(item);
-}
+// ⚠️ 原来这里还有一个 showsDetailHint()（只给系统通知显示「查看详情 ›」）。
+// 本轮改版后每张卡片右端都有一枚统一的箭头 ›（设计稿的口径），
+// 那句文字与之重复，已随模板一并移除；canOpenTask() 本身一字未动。
 
 function goLogin() {
   uni.navigateTo({ url: "/pages/auth/login" });
+}
+
+function goFindTasks() {
+  uni.switchTab({ url: "/pages/home/index" });
+}
+
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value;
+  if (!searchOpen.value) {
+    searchQuery.value = "";
+  }
+}
+
+function openSettings() {
+  uni.navigateTo({ url: "/pages/mine/settings" });
 }
 
 async function loadDots() {
@@ -1166,7 +1318,7 @@ async function loadNotices(reset = false) {
     list.value = [];
     return;
   }
-  if (loading.value) {
+  if (loading.value && !reset) {
     return;
   }
   if (reset) {
@@ -1174,24 +1326,36 @@ async function loadNotices(reset = false) {
     finished.value = false;
   }
   // 本次请求前列表是否为空：为空说明加载失败后没有内容可显示，交给 ListState 展示原因和重试
+  const requestId = ++noticeRequestId;
+  const requestScope = noticeScope.value;
+  const requestPage = page.value;
   const first = list.value.length === 0;
   loading.value = true;
-  error.value = "";
+  noticeError.value = "";
   try {
-    const data = await listNotifications(page.value, 20, noticeScope.value);
+    const data = await listNotifications(requestPage, 20, requestScope);
+    if (requestId !== noticeRequestId || requestScope !== noticeScope.value) {
+      return;
+    }
     const rows = data.list || [];
     list.value = reset ? rows : list.value.concat(rows);
+    noticeTotal.value = Number(data.total || 0);
     finished.value = list.value.length >= data.total;
   } catch (err) {
+    if (requestId !== noticeRequestId) {
+      return;
+    }
     const message = (err as Error).message || "加载失败";
-    error.value = message;
+    noticeError.value = message;
     // 已经有内容时只用轻提示：这时若让失败态顶掉列表，比不提示更糟
     if (!first) {
       toast.error(message);
     }
   } finally {
-    loading.value = false;
-    uni.stopPullDownRefresh();
+    if (requestId === noticeRequestId) {
+      loading.value = false;
+      uni.stopPullDownRefresh();
+    }
   }
 }
 
@@ -1201,20 +1365,29 @@ async function loadChats() {
     return;
   }
   const first = chats.value.length === 0;
+  const requestId = ++chatRequestId;
   chatLoading.value = true;
-  error.value = "";
+  chatError.value = "";
   try {
-    chats.value = await listChats();
+    const rows = await listChats();
+    if (requestId === chatRequestId) {
+      chats.value = rows;
+    }
   } catch (err) {
+    if (requestId !== chatRequestId) {
+      return;
+    }
     const message = (err as Error).message || "加载失败";
-    error.value = message;
+    chatError.value = message;
     // 已经有私信列表时只用轻提示，避免失败态把已有内容顶掉
     if (!first) {
       toast.error(message);
     }
   } finally {
-    chatLoading.value = false;
-    uni.stopPullDownRefresh();
+    if (requestId === chatRequestId) {
+      chatLoading.value = false;
+      uni.stopPullDownRefresh();
+    }
   }
 }
 
@@ -1236,11 +1409,26 @@ function switchTab(next: TabKey) {
   if (next !== "task") {
     taskFilter.value = "all";
   }
+  if (next !== "chat") {
+    list.value = [];
+    noticeTotal.value = 0;
+    noticeError.value = "";
+    page.value = 1;
+    finished.value = false;
+  }
   load(true);
 }
 
 function switchTaskFilter(next: "all" | TaskKind) {
   taskFilter.value = next;
+}
+
+function loadNextNoticePage() {
+  if (loading.value || finished.value) {
+    return;
+  }
+  page.value += 1;
+  void loadNotices(false);
 }
 
 function pickBusyTab() {
@@ -1305,6 +1493,21 @@ function openPeer(item: ChatSessionItem) {
   uni.navigateTo({ url: `/pages/mine/user?id=${item.peerUserId}` });
 }
 
+/**
+ * 顶部提示条点击：优先打开那条最新的未读通知（复用 openItem 的既有行为：
+ * 标记已读 → 能落到任务上的跳任务详情，其余弹层展示）。
+ * 列表里找不到未读项时（未读数来自服务端全量、本页分页还没翻到），
+ * 回落到原有的「全部已读」，不凭空跳转、不新增页面。
+ */
+function openHint() {
+  const target = hintTarget.value;
+  if (target) {
+    void openItem(target);
+    return;
+  }
+  void handleReadAll();
+}
+
 async function handleReadAll() {
   try {
     await markAllNotificationsRead(noticeScope.value);
@@ -1350,44 +1553,38 @@ onReachBottom(() => {
     </view>
     <template v-else>
       <view class="msg-shell">
-        <!-- 顶部标题栏（原框架导航栏，现按「我的」页的做法自绘）：
-             ⚠️ 只在登录态分支里（与下面的 .msg-page-head / .msg-tabs 同一个 v-else）——
-             原框架导航栏在未登录态也在，但本页未登录态是整屏「去登录」兜底，
-             保持与它一致的既有结构，不把标题栏塞进 guest 分支。
-             ⚠️ 它就在页面内容的滚动流里，**没有** position: fixed / sticky → 随内容一起滚走。
-             ⚠️ 它**不是**下面那层三档 tab（系统 / 申请与履约 / 私信）：三档 tab
-             （.msg-tabs）已改成 position: sticky 吸顶（规则在 styles/design-messages.css，
-             前置条件有两处、缺一不可：① 本文件 scoped .page 的 overflow-x 必须是
-             visible/clip 而不是 hidden；② styles/design-messages.css A 节里对
-             uni-page-body 的那条覆盖 —— 它是 App.vue 的 `page{overflow-x:hidden}`
-             被 uni-app H5 改写到外层包装元素上的结果，是吸顶的真正拦路虎）；
-             二层筛选 chip（.msg-chips）与它下面的一切仍然照旧跟着页面滚 —— 两层分工不同，
-             只有三档这一层吸顶。
-             文案取 pages.json 的 navigationBarTitleText「消息」，不另造文案。 -->
+        <!-- 标题、分类说明与常用入口；一级分类保持可见，二级筛选随列表滚动。 -->
         <view class="status-bar" :style="{ height: statusBarHeight + 'px' }" />
-        <view class="nav-title">消息</view>
-        <view class="msg-page-head">
-          <!-- ⚠️ 这里原本还有一个 23px 的「消息」大标题（.msg-page-head__title），
-               自绘标题栏（上面 .nav-title「消息」）加入后两者完全重复，已按用户要求移除；
-               只去掉那一行文字，eyebrow / 副标题 / 未读胶囊与整个 .msg-page-head 结构都保持原样。
-               （对应的 .msg-page-head__title 样式规则保留未删：它是全局表里的规则，
-                 删它属于额外改动，留着无引用、零运行影响。） -->
-          <view class="msg-page-head__copy"><text class="msg-page-head__eyebrow">CAMPUS CONNECTION</text><text class="msg-page-head__subtitle">{{ messageDescription }}</text></view>
-          <view class="msg-page-head__status" :class="{ 'msg-page-head__status--unread': currentUnread > 0 }"><view class="msg-page-head__status-dot" />{{ currentUnread > 0 ? `${currentUnread > 99 ? '99+' : currentUnread} 条未读` : '已读完' }}</view>
+        <view class="msg-nav">
+          <view class="msg-nav__heading">
+            <text class="msg-nav__title">消息</text>
+            <text class="msg-nav__subtitle">{{ messageDescription }}</text>
+          </view>
+          <view class="msg-nav__actions">
+            <view class="msg-nav__action" @click="toggleSearch"><wd-icon :name="searchOpen ? 'close' : 'search'" /></view>
+            <view class="msg-nav__action" @click="openSettings"><wd-icon name="setting" /></view>
+          </view>
         </view>
-        <!-- A 节：三档平级分段控件（结构 / 交互与原 tabs 完全一致；视觉已还原成
-             改版前的「浅灰分段条 + 选中白胶囊」，样式在 styles/design-messages.css） -->
+        <view v-if="searchOpen" class="msg-search">
+          <wd-icon name="search" />
+          <input v-model="searchQuery" confirm-type="search" placeholder="搜索通知或聊天" />
+          <text v-if="searchQuery" class="msg-search__clear" @click="searchQuery = ''">清除</text>
+        </view>
+        <!-- A 节：三档平级 tab（结构 / 交互与原 tabs 完全一致）。本轮视觉改成
+             设计稿的「纯文字 + 选中项文字下方短下划线」：没有胶囊、没有灰条底，
+             三档左对齐、档间距 28px，整行下方一条极浅的整宽分隔线。
+             样式分别落在本文件 scoped（几何）与 styles/design-messages.css（字阶/颜色）。 -->
         <view class="msg-tabs">
           <view class="msg-tab" :class="{ 'msg-tab--on': tab === 'system' }" @click="switchTab('system')">
-            <text>系统</text>
+            <text class="msg-tab__label">系统</text>
             <view v-if="dots.system > 0" class="msg-tab__dot" />
           </view>
           <view class="msg-tab" :class="{ 'msg-tab--on': tab === 'task' }" @click="switchTab('task')">
-            <text>申请与履约</text>
+            <text class="msg-tab__label">申请与履约</text>
             <view v-if="dots.task > 0" class="msg-tab__dot" />
           </view>
           <view class="msg-tab" :class="{ 'msg-tab--on': tab === 'chat' }" @click="switchTab('chat')">
-            <text>私信</text>
+            <text class="msg-tab__label">私信</text>
             <view v-if="dots.chat > 0" class="msg-tab__dot" />
           </view>
         </view>
@@ -1409,75 +1606,58 @@ onReachBottom(() => {
               <view v-if="kind.unread > 0" class="msg-chip__dot" />
             </view>
           </view>
-          <view v-if="(tab === 'system' ? list.length : visibleNotices.length) || (tab === 'task' && taskFilter === 'all' && groupedTaskNotices.length)" class="msg-hintbar">
-            <text class="msg-hintbar__text">{{
-              tab === "system"
-                ? "账号与平台通知"
-                : taskFilter === "all"
-                  ? "按申请、履约、评价、变动分开"
-                  : TASK_KINDS.find((item) => item.key === taskFilter)?.hint || "点击进入对应代课"
-            }}</text>
-            <text class="msg-hintbar__link" @click="handleReadAll">全部已读</text>
+          <!-- 顶部提示条：数据全部来自现有未读计数 + 已加载列表里最新的一条未读通知
+               （见脚本里的 hintTarget / hintTitle / hintSubtitle），
+               点击复用 openItem 的既有行为；没有可打开的未读项时回落到原有的「全部已读」。 -->
+          <view
+            v-if="currentUnread > 0 && !searchQuery && (tab === 'system' || taskFilter === 'all')"
+            class="msg-hintbar"
+            @click="openHint"
+          >
+            <view class="msg-hintbar__ico"><wd-icon name="notification" /></view>
+            <view class="msg-hintbar__main">
+              <text class="msg-hintbar__text">{{ hintTitle }}</text>
+              <text v-if="hintSubtitle" class="msg-hintbar__sub">{{ hintSubtitle }}</text>
+            </view>
+            <text class="msg-hintbar__arrow">›</text>
           </view>
           <ListState
             :loading="listLoading"
-            :error="error"
+            :error="currentError"
             :empty="noticeEmpty"
-            :empty-text="noticeEmptyText"
+            :empty-text="searchQuery ? '没有找到匹配的消息' : noticeEmptyText"
             @retry="load(true)"
           >
-            <!-- 骨架屏只在"确实一条都没有、正在首屏加载"时出现；有数据时后台刷新不闪 -->
-            <view v-if="listLoading && !list.length" class="msg-list">
-              <view v-for="index in 5" :key="index" class="msg-skel">
-                <view class="msg-skel__avatar" />
-                <view class="msg-skel__main">
-                  <view class="msg-skel__line msg-skel__line--name" />
-                  <view class="msg-skel__line msg-skel__line--text" />
-                </view>
-              </view>
-            </view>
-            <!-- ⚠️ 空态不写在这里：ListState 的三态优先于插槽 —— empty 为真时它直接渲染
-                 wd-status-tip，插槽**根本不挂载**，在插槽里写空态是死代码
-                 （本轮试了一版 .msg-empty 后确认并删除）。空态的视觉口径不因此放松：
-                 design-kit.css 的 `.kean-mine .mine-empty`（44px 圆形图标 + 辅助灰文案）
-                 就是规范的**命名基准**，ListState 那个 wd-status-tip 是它的组件版实现；
-                 下一轮要自定义空态时套 `.mine-empty`，不要再起第三套。
-                 文案仍走原来的 empty-text（暂无系统通知 / 暂无申请或履约消息 / 暂无私信）。 -->
-            <template v-if="tab === 'task' && taskFilter === 'all' && groupedTaskNotices.length">
-              <view v-for="section in groupedTaskNotices" :key="section.key" class="section">
-                <view class="section-head">
-                  <text class="section-label">{{ section.label }}</text>
-                  <text class="section-hint">{{ section.hint }}</text>
-                </view>
-                <view
-                  v-for="item in section.items"
-                  :key="item.id"
-                  class="msg-notice"
-                  :class="[`msg-notice--${noticeVisual(item)}`, { 'msg-notice--unread': item.readFlag !== 1 }]"
-                  @click="openItem(item)"
-                >
-                  <view class="msg-notice__tile">
-                    <view class="msg-notice__ico" :class="noticeIconClass(item)" />
-                  </view>
-                  <view class="msg-notice__main">
-                    <view class="msg-notice__top">
-                      <text class="msg-notice__title">{{ noticeTextOf(item).title }}</text>
-                      <text class="msg-notice__time">{{ formatNoticeTime(item.createdAt) }}</text>
-                    </view>
-                    <view class="msg-notice__body">{{ noticeTextOf(item).lead }}</view>
-                    <view v-if="noticeTodo(item)" class="msg-notice__actions">
-                      <text class="msg-chip--todo">{{ t("msgTodo") }}</text>
-                    </view>
-                    <view class="msg-notice__meta">
-                      <text class="msg-notice__type">{{ noticeTypeLabel(item) }}</text>
-                    </view>
+            <template #loading>
+              <view class="msg-loading" aria-label="加载消息">
+                <view v-for="index in 5" :key="index" class="msg-skel">
+                  <view class="msg-skel__avatar" />
+                  <view class="msg-skel__main">
+                    <view class="msg-skel__line msg-skel__line--name" />
+                    <view class="msg-skel__line msg-skel__line--text" />
                   </view>
                 </view>
               </view>
-              <view class="msg-end">{{ finished ? "没有更多了" : "上拉加载更多" }}</view>
             </template>
-            <template v-else>
+            <template #empty>
+              <view class="msg-empty">
+                <view class="msg-empty__icon"><wd-icon :name="tab === 'system' ? 'notification' : 'chat'" /></view>
+                <text class="msg-empty__title">{{ searchQuery ? '没有找到匹配的消息' : tab === 'system' ? '暂时没有平台提醒' : taskFilter === 'all' ? '还没有申请或履约消息' : '这个分类还没有消息' }}</text>
+                <text class="msg-empty__copy">{{ searchQuery ? '试试更短的关键词，或清除搜索继续浏览。' : tab === 'system' ? '账号和平台动态会在这里及时通知你。' : '收到新的申请、进度变化或评价后，会按时间显示在这里。' }}</text>
+                <wd-button v-if="searchQuery" plain size="small" @click="searchQuery = ''">清除搜索</wd-button>
+                <wd-button v-if="tab === 'task' && taskFilter !== 'all'" plain size="small" @click="switchTaskFilter('all')">查看全部消息</wd-button>
+              </view>
+            </template>
+            <template #default>
               <view class="msg-list">
+                <view class="msg-list__heading">
+                  <text>{{ tab === 'system' ? '系统通知' : taskHeading }}</text>
+                  <text v-if="tab === 'system' || taskFilter === 'all'">{{ noticeTotal }} 条</text>
+                </view>
+                <view v-if="filteredNoticeNeedsMore && !visibleNotices.length" class="msg-filter-more">
+                  <text>当前已加载消息中没有匹配项，继续查找更早的记录</text>
+                  <text class="msg-filter-more__action" @click="loadNextNoticePage">继续加载</text>
+                </view>
                 <template v-for="group in noticeDayGroups" :key="group.key">
                   <view class="msg-day">{{ noticeDayLabel(group.key) }}</view>
                   <view
@@ -1492,8 +1672,10 @@ onReachBottom(() => {
                     </view>
                     <view class="msg-notice__main">
                       <view class="msg-notice__top">
+                        <!-- 未读只有「标题左侧一枚 7px 圆点」这一个标记（不再叠加标题加粗，
+                             免得同一个状态被编码两次，见 design-messages.css 的说明） -->
+                        <view v-if="item.readFlag !== 1" class="msg-notice__unread-dot" />
                         <text class="msg-notice__title">{{ noticeTextOf(item).title }}</text>
-                        <text class="msg-notice__time">{{ formatNoticeTime(item.createdAt) }}</text>
                       </view>
                       <view class="msg-notice__body" :class="{ 'msg-notice__body--handle': isHandleNotice(item) }">
                         <template v-if="isHandleNotice(item)">
@@ -1504,15 +1686,27 @@ onReachBottom(() => {
                             class="msg-notice__result"
                           >{{ line }}</view>
                         </template>
-                        <template v-else>{{ noticeTextOf(item).lead }}</template>
+                        <!-- 描述里的对象名（后端写在「」/“”里）单独加深：仍是一整句文本流，
+                             外面那层「最多 2 行 + 省略号」不受影响 -->
+                        <text v-else class="msg-notice__lead">
+                          <text
+                            v-for="(seg, segIndex) in leadSegmentsOf(item)"
+                            :key="`lead-${segIndex}`"
+                            :class="{ 'msg-notice__lead-strong': seg.strong }"
+                          >{{ seg.text }}</text>
+                        </text>
                       </view>
                       <view v-if="noticeTodo(item)" class="msg-notice__actions">
                         <text class="msg-chip--todo">{{ t("msgTodo") }}</text>
                       </view>
                       <view class="msg-notice__meta">
                         <text class="msg-notice__type">{{ noticeTypeLabel(item) }}</text>
-                        <text v-if="showsDetailHint(item)" class="msg-notice__more">查看详情 ›</text>
                       </view>
+                    </view>
+                    <!-- 右列：时间在上、箭头在下（设计稿口径）；箭头是整卡可点的统一暗示 -->
+                    <view class="msg-notice__aside">
+                      <text class="msg-notice__time">{{ formatNoticeTime(item.createdAt) }}</text>
+                      <text class="msg-notice__chevron">›</text>
                     </view>
                   </view>
                 </template>
@@ -1523,31 +1717,37 @@ onReachBottom(() => {
         </template>
 
         <template v-else>
-          <view class="msg-hintbar">
-            <text class="msg-hintbar__text">可在任务详情或同学主页发起私信</text>
-          </view>
           <ListState
             :loading="listLoading"
-            :error="error"
-            :empty="chats.length === 0"
-            empty-text="暂无私信"
+            :error="currentError"
+            :empty="visibleChats.length === 0"
+            :empty-text="searchQuery ? '没有找到匹配的私信' : '暂无私信'"
             @retry="load(true)"
           >
-            <!-- ⚠️ 空态不写在这里：ListState 的三态优先于插槽 —— empty 为真时它直接渲染
-                 wd-status-tip，插槽**根本不挂载**，所以在插槽里写空态是死代码
-                 （本轮试了一版 .msg-empty 后确认并删除）。空态仍由 ListState 的
-                 wd-status-tip + 原来的 empty-text（暂无私信）负责，口径与改版前一致。 -->
-            <view v-if="listLoading && !chats.length" class="msg-list">
-              <view v-for="index in 5" :key="index" class="msg-skel">
-                <view class="msg-skel__avatar" />
-                <view class="msg-skel__main">
-                  <view class="msg-skel__line msg-skel__line--name" />
-                  <view class="msg-skel__line msg-skel__line--text" />
+            <template #loading>
+              <view class="msg-loading" aria-label="加载私信">
+                <view v-for="index in 5" :key="index" class="msg-skel">
+                  <view class="msg-skel__avatar" />
+                  <view class="msg-skel__main">
+                    <view class="msg-skel__line msg-skel__line--name" />
+                    <view class="msg-skel__line msg-skel__line--text" />
+                  </view>
                 </view>
               </view>
-            </view>
-            <view v-else class="msg-list">
-              <view v-for="item in chats" :key="item.id" class="msg-chat" :class="{ 'msg-chat--unread': item.unreadCount > 0 }" @click="openChat(item)">
+            </template>
+            <template #empty>
+              <view class="msg-empty">
+                <view class="msg-empty__icon"><wd-icon name="chat" /></view>
+                <text class="msg-empty__title">{{ searchQuery ? '没有找到匹配的私信' : '还没有开始对话' }}</text>
+                <text class="msg-empty__copy">{{ searchQuery ? '换个关键词试试，或清除搜索查看全部会话。' : '在课程求助或同学主页发起私信，确认教室和上课安排。' }}</text>
+                <wd-button v-if="searchQuery" plain size="small" @click="searchQuery = ''">清除搜索</wd-button>
+                <wd-button v-else type="primary" size="small" @click="goFindTasks">浏览课程求助</wd-button>
+              </view>
+            </template>
+            <template #default>
+            <view class="msg-list">
+              <view class="msg-list__heading"><text>最近联系</text><text>{{ visibleChats.length }} 位</text></view>
+              <view v-for="item in visibleChats" :key="item.id" class="msg-chat" :class="{ 'msg-chat--unread': item.unreadCount > 0 }" @click="openChat(item)">
                 <FallbackImage
                   v-if="item.peerAvatarUrl"
                   class="msg-chat__avatar msg-chat__avatar-img"
@@ -1592,6 +1792,7 @@ onReachBottom(() => {
                 </view>
               </view>
             </view>
+            </template>
           </ListState>
         </template>
       </view>
@@ -1664,82 +1865,178 @@ onReachBottom(() => {
   max-width: 100%;
 }
 
-/* ===========================================================================
- * 顶部标题栏（自绘，替代被 navigationStyle: custom 移除的框架导航栏）
- * ---------------------------------------------------------------------------
- * 排版逐字照抄 pages/mine/index.vue 的 .status-bar / .nav-title（含全局表
- * design-kit.css 的 `.kean-mine .nav-title`：17px / 600 / 居中 / 10-6 内边距），
- * 一个字都没有新发明。
- * ⚠️ 这里**不写** position: fixed / sticky：它必须是普通文档流里的元素，
- *    才会随页面内容一起滚走（这正是本次需求）。
- * ⚠️ 也**不写** backdrop-filter / transform / filter / will-change / contain /
- *    perspective：本页 <wd-toast> / <wd-popup>（系统通知详情弹层）都是 position: fixed
- *    的 .page 直接子节点，祖先链上出现这些属性会把它们劫持成"关不掉的弹层"
- *    （design-messages.css 文件头铁律 2 的同一条约束）。
- * 颜色：原框架栏是全局 style 的白底黑字（navigationBarBackgroundColor #FFFFFF /
- *    navigationBarTextStyle black），故字色取 --kean-text（#1d2129）并带同值兜底；
- *    底色透明 —— 壁纸态下 wallpaper-skin.css 会给 .page.skinned 的每个直接子元素
- *    建层叠上下文（position: relative + z-index: 1），透明才不会盖住流星底图；
- *    深色态（html.kean-dark page）--kean-text 自动变 #ffffff。
- * ⚠️ 只写 .status-bar / .nav-title 两个类，**不碰** .msg-tabs / .msg-chips /
- *    .msg-page-head —— 三档 tab 的吸顶规则不在这里，在 styles/design-messages.css。
- * =========================================================================== */
+/* 自绘导航页需让出状态栏空间，一级分类保持吸顶。 */
 .status-bar {
   width: 100%;
 }
-.nav-title {
-  text-align: center;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--kean-text, #1d2129);
-  padding: 10px 0 6px;
-}
-/* 壁纸态：本页页面底变成深色流星图，黑字会看不见 —— 与「我的」页同向改浅色。
-   特异性 0,3,0 > 上面 scoped 的 0,2,0。 */
-.page.skinned .nav-title {
-  color: #f4f7ff;
-}
-
-/* ---------- 「申请与履约 → 全部」档的业务分区标题（原有结构，原样保留） ---------- */
-.section {
-  margin-top: 8px;
-}
-
-.msg-page-head {
+/* 头部：左对齐大标题「消息」30px/700 + 随档变化的副标题；右侧搜索、设置两枚 22px 描边图标。
+   ⚠️ 这一块**不吸顶**（标题随内容滚走），滚动行为与改动前完全一致。 */
+.msg-nav {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  min-height: 64px;
+  padding: 8px 16px 10px;
   gap: 12px;
-  padding: 6px 2px 4px;
 }
-
-.msg-page-head__copy { min-width: 0; display: flex; flex-direction: column; }
-.msg-page-head__eyebrow { font-size: 9px; line-height: 1.4; letter-spacing: 1.3px; }
-.msg-page-head__title { margin-top: 4px; font-size: 23px; line-height: 1.25; font-weight: 750; }
-.msg-page-head__subtitle { margin-top: 4px; font-size: 11px; line-height: 1.4; }
-.msg-page-head__status { display: flex; flex-shrink: 0; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 12px; font-size: 10px; }
-.msg-page-head__status-dot { width: 6px; height: 6px; border-radius: 50%; }
-
-.section-head {
+.msg-nav__heading { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
+.msg-nav__title { color: var(--kean-t1); font-size: 30px; font-weight: 700; line-height: 1.15; }
+.msg-nav__subtitle { color: var(--kean-t3); font-size: 13px; line-height: 1.4; }
+.msg-nav__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+}
+.msg-nav__action { display: flex; width: 32px; height: 36px; align-items: center; justify-content: center; font-size: 22px; }
+.msg-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 4px 16px 8px;
+  padding: 0 12px;
+  min-height: 40px;
+  border-radius: 12px;
+}
+.msg-search input { flex: 1; min-width: 0; height: 38px; font-size: 13px; }
+.msg-search__clear { flex-shrink: 0; font-size: 11px; }
+.msg-list__heading {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  padding: 12px 16px 8px;
-  min-width: 0;
-}
-
-.section-label {
-  flex-shrink: 0;
-  font-size: 13px;
+  padding: 12px 16px 6px;
+  font-size: 15px;
   font-weight: 700;
 }
-
-.section-hint {
-  min-width: 0;
-  font-size: 11px;
-  text-align: right;
+.msg-list__heading text + text { font-size: 10px; font-weight: 500; }
+.msg-nav__action { color: var(--kean-t1); }
+.msg-shell { gap: 0; padding-top: 0; }
+.msg-search { color: var(--kean-t3); background: var(--kean-card); border: 1px solid var(--kean-line); }
+.msg-search input { color: var(--kean-t1); }
+.msg-search__clear { color: var(--kean-primary-active); }
+.msg-list__heading { color: var(--kean-t1); }
+.msg-list__heading text + text { color: var(--kean-t3); }
+/* 三档 tab：纯文字 + 选中项文字下方一条短下划线；三档左对齐（不均分），档间距 28px。
+   ⚠️ 吸顶与「不透明底」一个字都没动：background 仍是页面底色（吸顶后下面有行滚过），
+      两侧 16px 的缝仍由同一色的外阴影底衬补上（box-shadow 保留，未删）。 */
+.msg-tabs {
+  top: env(safe-area-inset-top);
+  gap: 28px;
+  margin: 0 16px;
+  padding: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  background: var(--kean-msg-bg, #fff);
+  box-shadow:
+    calc(-1 * var(--kean-sp-4) - 10px) 0 0 0 var(--kean-msg-bg),
+    calc(var(--kean-sp-4) + 10px) 0 0 0 var(--kean-msg-bg);
 }
+/* tab 区下方那条极浅的**整宽**分隔线：本行左右各有 16px 外边距，所以用 ::after 各外扩
+   16px 撑到页面两侧（.page 的 overflow-x: clip 正好在页面边界裁掉多余部分）。
+   ⚠️ pointer-events: none —— 这条 1px 压在 tab 的底边上，不能把点击吃掉。 */
+.msg-tabs::after {
+  position: absolute;
+  right: -16px;
+  bottom: 0;
+  left: -16px;
+  height: 1px;
+  background: var(--kean-msg-line);
+  content: "";
+  pointer-events: none;
+}
+.msg-tab,
+.msg-tab--on {
+  height: 44px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--kean-t3);
+  font-size: 15px;
+  font-weight: 500;
+}
+.msg-tab--on { position: relative; color: var(--kean-t1); font-weight: 700; }
+/* 选中下划线：贴着**文字**画（宽度 = 文字宽度），不与文字重叠（下方留 6px）。
+   ⚠️ 锚点从「整档」搬到 .msg-tab__label（position: relative）—— 原来是按档宽取
+      left/right 22%，档宽不等长时下划线宽度就对不上文字。
+   margin-top 与 padding-bottom 成对（6px）：抵消 padding 造成的 3px 上移，
+   让文字仍严格居中于 44px 的档高。 */
+.msg-tab__label { position: relative; display: inline-block; margin-top: 6px; padding-bottom: 6px; }
+.msg-tab--on .msg-tab__label::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--kean-primary);
+  content: "";
+}
+.msg-tab__dot { width: 5px; height: 5px; }
+.msg-chips { padding: 10px 16px 12px; }
+.msg-chip { height: 30px; padding: 0 14px; border: 1px solid var(--kean-msg-line); background: var(--kean-msg-row); color: var(--kean-sub); font-size: 13px; }
+.msg-chip--on { border-color: var(--kean-primary); background: var(--kean-primary); color: #fff; }
+.msg-chip--on .msg-chip__dot { background: #fff; }
+/* 顶部提示条：主色极浅底的圆角卡（34px 圆角图标块 + 标题/副标题 + 右箭头）。
+   底色与字色在 styles/design-messages.css（三种皮肤各一份），这里只写几何。
+   ⚠️ 上边距 10px 是给「系统」档（tab 分隔线下方）用的；「申请与履约」档上面还有
+      一层 chip（自带 12px 下内边距），所以那一档实际留白是 22px —— 比设计稿略松一点，
+      换取两个档共用同一条规则（不为一个档多写一套选择器）。 */
+.msg-hintbar { margin: 10px 16px 12px; padding: 12px; border: 0; border-radius: 12px; }
+.msg-hintbar__ico { display: flex; width: 34px; height: 34px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; font-size: 18px; }
+.msg-hintbar__main { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.msg-hintbar__arrow { flex-shrink: 0; font-size: 16px; line-height: 1; }
+/* 通知行 = 独立白卡：左右页边距 16px、卡片间距 10px、内边距 13px。
+   底色/边框/圆角在 styles/design-messages.css（白卡比页面底色亮，三个皮肤都走现有令牌）。 */
+.msg-notice { align-items: flex-start; margin: 0 16px 10px; padding: 13px 14px; }
+.msg-notice__tile { width: 42px; height: 42px; border: 0; border-radius: 12px; }
+.msg-notice__ico { width: 21px; height: 21px; background-size: 21px 21px; }
+.msg-notice__top { align-items: center; }
+/* 未读标记：标题左侧一枚 7px 圆点（与改动前的颜色同一个值，只改了尺寸与位置）。
+   ⚠️ 同时**取消**了「未读标题加粗」那条规则 —— 按设计稿，同一个状态只用「点」表达一次。 */
+.msg-notice__unread-dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: #e45b63; }
+/* 右列：时间在上、箭头在下 */
+.msg-notice__aside { display: flex; flex-shrink: 0; flex-direction: column; align-items: flex-end; gap: 6px; }
+.msg-notice__chevron { font-size: 16px; line-height: 1; }
+.msg-notice__meta { margin-top: 5px; }
+.msg-filter-more { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 34px 24px; color: var(--kean-t3); font-size: 12px; line-height: 1.6; text-align: center; }
+.msg-filter-more__action { padding: 7px 16px; border: 1px solid rgba(50, 111, 224, .2); border-radius: 18px; color: var(--kean-primary-active); font-weight: 600; }
+.msg-chat { padding: 13px 16px; }
+.msg-chat + .msg-chat::before { left: 72px; right: 16px; }
+.msg-chat__name { max-width: min(55vw, 220px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-empty { border: 0; border-radius: 0; background: transparent; }
+.page.skinned .msg-empty { border: 0; border-radius: 0; background: transparent; }
+.msg-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  margin: 24px 16px;
+  padding: 20px 18px;
+  border: 0;
+  background: transparent;
+  text-align: center;
+}
+
+.msg-empty__icon {
+  display: flex;
+  width: 46px;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 3px;
+  border: 1px solid var(--kean-line);
+  border-radius: 50%;
+  color: var(--kean-primary-active);
+  background: var(--kean-primary-soft);
+  font-size: 23px;
+}
+
+.msg-empty__title { color: var(--kean-t1); font-size: 15px; font-weight: 700; }
+.msg-empty__copy { max-width: 280px; color: var(--kean-t3); font-size: 11px; line-height: 1.65; }
+.msg-empty :deep(.wd-button) { margin-top: 5px; border-radius: 11px; }
+.page.skinned .msg-empty { border-color: rgba(255,255,255,.13); background: rgba(18,23,34,.86); }
+.page.skinned .msg-empty__title { color: #eaf1fb; }
+.page.skinned .msg-empty__copy { color: #b2bfd1; }
+.page.skinned .msg-empty__icon { border-color: rgba(255,255,255,.12); color: #c4d7f2; background: rgba(93,131,190,.22); }
 
 /* 会话预览里的表情：内联小图（18px），与 13px 的预览字对齐。
    ⚠️ 选择器特意写成两层（0,2,0）：全局表里 `.kean-msg .msg-chat__preview-text`
